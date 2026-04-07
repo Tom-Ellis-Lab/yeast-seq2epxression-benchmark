@@ -11,6 +11,8 @@ dependencies = [
     "matplotlib>=3.10.8",
     "pandas>=3.0.2",
     "pysam>=0.23.3",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.17.1",
     "torch>=2.11.0",
 ]
 

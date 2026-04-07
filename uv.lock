@@ -1271,7 +1271,7 @@ wheels = [
 [[package]]
 name = "yeast-seq2epxression-benchmark"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "ipykernel" },
     { name = "matplotlib" },

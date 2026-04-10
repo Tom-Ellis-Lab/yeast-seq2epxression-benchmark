@@ -21,6 +21,11 @@ Our core test datasets are:
 ## Contact
 Reach out to mail@timonschneider.de in case you have questions/need help/want to chat.
 
+## Roadmap
+- [ ] Add Rafi's MPRA eval
+- [ ] Add eQTL Caudal eval
+- [ ] Add eQTL Kita eval
+
 ## Notes
 - What are the constraints: 
     - PyTorch first - we optimize our code so it's easy to benchmark pytorch models

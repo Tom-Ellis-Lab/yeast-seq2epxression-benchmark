@@ -1,5 +1,3 @@
-
-
 [project]
 name = "yeast-seq2epxression-benchmark"
 version = "0.1.0"
@@ -7,9 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "flash-attn",
-    "ipykernel>=7.2.0",
     "matplotlib>=3.10.8",
+    "numpy",
     "pandas>=3.0.2",
     "pyfonts>=1.3.0",
     "pypalettes>=0.2.1",
@@ -17,10 +14,23 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "scipy>=1.17.1",
     "seaborn>=0.13.2",
-    "torch>=2.11.0",
     "tqdm>=4.67.3",
-    "transformers<5",
+]
+
+[project.optional-dependencies]
+shorkie = [
+    "h5py",
+    "torch>=2.11.0",
+]
+yorzoi = [
+    "flash-attn",
     "yorzoi>=0.0.3",
+]
+all = [
+    "yeast-seq2epxression-benchmark[shorkie,yorzoi]",
+]
+dev = [
+    "ipykernel>=7.2.0",
 ]
 
 [build-system]

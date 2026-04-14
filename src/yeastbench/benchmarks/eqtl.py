@@ -60,7 +60,9 @@ class EQTLClassificationBenchmark(Benchmark[VariantEffectScorer, EQTLResults]):
     def evaluate(self, adapter: VariantEffectScorer) -> EQTLResults:
         per_iter: list[EQTLIterationResult] = []
         for tsv in self.iteration_files:
-            pairs = pd.read_csv(tsv, sep="\t")
+            pairs = pd.read_csv(
+                tsv, sep="\t", dtype={"pos_chrom": str, "neg_chrom": str}
+            )
             variants: list[Variant] = []
             labels: list[int] = []
             for row in pairs.itertuples():

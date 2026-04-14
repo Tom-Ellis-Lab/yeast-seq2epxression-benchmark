@@ -215,6 +215,18 @@ class ShorkieVariantScorer(VariantEffectScorer):
         return cls(models, fasta_path, gtf_path, list(track_subset), device, batch_size)
 
     def _prepare_jobs(self, variants: Sequence[Variant]) -> list[_ScoringJob]:
+        """Resolve windows, verify ref base when the variant is inside the
+        window, and pre-compute the exon-bin index per variant.
+
+        When the variant is too far from the gene's center to fit alongside
+        it inside one ``SEQ_LEN`` input window, the window falls back to
+        gene-centered (matches the canonical Shorkie scoring script) and
+        the variant ends up outside the input. In that case we keep the
+        ref-pass prediction but skip the alt mutation, mirroring the
+        upstream behavior — the resulting variant effect score is ≈ 0,
+        which is the correct behavior for a variant the architecture
+        cannot in principle see.
+        """
         jobs: list[_ScoringJob] = []
         for v in variants:
             gene = self.genes[v.gene_id]
@@ -226,19 +238,17 @@ class ShorkieVariantScorer(VariantEffectScorer):
                 )
             chrom_len = self.fasta.get_reference_length(chrom_roman)
             start0 = place_window(v.pos, gene.gene_center, chrom_len)
-            seq = self.fasta.fetch(chrom_roman, start0, start0 + SEQ_LEN).upper()
-            if len(seq) != SEQ_LEN:
-                raise ValueError(
-                    f"FASTA fetch on {chrom_roman} returned {len(seq)} bp "
-                    f"(expected {SEQ_LEN}) at start={start0}"
-                )
             var_idx = v.pos - 1 - start0
-            ref_in_fasta = seq[var_idx]
-            if ref_in_fasta != v.ref.upper():
-                raise ValueError(
-                    f"REF mismatch at {v.chrom}:{v.pos}: "
-                    f"FASTA={ref_in_fasta}, claimed={v.ref}"
-                )
+            if 0 <= var_idx < SEQ_LEN:
+                seq = self.fasta.fetch(
+                    chrom_roman, start0, start0 + SEQ_LEN
+                ).upper()
+                ref_in_fasta = seq[var_idx]
+                if ref_in_fasta != v.ref.upper():
+                    raise ValueError(
+                        f"REF mismatch at {v.chrom}:{v.pos}: "
+                        f"FASTA={ref_in_fasta}, claimed={v.ref}"
+                    )
             jobs.append(
                 _ScoringJob(
                     chrom_roman=chrom_roman,
@@ -256,10 +266,14 @@ class ShorkieVariantScorer(VariantEffectScorer):
             job.chrom_roman, job.window_start, job.window_start + SEQ_LEN
         ).upper()
         ref_oh = one_hot_encode(seq)
-        alt_seq = seq[: job.var_idx_in_window] + job.alt + seq[job.var_idx_in_window + len(job.ref):]
-        if len(alt_seq) != SEQ_LEN:
-            alt_seq = (alt_seq + "N" * SEQ_LEN)[:SEQ_LEN]
-        alt_oh = one_hot_encode(alt_seq)
+        if 0 <= job.var_idx_in_window < SEQ_LEN:
+            i = job.var_idx_in_window
+            alt_seq = seq[:i] + job.alt + seq[i + len(job.ref):]
+            if len(alt_seq) != SEQ_LEN:
+                alt_seq = (alt_seq + "N" * SEQ_LEN)[:SEQ_LEN]
+            alt_oh = one_hot_encode(alt_seq)
+        else:
+            alt_oh = ref_oh  # variant outside window → no mutation, score ≈ 0
         return ref_oh, alt_oh
 
     def score_variants(self, variants: Sequence[Variant]) -> np.ndarray:

@@ -1,0 +1,75 @@
+"""Registry of models and tasks. Adding a new model or task is one entry.
+
+Each model factory has the signature ``(task, device, **model_config) → adapter``.
+Each task factory has the signature ``(**task_config) → Benchmark``.
+
+The runner builds the task first, then the adapter, passing the task and
+global device into the adapter factory so it can pull task-specific
+reference files (FASTA, GTF, …) without the YAML duplicating them.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Callable
+
+from yeastbench.adapters.protocols import VariantEffectScorer
+from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
+from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
+
+ModelFactory = Callable[..., VariantEffectScorer]
+TaskFactory = Callable[..., Benchmark]
+
+
+# ──────────────────────────────────────────────────────────────
+# Models
+# ──────────────────────────────────────────────────────────────
+
+
+def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> VariantEffectScorer:
+    from yeastbench.adapters.shorkie_eqtl import ShorkieVariantScorer
+
+    return ShorkieVariantScorer.from_checkpoints(
+        fasta_path=task.fasta_path,
+        gtf_path=task.gtf_path,
+        device=device,
+        **cfg,
+    )
+
+
+def _build_yorzoi(task: Benchmark, device: str, **cfg: Any) -> VariantEffectScorer:
+    from yeastbench.adapters.yorzoi_eqtl import YorzoiVariantScorer
+
+    return YorzoiVariantScorer.from_pretrained(
+        fasta_path=task.fasta_path,
+        gtf_path=task.gtf_path,
+        device=device,
+        **cfg,
+    )
+
+
+MODELS: dict[str, ModelFactory] = {
+    "shorkie": _build_shorkie,
+    "yorzoi": _build_yorzoi,
+}
+
+
+# ──────────────────────────────────────────────────────────────
+# Tasks
+# ──────────────────────────────────────────────────────────────
+
+
+def _build_caudal_eqtl(distribution_dir: str | Path) -> Benchmark:
+    return EQTLClassificationBenchmark(
+        distribution_dir=Path(distribution_dir),
+        info=BenchmarkInfo(
+            name="caudal_eqtl",
+            version="v1",
+            description="Caudal et al. yeast cis-eQTL classification",
+            distribution_uri="gs://yeast-seq2expression/caudal_eqtl_v1/",
+        ),
+    )
+
+
+TASKS: dict[str, TaskFactory] = {
+    "caudal_eqtl": _build_caudal_eqtl,
+}

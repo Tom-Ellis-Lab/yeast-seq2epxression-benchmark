@@ -1,0 +1,45 @@
+# Canonical yeastbench run.
+#
+# This file is the single source of truth for the numbers we report in
+# the paper / README. Change anything here → cut a new config version.
+#
+# Invocation:
+#   uv run ybench run --config configs/default.yaml
+#
+# Filters:
+#   uv run ybench run --config configs/default.yaml --model shorkie
+#   uv run ybench run --config configs/default.yaml --task  caudal_eqtl
+#
+# Dry-run (show what would execute, do nothing):
+#   uv run ybench run --config configs/default.yaml --dry-run
+
+out_dir: results/default
+device: cuda
+
+tasks_config:
+  caudal_eqtl:
+    distribution_dir: data/processed/caudal_eqtl_v1
+
+runs:
+  - model: shorkie
+    tasks: [caudal_eqtl]
+    model_config:
+      params_path: data/models/shorkie/params.json
+      checkpoint_paths:
+        - data/models/shorkie/checkpoints/f0.h5
+        - data/models/shorkie/checkpoints/f1.h5
+        - data/models/shorkie/checkpoints/f2.h5
+        - data/models/shorkie/checkpoints/f3.h5
+        - data/models/shorkie/checkpoints/f4.h5
+        - data/models/shorkie/checkpoints/f5.h5
+        - data/models/shorkie/checkpoints/f6.h5
+        - data/models/shorkie/checkpoints/f7.h5
+      batch_size: 8
+      use_rc: true
+
+  - model: yorzoi
+    tasks: [caudal_eqtl]
+    model_config:
+      hf_repo: tom-ellis-lab/yorzoi
+      batch_size: 16
+      use_rc: true

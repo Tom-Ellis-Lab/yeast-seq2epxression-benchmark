@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import numpy as np
+import pandas as pd
 import typer
 
-from yeastbench.benchmarks.eqtl import EQTLResults
+from yeastbench.benchmarks.eqtl import EQTLIterationResult, EQTLResults
 from yeastbench.config import Config, load_config
 from yeastbench.registry import MODELS, TASKS
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 
 app = typer.Typer(add_completion=False, help="yeast-seq2expression benchmark runner")
@@ -56,6 +58,10 @@ def _run_pair(cfg: Config, model_name: str, task_name: str, model_config: dict) 
     results: EQTLResults = task.evaluate(adapter)
     eval_s = time.time() - t0
     _echo(f"  evaluated in {eval_s:.1f}s")
+
+    t0 = time.time()
+    task.plot(results, out_dir)
+    _echo(f"  plots  written in {time.time() - t0:.1f}s")
 
     # Persist per-iteration raw scores + metadata
     for r in results.per_iter:
@@ -155,6 +161,75 @@ def run_cmd(
             _run_pair(cfg, r.model, t, r.model_config)
 
     _echo("\nAll runs complete.")
+
+
+@app.command("replot")
+def replot_cmd(
+    run_dir: Annotated[
+        Path, typer.Argument(help="A run output directory (model__task/)")
+    ],
+    task: Annotated[
+        Optional[str],
+        typer.Option(
+            "--task",
+            help="Task name. Inferred from directory (…__<task>) if omitted.",
+        ),
+    ] = None,
+    task_config: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--task-config",
+            help="Optional YAML config to pull task_config from (for distribution_dir etc.)",
+        ),
+    ] = None,
+) -> None:
+    """Regenerate plots from saved per-iteration scores/labels/pairs."""
+    run_dir = run_dir.resolve()
+    if task is None:
+        name = run_dir.name
+        if "__" not in name:
+            raise typer.Exit(
+                f"Cannot infer task from directory name {name!r}. Pass --task."
+            )
+        task = name.split("__", 1)[1]
+    if task not in TASKS:
+        raise typer.Exit(f"Unknown task '{task}'. Known: {sorted(TASKS)}")
+
+    if task_config is None:
+        cfg_kwargs: dict = {}
+        meta = run_dir / "run_metadata.json"
+        if meta.exists():
+            cfg_kwargs = json.loads(meta.read_text()).get("task_config", {})
+    else:
+        cfg = load_config(task_config)
+        cfg_kwargs = cfg.tasks_config.get(task, {})
+
+    benchmark = TASKS[task](**cfg_kwargs)
+
+    per_iter: list[EQTLIterationResult] = []
+    score_files = sorted(run_dir.glob("*_scores.npy"))
+    if not score_files:
+        raise typer.Exit(f"No *_scores.npy files under {run_dir}")
+    for sp in score_files:
+        name = sp.name.replace("_scores.npy", "")
+        labels = np.load(run_dir / f"{name}_labels.npy")
+        scores = np.load(sp)
+        pairs = pd.read_csv(run_dir / f"{name}_pairs.tsv", sep="\t")
+        per_iter.append(
+            EQTLIterationResult(
+                name=name,
+                scores=scores,
+                labels=labels,
+                pairs=pairs,
+                auroc_signed=float(roc_auc_score(labels, scores)),
+                auprc_signed=float(average_precision_score(labels, scores)),
+                auroc_abs=float(roc_auc_score(labels, np.abs(scores))),
+                auprc_abs=float(average_precision_score(labels, np.abs(scores))),
+            )
+        )
+    results = EQTLResults(per_iter=per_iter)
+    benchmark.plot(results, run_dir)
+    _echo(f"replotted {len(per_iter)} iterations → {run_dir}")
 
 
 @app.command("list")

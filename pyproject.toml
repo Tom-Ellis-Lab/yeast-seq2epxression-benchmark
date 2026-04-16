@@ -36,6 +36,7 @@ all = [
 ]
 dev = [
     "ipykernel>=7.2.0",
+    "pytest>=8.0",
 ]
 
 [build-system]
@@ -44,6 +45,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/yeastbench"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.uv.sources]
 flash-attn = { url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }

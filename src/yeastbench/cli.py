@@ -10,14 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Optional
 
-import numpy as np
-import pandas as pd
 import typer
 
-from yeastbench.benchmarks.eqtl import EQTLIterationResult, EQTLResults
 from yeastbench.config import Config, load_config
 from yeastbench.registry import MODELS, TASKS
-from sklearn.metrics import average_precision_score, roc_auc_score
 
 
 app = typer.Typer(add_completion=False, help="yeast-seq2expression benchmark runner")
@@ -55,7 +51,7 @@ def _run_pair(cfg: Config, model_name: str, task_name: str, model_config: dict) 
     _echo(f"  ready in {time.time() - t0:.1f}s")
 
     t0 = time.time()
-    results: EQTLResults = task.evaluate(adapter)
+    results = task.evaluate(adapter)
     eval_s = time.time() - t0
     _echo(f"  evaluated in {eval_s:.1f}s")
 
@@ -63,37 +59,16 @@ def _run_pair(cfg: Config, model_name: str, task_name: str, model_config: dict) 
     task.plot(results, out_dir)
     _echo(f"  plots  written in {time.time() - t0:.1f}s")
 
-    # Persist per-iteration raw scores + metadata
-    for r in results.per_iter:
-        np.save(out_dir / f"{r.name}_scores.npy", r.scores)
-        np.save(out_dir / f"{r.name}_labels.npy", r.labels)
-        r.pairs.to_csv(out_dir / f"{r.name}_pairs.tsv", sep="\t", index=False)
+    task.save_results(results, out_dir)
 
-    # Per-iter and aggregate summary
     summary = {
         "model": model_name,
         "task": task_name,
         "task_version": task.info.version,
-        "per_iteration": [
-            {
-                "name": r.name,
-                "n_pairs": int(len(r.pairs)),
-                "auroc_signed": r.auroc_signed,
-                "auprc_signed": r.auprc_signed,
-                "auroc_abs": r.auroc_abs,
-                "auprc_abs": r.auprc_abs,
-                "zero_frac": float((r.scores == 0).mean()),
-            }
-            for r in results.per_iter
-        ],
-        "auroc_abs_mean": results.mean_auroc,
-        "auroc_abs_sem": results.sem_auroc,
-        "auprc_abs_mean": results.mean_auprc,
-        "auprc_abs_sem": results.sem_auprc,
+        **task.summary_dict(results),
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
-    # Run metadata — pinpoints the config + code version that produced these numbers
     (out_dir / "run_metadata.json").write_text(
         json.dumps(
             {
@@ -113,10 +88,7 @@ def _run_pair(cfg: Config, model_name: str, task_name: str, model_config: dict) 
         )
     )
 
-    _echo(
-        f"  |score| AUROC {results.mean_auroc:.4f} ± {results.sem_auroc:.4f}  "
-        f"AUPRC {results.mean_auprc:.4f} ± {results.sem_auprc:.4f}"
-    )
+    _echo(f"  {task.headline(results)}")
 
 
 @app.command("run")
@@ -183,7 +155,7 @@ def replot_cmd(
         ),
     ] = None,
 ) -> None:
-    """Regenerate plots from saved per-iteration scores/labels/pairs."""
+    """Regenerate plots from saved results."""
     run_dir = run_dir.resolve()
     if task is None:
         name = run_dir.name
@@ -205,31 +177,9 @@ def replot_cmd(
         cfg_kwargs = cfg.tasks_config.get(task, {})
 
     benchmark = TASKS[task](**cfg_kwargs)
-
-    per_iter: list[EQTLIterationResult] = []
-    score_files = sorted(run_dir.glob("*_scores.npy"))
-    if not score_files:
-        raise typer.Exit(f"No *_scores.npy files under {run_dir}")
-    for sp in score_files:
-        name = sp.name.replace("_scores.npy", "")
-        labels = np.load(run_dir / f"{name}_labels.npy")
-        scores = np.load(sp)
-        pairs = pd.read_csv(run_dir / f"{name}_pairs.tsv", sep="\t")
-        per_iter.append(
-            EQTLIterationResult(
-                name=name,
-                scores=scores,
-                labels=labels,
-                pairs=pairs,
-                auroc_signed=float(roc_auc_score(labels, scores)),
-                auprc_signed=float(average_precision_score(labels, scores)),
-                auroc_abs=float(roc_auc_score(labels, np.abs(scores))),
-                auprc_abs=float(average_precision_score(labels, np.abs(scores))),
-            )
-        )
-    results = EQTLResults(per_iter=per_iter)
+    results = benchmark.load_results(run_dir)
     benchmark.plot(results, run_dir)
-    _echo(f"replotted {len(per_iter)} iterations → {run_dir}")
+    _echo(f"replotted → {run_dir}")
 
 
 @app.command("list")

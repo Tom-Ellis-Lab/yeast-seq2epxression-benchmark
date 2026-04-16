@@ -12,11 +12,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from yeastbench.adapters.protocols import VariantEffectScorer
+from yeastbench.adapters.protocols import (
+    SequenceExpressionPredictor,
+    VariantEffectScorer,
+)
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
+from yeastbench.benchmarks.mpra import MPRARegressionBenchmark
 
-ModelFactory = Callable[..., VariantEffectScorer]
+ModelFactory = Callable[..., Any]
 TaskFactory = Callable[..., Benchmark]
 
 
@@ -25,7 +29,12 @@ TaskFactory = Callable[..., Benchmark]
 # ──────────────────────────────────────────────────────────────
 
 
-def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> VariantEffectScorer:
+def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
+    if task.adapter_protocol is SequenceExpressionPredictor:
+        from yeastbench.adapters.shorkie_mpra import ShorkieMPRAPredictor
+
+        return ShorkieMPRAPredictor.from_checkpoints(device=device, **cfg)
+
     from yeastbench.adapters.shorkie_eqtl import ShorkieVariantScorer
 
     return ShorkieVariantScorer.from_checkpoints(
@@ -36,7 +45,12 @@ def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> VariantEffectSco
     )
 
 
-def _build_yorzoi(task: Benchmark, device: str, **cfg: Any) -> VariantEffectScorer:
+def _build_yorzoi(task: Benchmark, device: str, **cfg: Any) -> Any:
+    if task.adapter_protocol is SequenceExpressionPredictor:
+        from yeastbench.adapters.yorzoi_mpra import YorzoiMPRAPredictor
+
+        return YorzoiMPRAPredictor.from_pretrained(device=device, **cfg)
+
     from yeastbench.adapters.yorzoi_eqtl import YorzoiVariantScorer
 
     return YorzoiVariantScorer.from_pretrained(
@@ -70,6 +84,19 @@ def _build_caudal_eqtl(distribution_dir: str | Path) -> Benchmark:
     )
 
 
+def _build_rafi_mpra_promoter(data_dir: str | Path) -> Benchmark:
+    return MPRARegressionBenchmark(
+        data_dir=Path(data_dir),
+        info=BenchmarkInfo(
+            name="rafi_mpra_promoter",
+            version="v1",
+            description="Rafi / deBoer DREAM MPRA promoter expression (fixed-context)",
+            distribution_uri="",
+        ),
+    )
+
+
 TASKS: dict[str, TaskFactory] = {
     "caudal_eqtl": _build_caudal_eqtl,
+    "rafi_mpra_promoter": _build_rafi_mpra_promoter,
 }

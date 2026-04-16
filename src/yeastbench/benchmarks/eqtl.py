@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, ClassVar
+from typing import Any, Callable, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -152,6 +152,62 @@ class EQTLClassificationBenchmark(Benchmark[VariantEffectScorer, EQTLResults]):
             out_dir / "distance_stratified.png",
             title=f"{self.info.name} — |score| AUROC / AUPRC by distance-to-TSS bin"
             + (f" — {title_model}" if title_model else ""),
+        )
+
+    def save_results(self, results: EQTLResults, out_dir: Path) -> None:
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for r in results.per_iter:
+            np.save(out_dir / f"{r.name}_scores.npy", r.scores)
+            np.save(out_dir / f"{r.name}_labels.npy", r.labels)
+            r.pairs.to_csv(out_dir / f"{r.name}_pairs.tsv", sep="\t", index=False)
+
+    def load_results(self, out_dir: Path) -> EQTLResults:
+        out_dir = Path(out_dir)
+        per_iter: list[EQTLIterationResult] = []
+        for sp in sorted(out_dir.glob("*_scores.npy")):
+            name = sp.name.replace("_scores.npy", "")
+            scores = np.load(sp)
+            labels = np.load(out_dir / f"{name}_labels.npy")
+            pairs = pd.read_csv(out_dir / f"{name}_pairs.tsv", sep="\t")
+            per_iter.append(
+                EQTLIterationResult(
+                    name=name,
+                    scores=scores,
+                    labels=labels,
+                    pairs=pairs,
+                    auroc_signed=float(roc_auc_score(labels, scores)),
+                    auprc_signed=float(average_precision_score(labels, scores)),
+                    auroc_abs=float(roc_auc_score(labels, np.abs(scores))),
+                    auprc_abs=float(average_precision_score(labels, np.abs(scores))),
+                )
+            )
+        return EQTLResults(per_iter=per_iter)
+
+    def summary_dict(self, results: EQTLResults) -> dict[str, Any]:
+        return {
+            "per_iteration": [
+                {
+                    "name": r.name,
+                    "n_pairs": int(len(r.pairs)),
+                    "auroc_signed": r.auroc_signed,
+                    "auprc_signed": r.auprc_signed,
+                    "auroc_abs": r.auroc_abs,
+                    "auprc_abs": r.auprc_abs,
+                    "zero_frac": float((r.scores == 0).mean()),
+                }
+                for r in results.per_iter
+            ],
+            "auroc_abs_mean": results.mean_auroc,
+            "auroc_abs_sem": results.sem_auroc,
+            "auprc_abs_mean": results.mean_auprc,
+            "auprc_abs_sem": results.sem_auprc,
+        }
+
+    def headline(self, results: EQTLResults) -> str:
+        return (
+            f"|score| AUROC {results.mean_auroc:.4f} \u00b1 {results.sem_auroc:.4f}  "
+            f"AUPRC {results.mean_auprc:.4f} \u00b1 {results.sem_auprc:.4f}"
         )
 
 

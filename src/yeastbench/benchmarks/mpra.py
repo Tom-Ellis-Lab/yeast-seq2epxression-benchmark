@@ -219,6 +219,34 @@ class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults
         )
 
 
+class MPRAMarginalizedBenchmark(MPRARegressionBenchmark):
+    """MPRA benchmark variant that also exposes genome reference paths.
+
+    The marginalized adapters need FASTA + GTF to insert MPRA sequences
+    into native genomic contexts.  Evaluation, plotting, and persistence
+    are identical to the fixed-context variant.
+    """
+
+    def __init__(
+        self,
+        data_dir: Path,
+        fasta_path: Path,
+        gtf_path: Path,
+        info: BenchmarkInfo,
+    ) -> None:
+        super().__init__(data_dir, info)
+        self._fasta_path = Path(fasta_path)
+        self._gtf_path = Path(gtf_path)
+
+    @property
+    def fasta_path(self) -> Path:
+        return self._fasta_path
+
+    @property
+    def gtf_path(self) -> Path:
+        return self._gtf_path
+
+
 # ── Metric helpers ────────────────────────────────────────────
 
 

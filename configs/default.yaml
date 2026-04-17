@@ -25,10 +25,14 @@ tasks_config:
     data_dir: data/raw/deboer
     fasta_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.fa
     gtf_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.115.gtf
+  shalem_mpra_marginalized:
+    data_path: archive/Shalem/segal_2015.tsv
+    fasta_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.fa
+    gtf_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.115.gtf
 
 runs:
   - model: shorkie
-    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized]
+    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized, shalem_mpra_marginalized]
     model_config:
       params_path: data/models/shorkie/params.json
       checkpoint_paths:
@@ -44,7 +48,7 @@ runs:
       use_rc: true
 
   - model: yorzoi
-    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized]
+    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized, shalem_mpra_marginalized]
     model_config:
       hf_repo: tom-ellis-lab/yorzoi
       batch_size: 64

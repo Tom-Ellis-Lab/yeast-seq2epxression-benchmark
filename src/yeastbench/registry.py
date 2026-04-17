@@ -1,11 +1,12 @@
 """Registry of models and tasks. Adding a new model or task is one entry.
 
-Each model factory has the signature ``(task, device, **model_config) → adapter``.
-Each task factory has the signature ``(**task_config) → Benchmark``.
+Each task declares an ``adapter_protocol`` (the interface the model must
+implement to run the benchmark). Each model has exactly one adapter class
+per protocol; the registry looks the adapter up by protocol and builds
+it with the task's kwargs plus anything in ``model_config``.
 
-The runner builds the task first, then the adapter, passing the task and
-global device into the adapter factory so it can pull task-specific
-reference files (FASTA, GTF, …) without the YAML duplicating them.
+Task factory signature:  ``(**task_config) → Benchmark``
+Model factory signature: ``(task, device, **model_config) → adapter``
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from yeastbench.adapters.protocols import (
+    MarginalizedSequenceExpressionPredictor,
     SequenceExpressionPredictor,
     VariantEffectScorer,
 )
@@ -27,73 +29,93 @@ TaskFactory = Callable[..., Benchmark]
 # ──────────────────────────────────────────────────────────────
 # Models
 # ──────────────────────────────────────────────────────────────
+#
+# Each model exposes a dict ``{protocol_type: (build_fn, needs_refs)}``.
+# ``build_fn`` takes ``(device, **cfg)`` plus optional fasta/gtf paths and
+# returns a constructed adapter.  ``needs_refs`` controls whether the
+# dispatcher passes ``fasta_path``/``gtf_path`` from the task.
+
+
+def _shorkie_eqtl_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.shorkie_eqtl import ShorkieVariantScorer
+    return ShorkieVariantScorer.from_checkpoints(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg,
+    )
+
+
+def _shorkie_mpra_fixed_adapter(device, **cfg):
+    from yeastbench.adapters.shorkie_mpra import ShorkieMPRAPredictor
+    return ShorkieMPRAPredictor.from_checkpoints(device=device, **cfg)
+
+
+def _shorkie_mpra_marginalized_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.shorkie_mpra_marginalized import (
+        ShorkieMPRAMarginalizedPredictor,
+    )
+    return ShorkieMPRAMarginalizedPredictor.from_checkpoints(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg,
+    )
+
+
+def _yorzoi_eqtl_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.yorzoi_eqtl import YorzoiVariantScorer
+    return YorzoiVariantScorer.from_pretrained(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg,
+    )
+
+
+def _yorzoi_mpra_fixed_adapter(device, **cfg):
+    from yeastbench.adapters.yorzoi_mpra import YorzoiMPRAPredictor
+    return YorzoiMPRAPredictor.from_pretrained(device=device, **cfg)
+
+
+def _yorzoi_mpra_marginalized_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.yorzoi_mpra_marginalized import (
+        YorzoiMPRAMarginalizedPredictor,
+    )
+    return YorzoiMPRAMarginalizedPredictor.from_pretrained(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg,
+    )
+
+
+# protocol → (build_fn, needs_refs)
+SHORKIE_ADAPTERS: dict[type, tuple[Callable, bool]] = {
+    VariantEffectScorer:                        (_shorkie_eqtl_adapter, True),
+    SequenceExpressionPredictor:                (_shorkie_mpra_fixed_adapter, False),
+    MarginalizedSequenceExpressionPredictor:    (_shorkie_mpra_marginalized_adapter, True),
+}
+
+YORZOI_ADAPTERS: dict[type, tuple[Callable, bool]] = {
+    VariantEffectScorer:                        (_yorzoi_eqtl_adapter, True),
+    SequenceExpressionPredictor:                (_yorzoi_mpra_fixed_adapter, False),
+    MarginalizedSequenceExpressionPredictor:    (_yorzoi_mpra_marginalized_adapter, True),
+}
+
+
+def _dispatch(
+    adapters: dict[type, tuple[Callable, bool]],
+    task: Benchmark, device: str, **cfg: Any,
+) -> Any:
+    protocol = task.adapter_protocol
+    if protocol not in adapters:
+        raise ValueError(
+            f"No adapter registered for protocol {protocol.__name__}. "
+            f"Known: {[p.__name__ for p in adapters]}"
+        )
+    build_fn, needs_refs = adapters[protocol]
+    if needs_refs:
+        return build_fn(
+            device=device, fasta_path=task.fasta_path, gtf_path=task.gtf_path, **cfg,
+        )
+    return build_fn(device=device, **cfg)
 
 
 def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
-    if task.adapter_protocol is SequenceExpressionPredictor:
-        # Pop marginalized-only kwargs so they don't leak to fixed-context.
-        n_sample = cfg.pop("n_sample", None)
-        seed = cfg.pop("seed", 42)
-
-        if hasattr(task, "fasta_path") and hasattr(task, "gtf_path"):
-            from yeastbench.adapters.shorkie_mpra_marginalized import (
-                ShorkieMPRAMarginalizedPredictor,
-            )
-
-            return ShorkieMPRAMarginalizedPredictor.from_checkpoints(
-                fasta_path=task.fasta_path,
-                gtf_path=task.gtf_path,
-                device=device,
-                n_sample=n_sample,
-                seed=seed,
-                **cfg,
-            )
-
-        from yeastbench.adapters.shorkie_mpra import ShorkieMPRAPredictor
-
-        return ShorkieMPRAPredictor.from_checkpoints(device=device, **cfg)
-
-    from yeastbench.adapters.shorkie_eqtl import ShorkieVariantScorer
-
-    return ShorkieVariantScorer.from_checkpoints(
-        fasta_path=task.fasta_path,
-        gtf_path=task.gtf_path,
-        device=device,
-        **cfg,
-    )
+    return _dispatch(SHORKIE_ADAPTERS, task, device, **cfg)
 
 
 def _build_yorzoi(task: Benchmark, device: str, **cfg: Any) -> Any:
-    if task.adapter_protocol is SequenceExpressionPredictor:
-        n_sample = cfg.pop("n_sample", None)
-        seed = cfg.pop("seed", 42)
-
-        if hasattr(task, "fasta_path") and hasattr(task, "gtf_path"):
-            from yeastbench.adapters.yorzoi_mpra_marginalized import (
-                YorzoiMPRAMarginalizedPredictor,
-            )
-
-            return YorzoiMPRAMarginalizedPredictor.from_pretrained(
-                fasta_path=task.fasta_path,
-                gtf_path=task.gtf_path,
-                device=device,
-                n_sample=n_sample,
-                seed=seed,
-                **cfg,
-            )
-
-        from yeastbench.adapters.yorzoi_mpra import YorzoiMPRAPredictor
-
-        return YorzoiMPRAPredictor.from_pretrained(device=device, **cfg)
-
-    from yeastbench.adapters.yorzoi_eqtl import YorzoiVariantScorer
-
-    return YorzoiVariantScorer.from_pretrained(
-        fasta_path=task.fasta_path,
-        gtf_path=task.gtf_path,
-        device=device,
-        **cfg,
-    )
+    return _dispatch(YORZOI_ADAPTERS, task, device, **cfg)
 
 
 MODELS: dict[str, ModelFactory] = {

@@ -14,7 +14,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 
-from yeastbench.adapters.protocols import SequenceExpressionPredictor
+from yeastbench.adapters.protocols import (
+    MarginalizedSequenceExpressionPredictor,
+    SequenceExpressionPredictor,
+)
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 
 
@@ -111,10 +114,13 @@ class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults
             else:
                 self.strata_indices[stratum] = df["pos"].to_numpy(dtype=int)
 
+    def _score_sequences(self, adapter: Any) -> np.ndarray:
+        """Adapter dispatch hook — overridden in subclasses that use a
+        different protocol method name (e.g. marginalized variant)."""
+        return np.asarray(adapter.predict_expressions(self.sequences), dtype=float)
+
     def evaluate(self, adapter: SequenceExpressionPredictor) -> MPRAResults:
-        scores = np.asarray(
-            adapter.predict_expressions(self.sequences), dtype=float
-        )
+        scores = self._score_sequences(adapter)
         assert len(scores) == len(self.labels)
 
         overall = _stratum_result("overall", scores, self.labels)
@@ -220,12 +226,13 @@ class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults
 
 
 class MPRAMarginalizedBenchmark(MPRARegressionBenchmark):
-    """MPRA benchmark variant that also exposes genome reference paths.
-
-    The marginalized adapters need FASTA + GTF to insert MPRA sequences
-    into native genomic contexts.  Evaluation, plotting, and persistence
-    are identical to the fixed-context variant.
+    """MPRA benchmark variant using the marginalized / native-position
+    protocol.  Adapters score a sequence by marginalizing its logSED over
+    22 native host-gene contexts.  Evaluation, plotting, and persistence
+    logic are inherited from the fixed-context variant.
     """
+
+    adapter_protocol: ClassVar[type] = MarginalizedSequenceExpressionPredictor
 
     def __init__(
         self,
@@ -245,6 +252,11 @@ class MPRAMarginalizedBenchmark(MPRARegressionBenchmark):
     @property
     def gtf_path(self) -> Path:
         return self._gtf_path
+
+    def _score_sequences(self, adapter: Any) -> np.ndarray:
+        return np.asarray(
+            adapter.predict_marginalized_expressions(self.sequences), dtype=float
+        )
 
 
 # ── Metric helpers ────────────────────────────────────────────

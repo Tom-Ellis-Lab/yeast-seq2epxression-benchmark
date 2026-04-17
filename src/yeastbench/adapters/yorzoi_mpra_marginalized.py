@@ -32,7 +32,7 @@ from yeastbench.adapters._marginalized_mpra import (
     extract_insert,
     reverse_complement,
 )
-from yeastbench.adapters.protocols import SequenceExpressionPredictor
+from yeastbench.adapters.protocols import MarginalizedSequenceExpressionPredictor
 from yeastbench.adapters.yorzoi_eqtl import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
@@ -50,7 +50,7 @@ log = logging.getLogger(__name__)
 N_TRACKS_TOTAL = 162  # 81 plus-strand + 81 minus-strand
 
 
-class YorzoiMPRAMarginalizedPredictor(SequenceExpressionPredictor):
+class YorzoiMPRAMarginalizedPredictor(MarginalizedSequenceExpressionPredictor):
     def __init__(
         self,
         model: Any,  # yorzoi.model.borzoi.Borzoi
@@ -260,7 +260,7 @@ class YorzoiMPRAMarginalizedPredictor(SequenceExpressionPredictor):
 
         return float(np.mean(gene_means))
 
-    def predict_expressions(self, seqs: Sequence[str]) -> np.ndarray:
+    def predict_marginalized_expressions(self, seqs: Sequence[str]) -> np.ndarray:
         n = len(seqs)
         scores = np.full(n, np.nan, dtype=np.float64)
 

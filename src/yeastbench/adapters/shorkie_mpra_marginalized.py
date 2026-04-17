@@ -29,7 +29,7 @@ from yeastbench.adapters._marginalized_mpra import (
     extract_insert,
     reverse_complement,
 )
-from yeastbench.adapters.protocols import SequenceExpressionPredictor
+from yeastbench.adapters.protocols import MarginalizedSequenceExpressionPredictor
 from yeastbench.adapters.shorkie_eqtl import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
@@ -90,7 +90,7 @@ SHORKIE_T0_RNA_SEQ_TRACK_IDS: list[int] = [
 ]
 
 
-class ShorkieMPRAMarginalizedPredictor(SequenceExpressionPredictor):
+class ShorkieMPRAMarginalizedPredictor(MarginalizedSequenceExpressionPredictor):
     def __init__(
         self,
         models: list["Shorkie"],
@@ -285,7 +285,7 @@ class ShorkieMPRAMarginalizedPredictor(SequenceExpressionPredictor):
 
         return float(np.mean(gene_means))
 
-    def predict_expressions(self, seqs: Sequence[str]) -> np.ndarray:
+    def predict_marginalized_expressions(self, seqs: Sequence[str]) -> np.ndarray:
         n = len(seqs)
         scores = np.full(n, np.nan, dtype=np.float64)
 

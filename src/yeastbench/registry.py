@@ -18,7 +18,7 @@ from yeastbench.adapters.protocols import (
 )
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
-from yeastbench.benchmarks.mpra import MPRARegressionBenchmark
+from yeastbench.benchmarks.mpra import MPRAMarginalizedBenchmark, MPRARegressionBenchmark
 
 ModelFactory = Callable[..., Any]
 TaskFactory = Callable[..., Benchmark]
@@ -31,6 +31,24 @@ TaskFactory = Callable[..., Benchmark]
 
 def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
     if task.adapter_protocol is SequenceExpressionPredictor:
+        # Pop marginalized-only kwargs so they don't leak to fixed-context.
+        n_sample = cfg.pop("n_sample", None)
+        seed = cfg.pop("seed", 42)
+
+        if hasattr(task, "fasta_path") and hasattr(task, "gtf_path"):
+            from yeastbench.adapters.shorkie_mpra_marginalized import (
+                ShorkieMPRAMarginalizedPredictor,
+            )
+
+            return ShorkieMPRAMarginalizedPredictor.from_checkpoints(
+                fasta_path=task.fasta_path,
+                gtf_path=task.gtf_path,
+                device=device,
+                n_sample=n_sample,
+                seed=seed,
+                **cfg,
+            )
+
         from yeastbench.adapters.shorkie_mpra import ShorkieMPRAPredictor
 
         return ShorkieMPRAPredictor.from_checkpoints(device=device, **cfg)
@@ -47,6 +65,23 @@ def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
 
 def _build_yorzoi(task: Benchmark, device: str, **cfg: Any) -> Any:
     if task.adapter_protocol is SequenceExpressionPredictor:
+        n_sample = cfg.pop("n_sample", None)
+        seed = cfg.pop("seed", 42)
+
+        if hasattr(task, "fasta_path") and hasattr(task, "gtf_path"):
+            from yeastbench.adapters.yorzoi_mpra_marginalized import (
+                YorzoiMPRAMarginalizedPredictor,
+            )
+
+            return YorzoiMPRAMarginalizedPredictor.from_pretrained(
+                fasta_path=task.fasta_path,
+                gtf_path=task.gtf_path,
+                device=device,
+                n_sample=n_sample,
+                seed=seed,
+                **cfg,
+            )
+
         from yeastbench.adapters.yorzoi_mpra import YorzoiMPRAPredictor
 
         return YorzoiMPRAPredictor.from_pretrained(device=device, **cfg)
@@ -96,7 +131,26 @@ def _build_rafi_mpra_promoter(data_dir: str | Path) -> Benchmark:
     )
 
 
+def _build_rafi_mpra_marginalized(
+    data_dir: str | Path,
+    fasta_path: str | Path,
+    gtf_path: str | Path,
+) -> Benchmark:
+    return MPRAMarginalizedBenchmark(
+        data_dir=Path(data_dir),
+        fasta_path=Path(fasta_path),
+        gtf_path=Path(gtf_path),
+        info=BenchmarkInfo(
+            name="rafi_mpra_marginalized",
+            version="v1",
+            description="Rafi / deBoer MPRA promoter expression (marginalized / native-position)",
+            distribution_uri="",
+        ),
+    )
+
+
 TASKS: dict[str, TaskFactory] = {
     "caudal_eqtl": _build_caudal_eqtl,
     "rafi_mpra_promoter": _build_rafi_mpra_promoter,
+    "rafi_mpra_marginalized": _build_rafi_mpra_marginalized,
 }

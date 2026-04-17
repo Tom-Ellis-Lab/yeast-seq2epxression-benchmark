@@ -54,77 +54,11 @@ assert isinstance(LinearPredictor(np.array([0.0])), SequenceExpressionPredictor)
 assert isinstance(ConstantPredictor(), SequenceExpressionPredictor)
 
 
-# ── Synthetic distribution fixture ────────────────────────────
+# ── Synthetic distribution uses mpra_distribution fixture from conftest ──
 
-N_SEQS = 200
-POLYT_OVERHANG = "TGCATTTTTTTCACATC"
-POLYA_OVERHANG = "GGTTACGGCTGTT"
+from conftest import N_MPRA_SEQS as N_SEQS
+
 INFO = BenchmarkInfo(name="test_mpra", version="test", description="test", distribution_uri="")
-
-
-def _random_seq(rng: np.random.Generator) -> str:
-    bases = list("ACGT")
-    n80 = "".join(rng.choice(bases, 80))
-    return POLYT_OVERHANG + n80 + POLYA_OVERHANG
-
-
-@pytest.fixture
-def mpra_distribution(tmp_path: Path) -> Path:
-    """Build a minimal synthetic MPRA distribution."""
-    rng = np.random.default_rng(42)
-    data_dir = tmp_path / "deboer"
-    data_dir.mkdir()
-    subset_dir = data_dir / "test_subset_ids"
-    subset_dir.mkdir()
-
-    # Master file
-    seqs = [_random_seq(rng) for _ in range(N_SEQS)]
-    labels = rng.uniform(0, 1, size=N_SEQS)
-    master = pd.DataFrame({"seq": seqs, "el": labels})
-    master.to_csv(
-        data_dir / "filtered_test_data_with_MAUDE_expression.txt",
-        sep="\t", header=False, index=False,
-    )
-
-    # Non-pair strata
-    all_idx = np.arange(N_SEQS)
-    rng.shuffle(all_idx)
-    non_pair_strata = {
-        "high_exp": all_idx[:10],
-        "low_exp": all_idx[10:20],
-        "yeast_exp": all_idx[20:30],
-        "random_exp": all_idx[30:60],
-        "challenging": all_idx[60:80],
-    }
-    for name, idx in non_pair_strata.items():
-        df = pd.DataFrame({
-            "tag": [f"tag_{i}" for i in idx],
-            "sequence": [seqs[i] for i in idx],
-            "pos": idx,
-            "exp": [None] * len(idx),
-        })
-        df.to_csv(subset_dir / STRATA_FILES[name], index=True)
-
-    # Pair strata
-    pair_strata = {
-        "SNVs": (all_idx[80:120].reshape(-1, 2)),
-        "motif_perturbation": (all_idx[120:140].reshape(-1, 2)),
-        "motif_tiling": (all_idx[140:160].reshape(-1, 2)),
-    }
-    for name, pairs in pair_strata.items():
-        df = pd.DataFrame({
-            "alt_tag": [f"alt_{i}" for i in range(len(pairs))],
-            "ref_tag": [f"ref_{i}" for i in range(len(pairs))],
-            "alt_sequence": [seqs[p[0]] for p in pairs],
-            "ref_sequence": [seqs[p[1]] for p in pairs],
-            "alt_pos": pairs[:, 0],
-            "ref_pos": pairs[:, 1],
-            "alt_exp": [None] * len(pairs),
-            "ref_exp": [None] * len(pairs),
-        })
-        df.to_csv(subset_dir / STRATA_FILES[name], index=True)
-
-    return data_dir
 
 
 # ── Metric helper tests ──────────────────────────────────────

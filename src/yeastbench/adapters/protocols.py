@@ -15,22 +15,9 @@ class Variant:
     gene_id: str  # Ensembl ID
 
 
-@dataclass(frozen=True)
-class Region:
-    chrom: str
-    start: int  # 1-based inclusive
-    end: int  # 1-based inclusive
-    strand: str  # '+' or '-'
-
-
 @runtime_checkable
 class VariantEffectScorer(Protocol):
     def score_variants(self, variants: Sequence[Variant]) -> np.ndarray: ...
-
-
-@runtime_checkable
-class TrackPredictor(Protocol):
-    def predict_tracks(self, regions: Sequence[Region]) -> list[np.ndarray]: ...
 
 
 @runtime_checkable

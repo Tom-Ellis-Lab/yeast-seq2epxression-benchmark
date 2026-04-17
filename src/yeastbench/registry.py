@@ -17,6 +17,7 @@ from typing import Any, Callable
 from yeastbench.adapters.protocols import (
     MarginalizedSequenceExpressionPredictor,
     SequenceExpressionPredictor,
+    TerminatorMarginalizedExpressionPredictor,
     VariantEffectScorer,
 )
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
@@ -25,6 +26,7 @@ from yeastbench.benchmarks.mpra import (
     MPRAMarginalizedBenchmark,
     MPRARegressionBenchmark,
 )
+from yeastbench.benchmarks.shalem import ShalemMPRAMarginalizedBenchmark
 
 ModelFactory = Callable[..., Any]
 TaskFactory = Callable[..., Benchmark]
@@ -100,17 +102,41 @@ def _yorzoi_mpra_marginalized_adapter(device, fasta_path, gtf_path, **cfg):
     )
 
 
+def _shorkie_shalem_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.shorkie_shalem import ShorkieShalemPredictor
+
+    return ShorkieShalemPredictor.from_checkpoints(
+        fasta_path=fasta_path,
+        gtf_path=gtf_path,
+        device=device,
+        **cfg,
+    )
+
+
+def _yorzoi_shalem_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.yorzoi_shalem import YorzoiShalemPredictor
+
+    return YorzoiShalemPredictor.from_pretrained(
+        fasta_path=fasta_path,
+        gtf_path=gtf_path,
+        device=device,
+        **cfg,
+    )
+
+
 # protocol → (build_fn, needs_refs)
 SHORKIE_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     VariantEffectScorer: (_shorkie_eqtl_adapter, True),
     SequenceExpressionPredictor: (_shorkie_mpra_fixed_adapter, False),
     MarginalizedSequenceExpressionPredictor: (_shorkie_mpra_marginalized_adapter, True),
+    TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, True),
 }
 
 YORZOI_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     VariantEffectScorer: (_yorzoi_eqtl_adapter, True),
     SequenceExpressionPredictor: (_yorzoi_mpra_fixed_adapter, False),
     MarginalizedSequenceExpressionPredictor: (_yorzoi_mpra_marginalized_adapter, True),
+    TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, True),
 }
 
 
@@ -198,8 +224,27 @@ def _build_rafi_mpra_marginalized(
     )
 
 
+def _build_shalem_mpra_marginalized(
+    data_path: str | Path,
+    fasta_path: str | Path,
+    gtf_path: str | Path,
+) -> Benchmark:
+    return ShalemMPRAMarginalizedBenchmark(
+        data_path=Path(data_path),
+        fasta_path=Path(fasta_path),
+        gtf_path=Path(gtf_path),
+        info=BenchmarkInfo(
+            name="shalem_mpra_marginalized",
+            version="v1",
+            description="Shalem / Segal MPRA terminator expression (marginalized / native-position)",
+            distribution_uri="",
+        ),
+    )
+
+
 TASKS: dict[str, TaskFactory] = {
     "caudal_eqtl": _build_caudal_eqtl,
     "rafi_mpra_promoter": _build_rafi_mpra_promoter,
     "rafi_mpra_marginalized": _build_rafi_mpra_marginalized,
+    "shalem_mpra_marginalized": _build_shalem_mpra_marginalized,
 }

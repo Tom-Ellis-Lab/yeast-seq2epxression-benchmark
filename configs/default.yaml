@@ -19,10 +19,16 @@ device: cuda
 tasks_config:
   caudal_eqtl:
     distribution_dir: data/processed/caudal_eqtl_v1
+  rafi_mpra_promoter:
+    data_dir: data/raw/deboer
+  rafi_mpra_marginalized:
+    data_dir: data/raw/deboer
+    fasta_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.fa
+    gtf_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.115.gtf
 
 runs:
   - model: shorkie
-    tasks: [caudal_eqtl]
+    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized]
     model_config:
       params_path: data/models/shorkie/params.json
       checkpoint_paths:
@@ -34,12 +40,12 @@ runs:
         - data/models/shorkie/checkpoints/f5.h5
         - data/models/shorkie/checkpoints/f6.h5
         - data/models/shorkie/checkpoints/f7.h5
-      batch_size: 8
+      batch_size: 32
       use_rc: true
 
   - model: yorzoi
-    tasks: [caudal_eqtl]
+    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized]
     model_config:
       hf_repo: tom-ellis-lab/yorzoi
-      batch_size: 16
+      batch_size: 64
       use_rc: true

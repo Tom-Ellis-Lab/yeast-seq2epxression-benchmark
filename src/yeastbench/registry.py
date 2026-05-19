@@ -126,16 +126,26 @@ def _yorzoi_shalem_adapter(device, fasta_path, gtf_path, **cfg):
     )
 
 
-def _shorkie_wu_adapter(device, **cfg):
+def _shorkie_wu_adapter(device, fasta_path, gtf_path, **cfg):
     from yeastbench.adapters.shorkie_wu import ShorkieWuPredictor
 
-    return ShorkieWuPredictor()
+    return ShorkieWuPredictor.from_checkpoints(
+        fasta_path=fasta_path,
+        gtf_path=gtf_path,
+        device=device,
+        **cfg,
+    )
 
 
-def _yorzoi_wu_adapter(device, **cfg):
+def _yorzoi_wu_adapter(device, fasta_path, gtf_path, **cfg):
     from yeastbench.adapters.yorzoi_wu import YorzoiWuPredictor
 
-    return YorzoiWuPredictor()
+    return YorzoiWuPredictor.from_pretrained(
+        fasta_path=fasta_path,
+        gtf_path=gtf_path,
+        device=device,
+        **cfg,
+    )
 
 
 # protocol → (build_fn, needs_refs)
@@ -282,10 +292,23 @@ def _build_shalem_mpra_marginalized(
     )
 
 
-def _build_wu_rfpins(cassette_seq, labels_path) -> Benchmark:
-    print("building wu rfp insertion benchmark")
+def _build_wu_rfpins(
+    cassette_seq: str | Path,
+    labels_path: str | Path,
+    fasta_path: str | Path,
+    gtf_path: str | Path,
+) -> Benchmark:
     return RFPInsertionBenchmark(
-        cassette_seq=Path(cassette_seq), labels_path=Path(labels_path)
+        cassette_seq=Path(cassette_seq),
+        labels_path=Path(labels_path),
+        fasta_path=Path(fasta_path),
+        gtf_path=Path(gtf_path),
+        info=BenchmarkInfo(
+            name="wu_rfpins",
+            version="v1",
+            description="Wu et al. genome-wide RFP-cassette position effects",
+            distribution_uri="",
+        ),
     )
 
 
@@ -295,5 +318,5 @@ TASKS: dict[str, TaskFactory] = {
     "rafi_mpra_promoter": _build_rafi_mpra_promoter,
     "rafi_mpra_marginalized": _build_rafi_mpra_marginalized,
     "shalem_mpra_marginalized": _build_shalem_mpra_marginalized,
-    "wu_frpins": _build_wu_rfpins,
+    "wu_rfpins": _build_wu_rfpins,
 }

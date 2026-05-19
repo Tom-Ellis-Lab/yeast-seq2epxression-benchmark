@@ -24,7 +24,16 @@ class VariantEffectScorer(Protocol):
 class SequenceExpressionPredictor(Protocol):
     """Predict the expression of each input sequence in a fixed construct
     context (e.g., embedded in the DREAM MPRA plasmid scaffold)."""
+
     def predict_expressions(self, seqs: Sequence[str]) -> np.ndarray: ...
+
+
+@runtime_checkable
+class CassetteExpressionPredictor(Protocol):
+    """Predict the expression of a reporter gene in a casette that is
+    integrated at varying locations."""
+
+    def predict_expressions(self, locus) -> np.ndarray: ...
 
 
 @runtime_checkable
@@ -33,6 +42,7 @@ class MarginalizedSequenceExpressionPredictor(Protocol):
     host-gene contexts, inserted **upstream** of the host-gene TSS
     (promoter-MPRA flavour, e.g. Rafi/deBoer).  Returns mean logSED across
     a committed list of host genes."""
+
     def predict_marginalized_expressions(self, seqs: Sequence[str]) -> np.ndarray: ...
 
 
@@ -47,4 +57,5 @@ class TerminatorMarginalizedExpressionPredictor(Protocol):
     insertion *site* and the surrounding scaffold are semantically
     different (promoter-region insertion vs terminator-region insertion),
     so the two protocols cleanly disambiguate in the registry."""
+
     def predict_terminator_marginalized(self, seqs: Sequence[str]) -> np.ndarray: ...

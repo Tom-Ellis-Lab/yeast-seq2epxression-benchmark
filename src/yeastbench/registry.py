@@ -19,6 +19,7 @@ from yeastbench.adapters.protocols import (
     SequenceExpressionPredictor,
     TerminatorMarginalizedExpressionPredictor,
     VariantEffectScorer,
+    CassetteExpressionPredictor,
 )
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
@@ -27,6 +28,7 @@ from yeastbench.benchmarks.mpra import (
     MPRARegressionBenchmark,
 )
 from yeastbench.benchmarks.shalem import ShalemMPRAMarginalizedBenchmark
+from yeastbench.benchmarks.rfpins import RFPInsertionBenchmark
 
 ModelFactory = Callable[..., Any]
 TaskFactory = Callable[..., Benchmark]
@@ -124,12 +126,25 @@ def _yorzoi_shalem_adapter(device, fasta_path, gtf_path, **cfg):
     )
 
 
+def _shorkie_wu_adapter(device, **cfg):
+    from yeastbench.adapters.shorkie_wu import ShorkieWuPredictor
+
+    return ShorkieWuPredictor()
+
+
+def _yorzoi_wu_adapter(device, **cfg):
+    from yeastbench.adapters.yorzoi_wu import YorzoiWuPredictor
+
+    return YorzoiWuPredictor()
+
+
 # protocol → (build_fn, needs_refs)
 SHORKIE_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     VariantEffectScorer: (_shorkie_eqtl_adapter, True),
     SequenceExpressionPredictor: (_shorkie_mpra_fixed_adapter, False),
     MarginalizedSequenceExpressionPredictor: (_shorkie_mpra_marginalized_adapter, True),
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, True),
+    CassetteExpressionPredictor: (_shorkie_wu_adapter, True),
 }
 
 YORZOI_ADAPTERS: dict[type, tuple[Callable, bool]] = {
@@ -137,6 +152,7 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     SequenceExpressionPredictor: (_yorzoi_mpra_fixed_adapter, False),
     MarginalizedSequenceExpressionPredictor: (_yorzoi_mpra_marginalized_adapter, True),
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, True),
+    CassetteExpressionPredictor: (_yorzoi_wu_adapter, True),
 }
 
 
@@ -182,14 +198,38 @@ MODELS: dict[str, ModelFactory] = {
 # ──────────────────────────────────────────────────────────────
 
 
-def _build_caudal_eqtl(distribution_dir: str | Path) -> Benchmark:
+def _build_caudal_eqtl(
+    distribution_dir: str | Path,
+    fasta_path: str | Path,
+    gtf_path: str | Path,
+) -> Benchmark:
     return EQTLClassificationBenchmark(
         distribution_dir=Path(distribution_dir),
+        fasta_path=Path(fasta_path),
+        gtf_path=Path(gtf_path),
         info=BenchmarkInfo(
             name="caudal_eqtl",
             version="v1",
             description="Caudal et al. yeast cis-eQTL classification",
             distribution_uri="gs://yeast-seq2expression/caudal_eqtl_v1/",
+        ),
+    )
+
+
+def _build_kita_eqtl(
+    distribution_dir: str | Path,
+    fasta_path: str | Path,
+    gtf_path: str | Path,
+) -> Benchmark:
+    return EQTLClassificationBenchmark(
+        distribution_dir=Path(distribution_dir),
+        fasta_path=Path(fasta_path),
+        gtf_path=Path(gtf_path),
+        info=BenchmarkInfo(
+            name="kita_eqtl",
+            version="v1",
+            description="Kita et al. yeast cis-eQTL classification",
+            distribution_uri="gs://yeast-seq2expression/kita_eqtl_v1/",
         ),
     )
 
@@ -242,9 +282,18 @@ def _build_shalem_mpra_marginalized(
     )
 
 
+def _build_wu_rfpins(cassette_seq, labels_path) -> Benchmark:
+    print("building wu rfp insertion benchmark")
+    return RFPInsertionBenchmark(
+        cassette_seq=Path(cassette_seq), labels_path=Path(labels_path)
+    )
+
+
 TASKS: dict[str, TaskFactory] = {
     "caudal_eqtl": _build_caudal_eqtl,
+    "kita_eqtl": _build_kita_eqtl,
     "rafi_mpra_promoter": _build_rafi_mpra_promoter,
     "rafi_mpra_marginalized": _build_rafi_mpra_marginalized,
     "shalem_mpra_marginalized": _build_shalem_mpra_marginalized,
+    "wu_frpins": _build_wu_rfpins,
 }

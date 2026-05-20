@@ -238,40 +238,60 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   run. Implication: the upper bound on Pearson r achievable on
   Brooks Tier-1 is probably ~0.7–0.85 in absolute terms — important
   context for any headline number.
-- [x] **First Yorzoi headline on the rebuilt TSV (2026-05-20)**:
-    * Tier-1 (n_scored = 327): dir-acc 0.609, r 0.281, ρ 0.288 —
-      consistent with the Yorzoi paper's 5-strain numbers (r 0.33).
-    * Calibration (n = 198): within-range 0.126, mean |z| 9.50.
-    * Tier-2 (n_scored = 327): r̄ 0.831, JS̄ 0.069.
-  Diagnosis: Yorzoi predicts the per-base coverage **shape** within the
-  gene body very well, but **over-predicts LFC magnitude** when the
-  surrounding context in the alt window is mostly different from the
-  native window (cluster split visible in `tier1_scatter.png` — pred ≈ 0
-  for low-hamming pairs, pred ≈ +7 for high-hamming pairs). Not a bug;
-  a model-behaviour finding worth recording.
+- [x] **Per-strain matched-track routing** (2026-05-20). Yorzoi adapter
+  gains `track_mode = "all" | "nanopore_all" | "matched"` (default
+  matched). Matched routes per-call: alt construct uses the supplied
+  strain's Nanopore track(s); native uses JS94's 3 deep-WT tracks.
+  Switching `"all" → "matched"` shifts Tier-1 dir-acc 0.609 → 0.642,
+  Spearman ρ 0.288 → 0.348; Pearson r barely moves. Tier-2 is
+  saturated by training leakage (Yorzoi was trained on these tracks).
+- [x] **Per-replicate LFC framing + LOO noise ceiling** (2026-05-20).
+  The Brooks benchmark now computes 0–3 *predicted* LFCs per sample
+  (one per JS94 deep-WT replicate) symmetric with the 0–3 truth LFCs.
+  Per-replicate metrics; headline = mean across replicates. LOO
+  ceiling: for each k, compute Pearson(true_lfc_runs[:, k],
+  mean(true_lfc_runs[:, j ≠ k])). Conservative (denominator-side noise
+  only; strain side is single-rep). Same construction for dir-acc.
+  Three JS94 virtual-strain aliases pinned in `_yorzoi_constants.py`:
+  `JS94_r0 → [73]`, `JS94_r1 → [75]`, `JS94_r2 → [77]`.
+- [x] **First Yorzoi headline with the ceiling (2026-05-20)**:
+    * Tier-1 (n_scored = 327):
+        - dir-acc 0.635 (ceiling **0.806**) → 79% of recoverable
+        - Pearson r 0.222 (ceiling **0.805**) → 28% of recoverable
+        - Spearman ρ 0.315
+    * Per-replicate spread (r): [0.299, 0.213, 0.154]; ceilings
+      [0.789, 0.954, 0.671]. Replicate 1 (20180628) is by far the
+      most reliable JS94 run but Yorzoi predicts replicate 0
+      (20180214) best — suggests bias toward run 0's noise pattern.
+    * Calibration (n = 198): within-range 0.146, mean |z| 11.31.
+    * Tier-2 (n_scored = 327): r̄ 0.834, JS̄ 0.067.
+- [x] **Asymmetric over-prediction finding (2026-05-20)** —
+  recorded from the per-sample interval plot
+  (`tier1_per_sample.png`). Quantified over 576 (sample, replicate)
+  pred-truth pairs in the scored cohort:
+    * Truth is **65% downregulation** (median LFC −0.53, range
+      [−4.1, +2.2]). SCRaMBLE rearrangements predominantly disrupt
+      gene neighborhoods → downregulation is the baseline outcome.
+    * Yorzoi predicts **57% upregulation** (median LFC +0.25, range
+      [−7.6, +14.8]). Sign-correct on true positives 77%; on true
+      negatives 54%.
+    * Magnitude distribution is bimodal: downward predictions are
+      bounded to roughly [−1, 0], while upward predictions are either
+      ~0 or saturate in [+5, +12]. The middle band [+1, +5] is nearly
+      empty.
+    * Mechanism (hypothesis from earlier hamming-distance analysis):
+      Yorzoi treats any heavily-replaced surrounding context as
+      "fresh, transcriptionally active neighborhood" → strong
+      upregulation. The native synIXR context is below the
+      expression-density baseline of most yeast neighborhoods in
+      training, so the asymmetry is structural to how the model
+      learned context-vs-expression.
+  Implication: scalar LFC predictions out of Yorzoi for novel
+  structural rearrangements are not directly usable as effect-size
+  estimates without a calibration correction. Rank order (Spearman ρ)
+  and direction are more trustworthy than the absolute magnitudes.
 
 **Open.**
-
-- [ ] **LOO reproducibility ceiling.** The previous scalar "ceiling"
-  was a null-test (ctrl-vs-signal cross-correlation), not a r-upper-
-  bound; it has been removed from `BrooksResults`. Replacement: for
-  each `k ∈ {0, 1, 2}`, recompute the label as
-  `lfc_loo_k = log2((norm_cov_strain + 1) / (mean(runs ∖ k) + 1))` and
-  average `pearsonr(lfc_loo_k, true_lfc_full)` across k — that's a
-  conservative upper bound on Pearson r (denominator-side noise only;
-  the strain numerator is single-rep, so the true ceiling is somewhere
-  below this). Same construction for dir-acc with balanced accuracy on
-  sign. Wire into `summary_dict` + `headline` + Tier-1 scatter
-  annotation. Land before reporting headline numbers externally.
-- [ ] **Restrict to Nanopore-direct-RNA tracks only.** v1 averages
-  across all 81 strand-matched Yorzoi tracks, mixing Illumina /
-  Nanopore / various protocols. Brooks truth is Nanopore direct RNA →
-  putting the model in-distribution should improve every Brooks metric.
-  Prereq: identify Nanopore-direct-RNA track indices from
-  `yorzoi/track_annotation.json` (user maintains Yorzoi). Then add a
-  `track_subset` arg to `YorzoiBrooksPredictor` (mirroring Shorkie's
-  `SHORKIE_T0_RNA_SEQ_TRACK_IDS`) and pin the indices in
-  `_yorzoi_constants.py`. Re-run; compare.
 - [ ] Shorkie Tier-1 substitute — deferred (not Nanopore-trained;
   scalar LFC comparison would be unfair). Tier-2 shape comparison on
   Shorkie is a possible future angle but needs its own design.

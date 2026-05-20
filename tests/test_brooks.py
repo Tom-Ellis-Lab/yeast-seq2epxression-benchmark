@@ -159,7 +159,8 @@ class TestBrooksBenchmark:
         out = tmp_path / "out"
         b.save_results(res, out)
         loaded = b.load_results(out)
-        np.testing.assert_array_almost_equal(loaded.pred_lfc, res.pred_lfc)
+        np.testing.assert_array_almost_equal(loaded.pred_lfc_runs,
+                                              res.pred_lfc_runs)
         np.testing.assert_array_almost_equal(loaded.true_lfc_runs,
                                               res.true_lfc_runs)
         np.testing.assert_array_equal(loaded.n_reps_supported,
@@ -167,20 +168,33 @@ class TestBrooksBenchmark:
         assert loaded.sample_ids == res.sample_ids
         assert loaded.n_scored == res.n_scored
         assert loaded.n_calibration == res.n_calibration
+        # Per-replicate r and ceiling round-trip too
+        np.testing.assert_array_almost_equal(loaded.pearson_r_per_rep,
+                                              res.pearson_r_per_rep)
+        np.testing.assert_array_almost_equal(loaded.ceiling_r_per_rep,
+                                              res.ceiling_r_per_rep)
 
     def test_plot_and_summary_and_headline(self, brooks_tsv, tmp_path):
         b = BrooksScrambleBenchmark(brooks_tsv, INFO)
         res = b.evaluate(_MockAdapter(b.df))
         b.plot(res, tmp_path / "p")
         assert (tmp_path / "p" / "tier1_scatter.png").exists()
+        # Also writes the per-sample interval plot
+        assert (tmp_path / "p" / "tier1_per_sample.png").exists()
         s = b.summary_dict(res)
         for k in ("n_total", "n_scored", "n_calibration", "n_weak_baseline",
                   "tier1_dir_balanced_acc", "tier1_pearson_r",
+                  "tier1_ceiling_pearson_r",
+                  "tier1_ceiling_dir_balanced_acc",
+                  "tier1_pearson_r_per_rep", "tier1_ceiling_r_per_rep",
                   "tier1_within_range_rate", "tier1_mean_abs_z",
                   "tier2_pearson_mean", "tier2_js_mean"):
             assert k in s
+        # Per-rep arrays serialise as 3-element lists
+        assert len(s["tier1_pearson_r_per_rep"]) == 3
+        assert len(s["tier1_ceiling_r_per_rep"]) == 3
         h = b.headline(res)
-        assert "Tier-1" in h and "calibration" in h and "Tier-2" in h
+        assert "Tier-1" in h and "ceiling" in h and "Tier-2" in h
 
     def test_low_support_dropped(self, brooks_tsv):
         # flip one row to low_support and confirm it's excluded
@@ -203,6 +217,18 @@ class TestBrooksBenchmark:
         assert res.n_scored == 5
         assert res.n_calibration == 5
         assert res.n_weak_baseline == 1
+
+    def test_ceiling_is_high_when_replicates_agree(self, brooks_tsv):
+        # The fixture's JS94 norm_runs are drawn from uniform(9.5, 10.5) so
+        # the three replicates produce nearly-identical true LFCs per
+        # sample → the LOO ceiling should be ~1.0 (test-retest of an
+        # almost-noiseless label is near-perfect).
+        b = BrooksScrambleBenchmark(brooks_tsv, INFO)
+        res = b.evaluate(_MockAdapter(b.df))
+        assert res.ceiling_pearson_r > 0.99
+        assert res.ceiling_dir_balanced_acc > 0.99
+        # All three per-replicate ceilings are computed
+        assert np.all(np.isfinite(res.ceiling_r_per_rep))
 
     def test_partial_replicate_support_keeps_sample_but_lowers_calibration(
             self, brooks_tsv):

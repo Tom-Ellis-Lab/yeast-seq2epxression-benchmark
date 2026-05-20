@@ -54,4 +54,12 @@ BROOKS_NANOPORE_TRACKS_BY_STRAIN: dict[str, list[int]] = {
     "JS727": [64], "JS728": [65], "JS729": [66], "JS730": [67],
     "JS731": [68, 69, 70], "JS732": [71], "JS733": [72],
     "JS94": [73, 75, 77],
+    # Per-replicate single-track aliases for JS94 (matched to the order
+    # of `norm_cov_js94_runs` / `js94_reads_runs` in the distribution:
+    # idx 0 = 20180214, idx 1 = 20180628, idx 2 = 20181203). The Brooks
+    # benchmark uses these to compute per-replicate prediction LFCs so
+    # the prediction noise structure mirrors the truth noise structure.
+    "JS94_r0": [73],   # 20180214
+    "JS94_r1": [75],   # 20180628
+    "JS94_r2": [77],   # 20181203
 }

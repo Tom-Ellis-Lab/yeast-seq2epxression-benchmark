@@ -17,7 +17,7 @@ from scipy.stats import pearsonr, spearmanr
 
 from yeastbench.adapters.protocols import TerminatorMarginalizedExpressionPredictor
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
-from yeastbench.benchmarks.mpra import MPRAStratumResult
+from yeastbench.benchmarks._metrics import MPRAStratumResult
 
 
 RAW_TABLE_NAME = "segal_2015.tsv"

@@ -217,6 +217,20 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   averaging with strand swap; inverse Borzoi `x^0.75 + sqrt` transform;
   per-base unbin (BIN_WIDTH = 10) — predictions are in raw count units
   matching the per-base Nanopore truth in the TSV.
+- [x] **Shorkie adapter `ShorkieBrooksPredictor` (2026-05-20)** —
+  8-fold ensemble; T0 RNA-seq tracks (384 unstranded); no transform
+  inversion (Poisson/softplus head outputs raw counts directly);
+  unbins 16 bp → per-base. `varies_by_strain = False` (no Brooks-
+  specific output tracks → native predicted once and broadcast across
+  the JS94 replicate axis). `batch_size = 4`. Headline (shared cohort
+  with Yorzoi, n_scored = 327): Pearson r −0.020, Spearman ρ −0.038,
+  dir-acc 0.553 — essentially blind to SCRaMBLE LFCs, in contrast
+  to Yorzoi's leakage-driven r 0.222 / dir-acc 0.635.
+- [x] **Batched protocol + adapters (2026-05-20)**. Protocol takes
+  `predict_coverage_batch(seqs, strands, strains) → (B, out_len)`;
+  adapters expose `batch_size`. Yorzoi: 5× speedup (28 s → 5.7 s).
+  Shorkie: ~20× speedup (was running 35+ min unbatched; 128 s
+  batched). `tqdm` progress streams per chunk with `PYTHONUNBUFFERED=1`.
 - [x] `BrooksScrambleBenchmark` class — reads only `brooks_scramble_v1.tsv`.
   **Per-replicate LFC design** (2026-05-20): for each sample, compute
   0–3 true LFCs (one per JS94 deep run with raw_reads ≥ MIN_READS_PER_RUN).

@@ -35,9 +35,11 @@ tasks_config:
     data_path: data/tasks/shalem_mpra_terminator/segal_2015.tsv
     fasta_path: data/tasks/R64-1-1.fa
     gtf_path: data/tasks/R64-1-1.115.gtf
-  wu_rpfins:
-    label_path: data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv
+  wu_rfpins:
     cassette_seq: data/tasks/wu_rfpins/expression_cassette.fasta
+    labels_path: data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
 
 runs:
   - model: yorzoi

@@ -22,30 +22,18 @@ from yeastbench.adapters._genome import (
     parse_gene_annotations,
     place_window,
 )
+from yeastbench.adapters._shorkie_constants import (
+    BIN_WIDTH,
+    CROP_BP_EACH_SIDE,
+    OUTPUT_BINS,
+    SEQ_LEN,
+    SHORKIE_1011_RNA_SEQ_TRACK_IDS,
+)
 from yeastbench.adapters.protocols import Variant, VariantEffectScorer
 
 if TYPE_CHECKING:
     import torch
     from yeastbench.models.shorkie import Shorkie
-
-
-SHORKIE_1011_RNA_SEQ_TRACK_IDS: list[int] = list(range(4201, 5215))
-"""Output-track indices for the '1000-RNA-Seq' group from the Shorkie
-canonical targets sheet (https://storage.googleapis.com/seqnn-share/shorkie/targets.txt).
-
-The benchmark spec names this set '1011 RNA-seq tracks'. The actual count
-in the released targets sheet is **1014** (indices 4201..5214 inclusive,
-contiguous). Discrepancy is upstream's; we pin to the released file."""
-
-
-# Architecture constants derived from data/models/shorkie/params.json:
-# 16,384 bp input, ResTower (pool 2, repeat 7) → 128× downsample, then 3
-# UNet upsamples (2× each) → 16× net downsample, then Cropping1D(64 bins
-# each side) → 896 output bins covering the central 14,336 bp.
-SEQ_LEN = 16384
-OUTPUT_BINS = 896
-BIN_WIDTH = 16
-CROP_BP_EACH_SIDE = 1024  # 64 bins × 16 bp/bin
 
 
 @dataclass(frozen=True)

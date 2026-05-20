@@ -30,10 +30,12 @@ class SequenceExpressionPredictor(Protocol):
 
 @runtime_checkable
 class CassetteExpressionPredictor(Protocol):
-    """Predict the expression of a reporter gene in a casette that is
-    integrated at varying locations."""
+    """Predict expression of a reporter in one constant cassette that is
+    integrated at varying genomic loci (Wu et al. position-effect task).
+    ``loci`` is a sequence of resolved ``WuLocus`` records; returns one
+    scalar per locus, aligned to input order."""
 
-    def predict_expressions(self, locus) -> np.ndarray: ...
+    def predict_expressions(self, loci: Sequence) -> np.ndarray: ...
 
 
 @runtime_checkable

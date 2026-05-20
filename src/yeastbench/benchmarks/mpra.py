@@ -18,6 +18,7 @@ from yeastbench.adapters.protocols import (
     MarginalizedSequenceExpressionPredictor,
     SequenceExpressionPredictor,
 )
+from yeastbench.benchmarks._metrics import MPRAStratumResult
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 
 
@@ -44,14 +45,7 @@ PAIR_STRATA = {"SNVs", "motif_perturbation", "motif_tiling"}
 
 
 # ── Results ───────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class MPRAStratumResult:
-    name: str
-    n: int
-    pearson_r: float
-    spearman_rho: float
+# `MPRAStratumResult` lives in `_metrics.py` (shared with Shalem).
 
 
 @dataclass(frozen=True)

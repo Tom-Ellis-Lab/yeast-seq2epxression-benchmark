@@ -7,14 +7,14 @@ Implements the logSED-agg scoring procedure documented in
 - ``+`` (forward) strand tracks only (indices 0..80 of the 162-track
   output), regardless of the target gene's strand. Locked by the spec.
 - Aggregation: cross-track mean → exon-bin sum → log2 fold change.
-- Optional RC averaging, with proper track-strand swap on the RC pass.
+- Optional RC averaging — handled in `yeastbench.models.yorzoi.Yorzoi`.
 """
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import numpy as np
 
@@ -37,9 +37,9 @@ from yeastbench.adapters._yorzoi_constants import (
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,
     SEQ_LEN,
-    YORZOI_MINUS_TRACK_IDS,
     YORZOI_PLUS_TRACK_IDS,
 )
+from yeastbench.models.yorzoi import Yorzoi
 
 
 @dataclass(frozen=True)
@@ -55,31 +55,25 @@ class _ScoringJob:
 class YorzoiVariantScorer(VariantEffectScorer):
     def __init__(
         self,
-        model: Any,  # yorzoi.model.borzoi.Borzoi
+        model: Yorzoi,
         fasta_path: str | Path,
         gtf_path: str | Path,
         track_subset: list[int] = YORZOI_PLUS_TRACK_IDS,
-        device: "str | torch.device" = "cuda",
         batch_size: int = 16,
-        use_rc: bool = True,
-        autocast: bool = True,
     ) -> None:
         import pysam
-        import torch as _torch
 
         self.model = model
         self.fasta = pysam.FastaFile(str(fasta_path))
         self.genes = parse_gene_annotations(gtf_path)
         self.track_subset = list(track_subset)
-        self.device = _torch.device(device)
         self.batch_size = batch_size
-        self.use_rc = use_rc
-        self.autocast = autocast
-        self.model.to(self.device).eval()
 
-        self._is_plus_only_subset = self.track_subset == YORZOI_PLUS_TRACK_IDS
-        self._plus_subset_t = None
-        self._minus_subset_t = None
+        assert self.track_subset == YORZOI_PLUS_TRACK_IDS, (
+            "YorzoiVariantScorer currently only supports the default "
+            "plus-strand track subset; RC swap for arbitrary subsets is "
+            "not implemented (and wasn't in the pre-refactor version)."
+        )
 
     @classmethod
     def from_pretrained(
@@ -93,12 +87,14 @@ class YorzoiVariantScorer(VariantEffectScorer):
         use_rc: bool = True,
         autocast: bool = True,
     ) -> "YorzoiVariantScorer":
-        from yorzoi.model.borzoi import Borzoi
-
-        model = Borzoi.from_pretrained(hf_repo)
         return cls(
-            model, fasta_path, gtf_path, list(track_subset),
-            device, batch_size, use_rc=use_rc, autocast=autocast,
+            Yorzoi.from_pretrained(
+                hf_repo, device=device, use_rc=use_rc, autocast=autocast,
+            ),
+            fasta_path=fasta_path,
+            gtf_path=gtf_path,
+            track_subset=list(track_subset),
+            batch_size=batch_size,
         )
 
     def _prepare_jobs(self, variants: Sequence[Variant]) -> list[_ScoringJob]:
@@ -157,60 +153,15 @@ class YorzoiVariantScorer(VariantEffectScorer):
             alt_oh = ref_oh  # variant outside window → no mutation
         return ref_oh, alt_oh
 
-    def _forward_with_rc(self, x: "torch.Tensor") -> "torch.Tensor":
-        """Run forward (+optional RC) and return (B, len(track_subset), OUTPUT_BINS).
-
-        For stranded Yorzoi tracks, RC averaging requires swapping the +
-        and - track groups on the RC pass (since feeding RC(X) to the
-        model means its '+' output tracks predict what was X's '-'
-        strand). For the spec-default ``plus_only`` subset that reduces
-        to: forward → tracks 0..80; RC → tracks 81..161 flipped along the
-        bin axis; average the two.
-        """
-        import torch as _torch
-
-        track_idx_t = _torch.tensor(
-            self.track_subset, device=self.device, dtype=_torch.long
-        )
-        ctx = (
-            _torch.autocast(device_type="cuda")
-            if self.autocast and self.device.type == "cuda"
-            else _torch.amp.autocast(device_type="cpu", enabled=False)
-        )
-        with ctx:
-            out_fwd = self.model(x)  # (B, 162, 300)
-        if not self.use_rc:
-            return out_fwd.index_select(1, track_idx_t)
-
-        # Reverse-complement input: x is (B, L, 4) channels-last.
-        # Flip position axis (dim=1) and channel axis (dim=2) to complement.
-        x_rc = x.flip(dims=[1, 2])
-        with ctx:
-            out_rc = self.model(x_rc)  # (B, 162, 300)
-
-        if self._is_plus_only_subset:
-            swap_idx = _torch.tensor(
-                YORZOI_MINUS_TRACK_IDS, device=self.device, dtype=_torch.long
-            )
-            out_rc_aligned = out_rc.index_select(1, swap_idx).flip(dims=[2])
-            out_fwd_sub = out_fwd.index_select(1, track_idx_t)
-        else:
-            # Generic: for each requested track, its RC counterpart is
-            # the strand-paired track (± 81). Require the track subset to
-            # be either all-plus (0..80) or all-minus (81..161) for now —
-            # mixed subsets would need per-track mapping.
-            raise NotImplementedError(
-                "RC averaging for non-default Yorzoi track subsets not implemented yet."
-            )
-
-        return 0.5 * (out_fwd_sub + out_rc_aligned)
-
     def score_variants(self, variants: Sequence[Variant]) -> np.ndarray:
         import torch as _torch
 
         jobs = self._prepare_jobs(variants)
         n = len(jobs)
         scores = np.empty(n, dtype=np.float64)
+        plus_idx_t = _torch.tensor(
+            self.track_subset, device=self.model.device, dtype=_torch.long
+        )
 
         for batch_start in range(0, n, self.batch_size):
             batch_end = min(batch_start + self.batch_size, n)
@@ -226,19 +177,19 @@ class YorzoiVariantScorer(VariantEffectScorer):
                 np.concatenate(
                     [np.stack(ref_arrs, axis=0), np.stack(alt_arrs, axis=0)], axis=0
                 )
-            ).to(self.device)
+            ).to(self.model.device)
 
             with _torch.no_grad():
-                pred = self._forward_with_rc(x).float()  # (2B, n_tracks, 300)
-
-            cov = pred.mean(dim=1)  # cross-track mean → (2B, 300)
+                pred = self.model.forward_tracks_binned(x).float()  # (2B, 162, 300)
+            # Cross-track mean over plus-strand tracks → (2B, 300)
+            cov = pred.index_select(1, plus_idx_t).mean(dim=1)
 
             for i, job in enumerate(batch_jobs):
                 bins = job.bin_idx
                 if bins.size == 0:
                     scores[batch_start + i] = 0.0
                     continue
-                bins_t = _torch.from_numpy(bins).to(self.device)
+                bins_t = _torch.from_numpy(bins).to(self.model.device)
                 ref_sum = cov[i].index_select(0, bins_t).sum().item()
                 alt_sum = cov[i + B].index_select(0, bins_t).sum().item()
                 scores[batch_start + i] = float(

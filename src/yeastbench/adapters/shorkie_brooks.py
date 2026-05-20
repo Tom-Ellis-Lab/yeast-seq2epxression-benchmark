@@ -22,10 +22,9 @@ result across the JS94 replicate axis.
 """
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Sequence
+from typing import ClassVar, Sequence
 
 import numpy as np
 
@@ -33,15 +32,11 @@ from yeastbench.adapters._genome import one_hot_encode_channels_first
 from yeastbench.adapters._shorkie_constants import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
-    OUTPUT_BINS,
     SEQ_LEN,
     SHORKIE_T0_RNA_SEQ_TRACK_IDS,
 )
 from yeastbench.adapters.protocols import CoverageTrackPredictor
-
-if TYPE_CHECKING:
-    import torch
-    from yeastbench.models.shorkie import Shorkie
+from yeastbench.models.shorkie import Shorkie
 
 log = logging.getLogger(__name__)
 
@@ -68,23 +63,13 @@ class ShorkieBrooksPredictor(CoverageTrackPredictor):
 
     def __init__(
         self,
-        models: list["Shorkie"],
+        model: Shorkie,
         track_subset: list[int] = SHORKIE_T0_RNA_SEQ_TRACK_IDS,
-        device: "str | torch.device" = "cuda",
-        use_rc: bool = True,
         batch_size: int = 4,
     ) -> None:
-        import torch as _torch
-
-        if not models:
-            raise ValueError("Must provide at least one Shorkie fold")
-        self.models = models
+        self.model = model
         self.track_subset = list(track_subset)
-        self.device = _torch.device(device)
-        self.use_rc = use_rc
         self.batch_size = int(batch_size)
-        for m in self.models:
-            m.to(self.device).eval()
 
     @classmethod
     def from_checkpoints(
@@ -96,16 +81,13 @@ class ShorkieBrooksPredictor(CoverageTrackPredictor):
         use_rc: bool = True,
         batch_size: int = 4,
     ) -> "ShorkieBrooksPredictor":
-        from yeastbench.models.shorkie import Shorkie
-
-        with open(params_path) as fh:
-            config = json.load(fh)
-        models = [
-            Shorkie.from_tf_checkpoint(config["model"], str(p))
-            for p in checkpoint_paths
-        ]
-        return cls(models, list(track_subset), device, use_rc=use_rc,
-                   batch_size=batch_size)
+        return cls(
+            Shorkie.from_checkpoints(
+                params_path, checkpoint_paths, device=device, use_rc=use_rc,
+            ),
+            track_subset=list(track_subset),
+            batch_size=batch_size,
+        )
 
     def predict_coverage_batch(
         self,
@@ -136,27 +118,15 @@ class ShorkieBrooksPredictor(CoverageTrackPredictor):
         arrs = np.stack(
             [one_hot_encode_channels_first(s) for s in seqs], axis=0
         )                                                  # (B, 4, SEQ_LEN)
-        x = _torch.from_numpy(arrs).to(self.device)
+        x = _torch.from_numpy(arrs).to(self.model.device)
         track_idx_t = _torch.tensor(
-            self.track_subset, device=self.device, dtype=_torch.long
+            self.track_subset, device=self.model.device, dtype=_torch.long
         )
 
         with _torch.no_grad():
-            acc = _torch.zeros(
-                B, OUTPUT_BINS, device=self.device, dtype=_torch.float32,
-            )
-            x_rc = x.flip(dims=[1, 2]) if self.use_rc else None
-            for m in self.models:
-                # Shorkie output: (B, OUTPUT_BINS, n_total_tracks)
-                out = m(x).index_select(2, track_idx_t).mean(dim=2)  # (B, bins)
-                if self.use_rc:
-                    out_rc = (
-                        m(x_rc).index_select(2, track_idx_t).mean(dim=2)
-                        .flip(dims=[1])
-                    )
-                    out = 0.5 * (out + out_rc)
-                acc.add_(out)
-            acc.div_(len(self.models))
+            # (B, OUTPUT_BINS) — ensemble + RC + track-mean (Pattern B:
+            # per-fold track mean folded into the ensemble accumulator).
+            acc = self.model.forward_track_mean_binned(x, track_idx_t)
 
         binned = acc.cpu().numpy()                          # (B, OUTPUT_BINS)
         return np.stack(

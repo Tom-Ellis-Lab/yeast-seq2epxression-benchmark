@@ -18,8 +18,7 @@ Geometry exposed: ``seq_len`` (input length, 4992 bp) and
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Sequence
+from typing import TYPE_CHECKING, ClassVar, Literal, Sequence
 
 import numpy as np
 
@@ -31,17 +30,16 @@ from yeastbench.adapters._yorzoi_constants import (
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,
     SEQ_LEN,
-    YORZOI_MINUS_TRACK_IDS,
     YORZOI_PLUS_TRACK_IDS,
 )
 from yeastbench.adapters.protocols import CoverageTrackPredictor
+from yeastbench.models.yorzoi import Yorzoi
 
 if TYPE_CHECKING:
     import torch
 
 log = logging.getLogger(__name__)
 
-N_TRACKS_TOTAL = 162
 N_PLUS_TRACKS = 81  # minus-track index = plus-track index + N_PLUS_TRACKS
 
 TrackMode = Literal["all", "nanopore_all", "matched"]
@@ -71,10 +69,7 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
 
     def __init__(
         self,
-        model: Any,
-        device: "str | torch.device" = "cuda",
-        use_rc: bool = True,
-        autocast: bool = True,
+        model: Yorzoi,
         track_mode: TrackMode = "matched",
         batch_size: int = 16,
     ) -> None:
@@ -89,30 +84,14 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
           Nanopore tracks belonging to the supplied ``strain`` — i.e.
           the model's most in-distribution prediction for that strain.
           Requires the benchmark to pass ``strain=`` to
-          ``predict_coverage``. If ``strain`` is missing or absent from
-          ``BROOKS_NANOPORE_TRACKS_BY_STRAIN`` the call falls back to
-          ``"nanopore_all"`` and emits a debug log line.
+          ``predict_coverage_batch``. If ``strain`` is missing or absent
+          from ``BROOKS_NANOPORE_TRACKS_BY_STRAIN`` the call falls back
+          to ``"nanopore_all"`` and emits a debug log line.
         """
-        import torch as _torch
-
         self.model = model
-        self.device = _torch.device(device)
-        self.use_rc = use_rc
-        self.autocast = autocast
         self.track_mode = track_mode
         # Per-call max batch; benchmark chunks larger inputs.
         self.batch_size = int(batch_size)
-        self.model.to(self.device).eval()
-
-        plus = _torch.tensor(YORZOI_PLUS_TRACK_IDS, device=self.device,
-                             dtype=_torch.long)
-        minus = _torch.tensor(YORZOI_MINUS_TRACK_IDS, device=self.device,
-                              dtype=_torch.long)
-        swap = _torch.empty(N_TRACKS_TOTAL, dtype=_torch.long,
-                            device=self.device)
-        swap[plus] = minus
-        swap[minus] = plus
-        self._full_swap_idx = swap
 
     @classmethod
     def from_pretrained(
@@ -121,10 +100,13 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         track_mode: TrackMode = "matched",
         batch_size: int = 16,
     ) -> "YorzoiBrooksPredictor":
-        from yorzoi.model.borzoi import Borzoi
-        return cls(Borzoi.from_pretrained(hf_repo),
-                   device=device, use_rc=use_rc, autocast=autocast,
-                   track_mode=track_mode, batch_size=batch_size)
+        return cls(
+            Yorzoi.from_pretrained(
+                hf_repo, device=device, use_rc=use_rc, autocast=autocast,
+            ),
+            track_mode=track_mode,
+            batch_size=batch_size,
+        )
 
     def _plus_axis_indices(self, strain: str | None) -> list[int]:
         """Indices on the 81-track plus axis for this prediction.
@@ -139,25 +121,6 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
                       "falling back to nanopore_all", strain)
             return BROOKS_NANOPORE_TRACK_IDS_PLUS_ALL
         return BROOKS_NANOPORE_TRACKS_BY_STRAIN[strain]
-
-    def _forward(self, x: "torch.Tensor") -> "torch.Tensor":
-        """(1, SEQ_LEN, 4) → (1, 162, OUTPUT_BINS), RC-averaged with swap."""
-        import torch as _torch
-
-        amp = (
-            _torch.autocast(device_type="cuda")
-            if self.autocast and self.device.type == "cuda"
-            else _torch.amp.autocast(device_type="cpu", enabled=False)
-        )
-        with amp:
-            out_fwd = self.model(x)
-        if not self.use_rc:
-            return out_fwd
-        x_rc = x.flip(dims=[1, 2])
-        with amp:
-            out_rc = self.model(x_rc)
-        out_rc_aligned = out_rc.index_select(1, self._full_swap_idx).flip(dims=[2])
-        return 0.5 * (out_fwd + out_rc_aligned)
 
     def predict_coverage_batch(
         self,
@@ -191,9 +154,9 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         arrs = np.stack(
             [one_hot_encode_channels_first(s).T for s in seqs], axis=0
         )
-        x = _torch.from_numpy(arrs).to(self.device)
+        x = _torch.from_numpy(arrs).to(self.model.device)
         with _torch.no_grad():
-            pred = self._forward(x).float()                  # (B, 162, OUTPUT_BINS)
+            pred = self.model.forward_tracks_binned(x).float()  # (B, 162, OUTPUT_BINS)
 
         # Per-sample track-subset averaging happens post-forward — the model
         # always emits all 162 tracks; ``strain`` and ``strand`` only pick

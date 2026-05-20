@@ -9,7 +9,6 @@ Implements ``SequenceExpressionPredictor``:
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
@@ -22,14 +21,13 @@ from yeastbench.adapters.protocols import SequenceExpressionPredictor
 from yeastbench.adapters._shorkie_constants import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
-    OUTPUT_BINS,
     SEQ_LEN,
     SHORKIE_1011_RNA_SEQ_TRACK_IDS,
 )
+from yeastbench.models.shorkie import Shorkie
 
 if TYPE_CHECKING:
     import torch
-    from yeastbench.models.shorkie import Shorkie
 
 # The 5,000 bp construct is centre-padded to 16,384 bp.
 _PAD_LEFT = (SEQ_LEN - 5000) // 2   # 5692
@@ -48,23 +46,13 @@ YFP_BINS = np.arange(_YFP_BIN_START, _YFP_BIN_END)  # 46 bins
 class ShorkieMPRAPredictor(SequenceExpressionPredictor):
     def __init__(
         self,
-        models: list["Shorkie"],
+        model: Shorkie,
         track_subset: list[int] = SHORKIE_1011_RNA_SEQ_TRACK_IDS,
-        device: "str | torch.device" = "cuda",
         batch_size: int = 8,
-        use_rc: bool = True,
     ) -> None:
-        import torch as _torch
-
-        if not models:
-            raise ValueError("Must provide at least one model fold")
-        self.models = models
+        self.model = model
         self.track_subset = list(track_subset)
-        self.device = _torch.device(device)
         self.batch_size = batch_size
-        self.use_rc = use_rc
-        for m in self.models:
-            m.to(self.device).eval()
 
     @classmethod
     def from_checkpoints(
@@ -76,15 +64,13 @@ class ShorkieMPRAPredictor(SequenceExpressionPredictor):
         batch_size: int = 8,
         use_rc: bool = True,
     ) -> "ShorkieMPRAPredictor":
-        from yeastbench.models.shorkie import Shorkie
-
-        with open(params_path) as f:
-            config = json.load(f)
-        models = [
-            Shorkie.from_tf_checkpoint(config["model"], str(p))
-            for p in checkpoint_paths
-        ]
-        return cls(models, list(track_subset), device, batch_size, use_rc=use_rc)
+        return cls(
+            Shorkie.from_checkpoints(
+                params_path, checkpoint_paths, device=device, use_rc=use_rc,
+            ),
+            track_subset=list(track_subset),
+            batch_size=batch_size,
+        )
 
     @staticmethod
     def _encode(seq_110bp: str) -> np.ndarray:
@@ -100,32 +86,20 @@ class ShorkieMPRAPredictor(SequenceExpressionPredictor):
         n = len(seqs)
         scores = np.empty(n, dtype=np.float64)
         track_idx_t = _torch.tensor(
-            self.track_subset, device=self.device, dtype=_torch.long
+            self.track_subset, device=self.model.device, dtype=_torch.long
         )
-        yfp_bins_t = _torch.from_numpy(YFP_BINS).to(self.device)
-        n_tracks = len(self.track_subset)
+        yfp_bins_t = _torch.from_numpy(YFP_BINS).to(self.model.device)
 
         for batch_start in tqdm(range(0, n, self.batch_size), desc="Shorkie MPRA"):
             batch_end = min(batch_start + self.batch_size, n)
             batch_seqs = seqs[batch_start:batch_end]
-            B = len(batch_seqs)
 
             arrs = [self._encode(s) for s in batch_seqs]
-            x = _torch.from_numpy(np.stack(arrs, axis=0)).to(self.device)
+            x = _torch.from_numpy(np.stack(arrs, axis=0)).to(self.model.device)
 
             with _torch.no_grad():
-                acc = _torch.zeros(
-                    B, OUTPUT_BINS, n_tracks,
-                    device=self.device, dtype=_torch.float32,
-                )
-                x_rc = x.flip(dims=[1, 2]) if self.use_rc else None
-                for m in self.models:
-                    out = m(x).index_select(2, track_idx_t)
-                    if self.use_rc:
-                        out_rc = m(x_rc).index_select(2, track_idx_t).flip(dims=[1])
-                        out = 0.5 * (out + out_rc)
-                    acc.add_(out)
-                acc.div_(len(self.models))
+                # (B, OUTPUT_BINS, n_tracks) — ensemble + RC averaged
+                acc = self.model.forward_tracks_binned(x, track_idx_t)
 
             # Cross-track mean → sum over YFP bins → scalar per sequence
             cov = acc.mean(dim=2)  # (B, 896)

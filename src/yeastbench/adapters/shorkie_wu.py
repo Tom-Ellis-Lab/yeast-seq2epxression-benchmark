@@ -9,7 +9,6 @@ the cassette).  See ``benchmarks/wu_rfpins.md``.
 """
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
@@ -36,10 +35,10 @@ from yeastbench.adapters._shorkie_constants import (
     SEQ_LEN,
     SHORKIE_T0_RNA_SEQ_TRACK_IDS,
 )
+from yeastbench.models.shorkie import Shorkie
 
 if TYPE_CHECKING:
     import torch
-    from yeastbench.models.shorkie import Shorkie
 
 log = logging.getLogger(__name__)
 
@@ -47,34 +46,26 @@ log = logging.getLogger(__name__)
 class ShorkieWuPredictor(CassetteExpressionPredictor):
     def __init__(
         self,
-        models: list["Shorkie"],
+        model: Shorkie,
         fasta_path: str | Path,
         gtf_path: str | Path,
         cassette_fasta: str | Path | None = None,
         track_subset: list[int] = SHORKIE_T0_RNA_SEQ_TRACK_IDS,
-        device: "str | torch.device" = "cuda",
         batch_size: int = 16,
-        use_rc: bool = True,
     ) -> None:
         import pysam
         import torch as _torch
 
-        if not models:
-            raise ValueError("Must provide at least one model fold")
-        self.models = models
+        self.model = model
         self.fasta = pysam.FastaFile(str(fasta_path))
         self.genes = parse_gene_annotations(gtf_path)
         self.payload = load_cassette_payload(
             cassette_fasta if cassette_fasta is not None else DEFAULT_CASSETTE_FASTA
         )
         self.track_subset = list(track_subset)
-        self.device = _torch.device(device)
         self.batch_size = batch_size
-        self.use_rc = use_rc
-        for m in self.models:
-            m.to(self.device).eval()
         self._track_idx_t = _torch.tensor(
-            self.track_subset, device=self.device, dtype=_torch.long
+            self.track_subset, device=self.model.device, dtype=_torch.long
         )
 
     @classmethod
@@ -90,35 +81,16 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
         batch_size: int = 16,
         use_rc: bool = True,
     ) -> "ShorkieWuPredictor":
-        from yeastbench.models.shorkie import Shorkie
-
-        with open(params_path) as f:
-            config = json.load(f)
-        models = [
-            Shorkie.from_tf_checkpoint(config["model"], str(p))
-            for p in checkpoint_paths
-        ]
         return cls(
-            models, fasta_path, gtf_path, cassette_fasta,
-            list(track_subset), device, batch_size, use_rc=use_rc,
+            Shorkie.from_checkpoints(
+                params_path, checkpoint_paths, device=device, use_rc=use_rc,
+            ),
+            fasta_path=fasta_path,
+            gtf_path=gtf_path,
+            cassette_fasta=cassette_fasta,
+            track_subset=list(track_subset),
+            batch_size=batch_size,
         )
-
-    def _forward_avg(self, x: "torch.Tensor") -> "torch.Tensor":
-        """(B, 4, SEQ_LEN) → (B, OUTPUT_BINS): cross-track-mean per bin,
-        averaged across folds (and forward/RC)."""
-        import torch as _torch
-
-        B = x.shape[0]
-        acc = _torch.zeros(B, OUTPUT_BINS, device=self.device, dtype=_torch.float32)
-        x_rc = x.flip(dims=[1, 2]) if self.use_rc else None
-        for m in self.models:
-            out = m(x).index_select(2, self._track_idx_t)  # (B, bins, n_tracks)
-            if self.use_rc:
-                out_rc = m(x_rc).index_select(2, self._track_idx_t).flip(dims=[1])
-                out = 0.5 * (out + out_rc)
-            acc.add_(out.mean(dim=2))
-        acc.div_(len(self.models))
-        return acc
 
     def predict_expressions(self, loci: Sequence[WuLocus]) -> np.ndarray:
         import torch as _torch
@@ -141,12 +113,13 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
                 np.stack([
                     one_hot_encode_channels_first(c.window_seq) for _, c in batch
                 ])
-            ).to(self.device)
+            ).to(self.model.device)
             with _torch.no_grad():
-                cov = self._forward_avg(x)  # (B, OUTPUT_BINS)
+                # (B, OUTPUT_BINS) — ensemble + RC + per-fold track mean
+                cov = self.model.forward_track_mean_binned(x, self._track_idx_t)
             for j, (row_idx, ctx) in enumerate(batch):
                 bins_t = _torch.as_tensor(
-                    ctx.rfp_bins, device=self.device, dtype=_torch.long
+                    ctx.rfp_bins, device=self.model.device, dtype=_torch.long
                 )
                 scores[row_idx] = float(cov[j].index_select(0, bins_t).sum().item())
 

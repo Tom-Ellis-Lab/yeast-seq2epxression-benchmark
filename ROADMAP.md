@@ -239,6 +239,24 @@ paper (Schneider et al. 2025, Figure 4).
   T0-subset pattern in Shorkie's `SHORKIE_T0_RNA_SEQ_TRACK_IDS`) and
   pin the indices in `_yorzoi_constants.py`. Re-run; compare.
 - [ ] Shorkie Tier-1 substitute — deferred (not Nanopore-trained).
+- [ ] **Revisit the noise/ceiling metric semantics.** The "ceiling"
+  currently emitted by `BrooksScrambleBenchmark` (`brooks.py:170–185`)
+  is *not* an upper bound on achievable Pearson-r: per gene, it takes
+  the worst-deviant JS94 deep-run vs the JS94 run-mean (a control-vs-
+  control LFC, expected ≈ 0) and Pearson-correlates that against
+  `true_lfc`. That measures *whether JS94 noise correlates with the
+  SCRaMBLE signal* (a null-test / sanity check), not the conventional
+  test-retest reliability bound on r. The conventional noise ceiling
+  is leave-one-out over JS94 deep runs: for each `k ∈ {0,1,2}`,
+  recompute `lfc_loo_k = log2((norm_cov_strain+1) / (mean(runs ∖ k)+1))`
+  and average `pearsonr(lfc_loo_k, true_lfc_full)` over k — bounds r
+  from above (denominator-side noise only; strain numerator is single-
+  rep so this is conservative). Same construction for dir-acc using
+  balanced-accuracy on sign. Plan: rename current scalar to
+  `ctrl_noise_sanity_r` (keep — flags batch leakage if non-zero), add
+  LOO-r/LOO-dir-acc as the real ceiling, update summary/plot/headline.
+  See chat 2026-05-20 for the full reasoning; pick this up before
+  reporting headline Yorzoi numbers.
 
 ## Native-genome track prediction
 

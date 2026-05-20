@@ -53,7 +53,10 @@ NATIVE_CONTIGS = (
 )
 WINDOW = 4992          # Yorzoi receptive field; gene-centred
 PSEUDOCOUNT = 1.0
-MIN_READS = 10         # per-sample CDS read floor → flagged (low_support)
+MIN_READS = 10         # strain-side raw CDS read floor → low_support flag
+                       # on the sample. Same threshold is used per-JS94-run
+                       # inside the benchmark to decide which JS94 runs
+                       # contribute to the per-replicate true_lfc set.
 MIN_RUN_READS = 50_000 # per-run native library-size floor; failed/ultra-
                        # shallow runs (e.g. JS94 20180607=651, 20181122=
                        # 3878 reads) are dropped before they corrupt the
@@ -66,11 +69,18 @@ COLUMNS = [
     "window_len", "cds_start_in_window", "cds_end_in_window",
     "alt_seq", "native_seq",
     "true_cov_alt", "true_cov_native",   # comma-list of WINDOW int32 per-base counts
-    "strain_reads", "js94_reads_mean",
+    "strain_reads", "js94_reads_runs",   # raw counts (strain sum, JS94 per-run)
     "size_factor_strain",
     "norm_cov_strain", "norm_cov_js94_mean",
     "norm_cov_js94_runs",  # comma-list of all WT-run values (ceiling derivable)
-    "true_lfc", "low_support",
+    "true_lfc",
+    # `low_support` is strain-side only: drop a single (strain, gene, copy)
+    # sample if the strain's raw CDS-overlap count < MIN_READS. The JS94
+    # side is handled per-replicate inside the benchmark (a JS94 run with
+    # < MIN_READS reads for this gene drops out of the per-replicate LFC
+    # set; n_reps_supported per sample = 0..3 derivable from
+    # `js94_reads_runs`).
+    "low_support",
 ]
 
 
@@ -350,15 +360,12 @@ def main() -> None:
             nat_cov_vec = js94_native_cov[jrow.strand][nat_w0:nat_w0 + WINDOW]
             # JS94 per-run normalised CDS coverage (gene strand), reads
             # on JS94_1 (same coord system as the parental sequence)
-            j_norm = [
+            j_raws = [
                 count_overlaps(b, js94_read_contig, int(jrow.start),
-                               int(jrow.end), jrow.strand) / sf
-                for b, sf in zip(js94_beds, js94_sf)
+                               int(jrow.end), jrow.strand)
+                for b in js94_beds
             ]
-            j_raw = np.mean([
-                count_overlaps(b, js94_read_contig, int(jrow.start),
-                               int(jrow.end), jrow.strand) for b in js94_beds
-            ])
+            j_norm = [r / sf for r, sf in zip(j_raws, js94_sf)]
             j_mean = float(np.mean(j_norm))
 
             copies = cluster_copies(list(zip(grp.start, grp.end)))
@@ -391,13 +398,14 @@ def main() -> None:
                     "alt_seq": alt_seq, "native_seq": nat_seq,
                     "true_cov_alt": _comma_ints(alt_cov_vec),
                     "true_cov_native": _comma_ints(nat_cov_vec),
-                    "strain_reads": s_raw, "js94_reads_mean": round(float(j_raw), 2),
+                    "strain_reads": s_raw,
+                    "js94_reads_runs": ",".join(str(int(v)) for v in j_raws),
                     "size_factor_strain": round(s_sf, 4),
                     "norm_cov_strain": round(s_norm, 3),
                     "norm_cov_js94_mean": round(j_mean, 3),
                     "norm_cov_js94_runs": ",".join(f"{v:.3f}" for v in j_norm),
                     "true_lfc": round(true_lfc, 4),
-                    "low_support": bool(s_raw < MIN_READS or j_raw < MIN_READS),
+                    "low_support": bool(s_raw < MIN_READS),
                 })
                 n_kept += 1
         print(f"  {S}: {n_kept} samples (sf={s_sf:.3f}, {len(beds)} run(s))")

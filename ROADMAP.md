@@ -162,101 +162,130 @@
 Tests whether a model can predict the effect of structural rearrangements
 (translocations, duplications, inversions, 3′ UTR swaps) on gene
 expression by comparing CDS-coverage in a SCRaMBLE-rearranged strain
-against the unscrambled control. Reproduces the *Capturing the effects
-of genetic neighborhoods on transcription* evaluation in the Yorzoi
-paper (Schneider et al. 2025, Figure 4).
+against the unscrambled control. Reproduces and extends the *Capturing
+the effects of genetic neighborhoods on transcription* evaluation in the
+Yorzoi paper (Schneider et al. 2025, Figure 4 — 5 strains, 41 samples,
+r=0.33 / ρ=0.32 / dir-acc=0.62 — kept as the reference baseline).
 
-- [ ] Spec (`benchmarks/brooks_scramble_chr9.md`):
-  - **Source:** Brooks et al. 2022, *Transcriptional neighborhoods regulate
-    transcript isoform lengths and expression levels*, Science 375(6584)
-    (DOI: [10.1126/science.abg0162](https://doi.org/10.1126/science.abg0162)).
-    Supplementary `science.abg0162_table_s3.txt` lists all novel
-    junctions called from whole-genome sequencing of the SCRaMBLE
-    strains.
-  - **Strains:** unscrambled control **JS94** (carries loxPsym sites
-    on chr9 right arm but no induced recombination); five SCRaMBLE
-    strains **JS606, JS707, JS711, JS731, JS732**.
-  - **Samples:** 18 unique CDSs identified as rearranged into a novel
-    context across the 5 strains → **41 (gene × strain) samples** in
-    the Yorzoi paper. Lock the exact gene/strain list as part of the
-    spec so the eval is reproducible.
-  - **Coverage source:** long-read direct RNA-seq (Nanopore) from
-    Brooks et al., per-strain. Strand-of-gene only.
-  - **Per-sample label:** `Δtrue = (CDS coverage sum, SCRAMBLE strain) /
-    (CDS coverage sum, JS94)`. Coverage summed over the gene's CDS
-    interval, on the gene's strand.
-  - **Per-sample prediction:** `Δpred = (predicted CDS coverage sum on
-    the rearranged construct) / (predicted CDS coverage sum on the
-    native unscrambled construct)`. The native construct centres the
-    gene's CDS in the model's input window; the rearranged construct
-    is built from the strain's WGS-called junction structure around
-    the gene. The model's output is summed over the bins overlapping
-    the CDS in each prediction.
-  - **Metrics:** Pearson *r* and Spearman ρ of `(Δpred, Δtrue)` across
-    all 41 samples, plus **balanced accuracy of direction**
-    (sign of `Δpred − 1` vs `Δtrue − 1`). Yorzoi paper reports r = 0.33,
-    ρ = 0.32, balanced accuracy = 0.62 — use these as the reference
-    baseline.
-- [x] Spec **design locked** (`benchmarks/brooks_scramble.md`, 2026-05-19):
+Source: Brooks et al. 2022, *Transcriptional neighborhoods regulate
+transcript isoform lengths and expression levels*, Science 375(6584)
+([DOI](https://doi.org/10.1126/science.abg0162)). Aligned Nanopore
+direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
+
+**Done.**
+
+- [x] Spec design locked (`benchmarks/brooks_scramble.md`, 2026-05-19):
   data characterised from `gs://brooks-nanopore`; per-copy sampling
-  (dissolves dosage); native-genome median-of-ratios normalisation;
-  objective locked sample rule; JS94×3 reproducibility ceiling; Tier-1
-  LFC (dir-acc → ρ → r) + Tier-2 Yorzoi-only coverage shape
-  (Pearson + Jensen–Shannon headline, KL secondary); gene-centred
-  alt vs JS94-native constructs.
-- [x] Source data located: `gs://brooks-nanopore/` (per-strain
-  genomes/GFF/Nanopore BEDs). **No junction-walking needed** — each
-  strain's `JS<n>_1` contig already encodes the rearranged synIXR;
-  construct = window in that contig vs `JS94_1`.
+  dissolves dosage; native-genome total-reads size factor (median-of-
+  ratios deferred); objective locked sample rule (alt window differs
+  from native within the receptive field; intact CDS; deletions
+  excluded); gene-centred alt-vs-native constructs.
+- [x] Source data located: `gs://brooks-nanopore/`. **No junction-
+  walking needed** — each strain's `JS<n>_1` contig already encodes
+  the rearranged synIXR; construct = gene-centred window in that contig
+  vs the parental `JS96_1` (JS94 has no FASTA in the bucket but its
+  GFF and reads share `JS94_1` coords, which are byte-identical to
+  `JS96_1`).
 - [x] Yorzoi leakage: **assumed not trained on any Brooks SCRaMBLEd
-  sequences** (user, 2026-05-19) → treated zero-shot, no held-out
-  filtering in v1; revisit only if the training manifest contradicts it.
-- [x] **Single self-contained distribution built**
+  sequences** (user, 2026-05-19) → treated zero-shot. Revisit only if
+  the training manifest contradicts it.
+- [x] Single self-contained distribution built
   (`scripts/brooks/build_brooks_distribution.py` →
-  `data/tasks/brooks_scramble/brooks_scramble_v1.tsv`, 37 samples):
-  JS96 parental sequence (no JS94 FASTA in bucket), JS94 deep-WT runs
-  only (rrp6Δ/xrn1Δ + 2 failed runs excluded), total-native-reads size
-  factor, per-copy sampling, deletions excluded, ceiling derivable from
-  the file (`norm_cov_js94_runs`). Run-time deps: that one file only.
-  TODO: scale `--strains all`; investigate JS707→0.
-- [ ] New adapter protocol `CoverageTrackPredictor.predict_coverage(
-  construct_seq, strand) -> np.ndarray` (per-bin window coverage); the
-  benchmark derives Tier-1 CDS LFC + Tier-2 shape. Sequence-in /
-  coverage-out, not variant-effect.
-- [ ] `BrooksScrambleBenchmark` class — reads only
-  `brooks_scramble_v1.tsv`; Tier-1 LFC (dir-acc → ρ → r vs the JS94
-  reproducibility ceiling derived from `norm_cov_js94_runs`) + Tier-2
-  Yorzoi coverage shape (Pearson + Jensen–Shannon); plots.
-- [ ] Yorzoi `CoverageTrackPredictor` adapter (RC/strand machinery
-  reused). Leakage assumed clean per user (2026-05-19).
+  `data/tasks/brooks_scramble/brooks_scramble_v1.tsv`). **Full-strain
+  rebuild (2026-05-20)**: **698 samples across 56 SCRaMBLE strains**
+  (3 strains skipped — JS618/JS621 too shallow, JS720 missing GFF;
+  JS94 control + JS96 parental excluded). JS96 parental sequence; JS94
+  deep-WT runs only (rrp6Δ/xrn1Δ + two failed shallow runs excluded by
+  `MIN_RUN_READS = 50_000`); total-native-reads size factor; per-copy
+  sampling; deletions excluded; deduplicated byte-identical copies.
+  Schema: per-replicate raw JS94 counts in `js94_reads_runs` (comma
+  list of 3); strain-side raw counts in `strain_reads`; `low_support`
+  is strain-side only (`strain_reads < 10`). Per-replicate normalised
+  JS94 coverages in `norm_cov_js94_runs`. Run-time deps: that one file
+  only.
+- [x] Two strains produce zero samples (**JS707**, **JS710**) despite
+  having heavily rearranged synIXR contigs. Most likely cause: gene-ID
+  remapping in those strains' GFFs leaves no `gene_id` overlap with
+  JS94's parental gene list, so the per-gene matching loop never fires.
+  Acceptable loss (2 of 56 strains); follow-up to confirm if we want
+  to recover them.
+- [x] New adapter protocol `CoverageTrackPredictor.predict_coverage(
+  construct_seq, strand) -> np.ndarray` returning **per-base raw
+  predicted counts** over `seq_len − 2 × crop_bp_each_side`. Adapters
+  invert any training-time transform and unbin internally.
+- [x] Yorzoi adapter `YorzoiBrooksPredictor` (`yorzoi_brooks.py`): RC
+  averaging with strand swap; inverse Borzoi `x^0.75 + sqrt` transform;
+  per-base unbin (BIN_WIDTH = 10) — predictions are in raw count units
+  matching the per-base Nanopore truth in the TSV.
+- [x] `BrooksScrambleBenchmark` class — reads only `brooks_scramble_v1.tsv`.
+  **Per-replicate LFC design** (2026-05-20): for each sample, compute
+  0–3 true LFCs (one per JS94 deep run with raw_reads ≥ MIN_READS_PER_RUN).
+  Two-tier headline:
+    * scored (n_reps ≥ 1 AND not low_support): Pearson r, Spearman ρ,
+      direction balanced accuracy of pred_LFC vs mean true LFC.
+    * calibration (n_reps ≥ 2): within-range hit rate (does pred land
+      in [min, max] of the supporting JS94 LFCs?) and mean |z| in
+      envelope widths.
+  Tier-2 (shape): per-base Pearson r + Jensen–Shannon divergence over
+  the scored cohort. Scatter plot shows the JS94 replicate envelope as
+  per-sample horizontal error bars.
+- [x] **Inter-run JS94 reproducibility diagnostic (2026-05-20).** On
+  per-native-gene sense reads (log1p), pairwise Pearson r between the
+  three JS94 deep runs lands at **0.67–0.86**, well below the > 0.95
+  conventional good-replicate range. Direct-RNA at the observed depth
+  (~50–130 reads/gene mean) gives sparse per-gene counts; this is
+  plausibly the true noise floor for this protocol, not a single bad
+  run. Implication: the upper bound on Pearson r achievable on
+  Brooks Tier-1 is probably ~0.7–0.85 in absolute terms — important
+  context for any headline number.
+- [x] **First Yorzoi headline on the rebuilt TSV (2026-05-20)**:
+    * Tier-1 (n_scored = 327): dir-acc 0.609, r 0.281, ρ 0.288 —
+      consistent with the Yorzoi paper's 5-strain numbers (r 0.33).
+    * Calibration (n = 198): within-range 0.126, mean |z| 9.50.
+    * Tier-2 (n_scored = 327): r̄ 0.831, JS̄ 0.069.
+  Diagnosis: Yorzoi predicts the per-base coverage **shape** within the
+  gene body very well, but **over-predicts LFC magnitude** when the
+  surrounding context in the alt window is mostly different from the
+  native window (cluster split visible in `tier1_scatter.png` — pred ≈ 0
+  for low-hamming pairs, pred ≈ +7 for high-hamming pairs). Not a bug;
+  a model-behaviour finding worth recording.
+
+**Open.**
+
+- [ ] **LOO reproducibility ceiling.** The previous scalar "ceiling"
+  was a null-test (ctrl-vs-signal cross-correlation), not a r-upper-
+  bound; it has been removed from `BrooksResults`. Replacement: for
+  each `k ∈ {0, 1, 2}`, recompute the label as
+  `lfc_loo_k = log2((norm_cov_strain + 1) / (mean(runs ∖ k) + 1))` and
+  average `pearsonr(lfc_loo_k, true_lfc_full)` across k — that's a
+  conservative upper bound on Pearson r (denominator-side noise only;
+  the strain numerator is single-rep, so the true ceiling is somewhere
+  below this). Same construction for dir-acc with balanced accuracy on
+  sign. Wire into `summary_dict` + `headline` + Tier-1 scatter
+  annotation. Land before reporting headline numbers externally.
 - [ ] **Restrict to Nanopore-direct-RNA tracks only.** v1 averages
-  across *all* 81 strand-matched Yorzoi tracks, mixing Illumina /
+  across all 81 strand-matched Yorzoi tracks, mixing Illumina /
   Nanopore / various protocols. Brooks truth is Nanopore direct RNA →
   putting the model in-distribution should improve every Brooks metric.
-  Prereq: identify the Nanopore-direct-RNA track indices from
+  Prereq: identify Nanopore-direct-RNA track indices from
   `yorzoi/track_annotation.json` (user maintains Yorzoi). Then add a
-  `track_subset` arg to `YorzoiBrooksPredictor` (mirroring the
-  T0-subset pattern in Shorkie's `SHORKIE_T0_RNA_SEQ_TRACK_IDS`) and
-  pin the indices in `_yorzoi_constants.py`. Re-run; compare.
-- [ ] Shorkie Tier-1 substitute — deferred (not Nanopore-trained).
-- [ ] **Revisit the noise/ceiling metric semantics.** The "ceiling"
-  currently emitted by `BrooksScrambleBenchmark` (`brooks.py:170–185`)
-  is *not* an upper bound on achievable Pearson-r: per gene, it takes
-  the worst-deviant JS94 deep-run vs the JS94 run-mean (a control-vs-
-  control LFC, expected ≈ 0) and Pearson-correlates that against
-  `true_lfc`. That measures *whether JS94 noise correlates with the
-  SCRaMBLE signal* (a null-test / sanity check), not the conventional
-  test-retest reliability bound on r. The conventional noise ceiling
-  is leave-one-out over JS94 deep runs: for each `k ∈ {0,1,2}`,
-  recompute `lfc_loo_k = log2((norm_cov_strain+1) / (mean(runs ∖ k)+1))`
-  and average `pearsonr(lfc_loo_k, true_lfc_full)` over k — bounds r
-  from above (denominator-side noise only; strain numerator is single-
-  rep so this is conservative). Same construction for dir-acc using
-  balanced-accuracy on sign. Plan: rename current scalar to
-  `ctrl_noise_sanity_r` (keep — flags batch leakage if non-zero), add
-  LOO-r/LOO-dir-acc as the real ceiling, update summary/plot/headline.
-  See chat 2026-05-20 for the full reasoning; pick this up before
-  reporting headline Yorzoi numbers.
+  `track_subset` arg to `YorzoiBrooksPredictor` (mirroring Shorkie's
+  `SHORKIE_T0_RNA_SEQ_TRACK_IDS`) and pin the indices in
+  `_yorzoi_constants.py`. Re-run; compare.
+- [ ] Shorkie Tier-1 substitute — deferred (not Nanopore-trained;
+  scalar LFC comparison would be unfair). Tier-2 shape comparison on
+  Shorkie is a possible future angle but needs its own design.
+- [ ] **JS707 / JS710 recovery (low priority).** Both strains have
+  heavily rearranged synIXR contigs (307 kb and 363 kb vs 98.7 kb
+  parental) but produce zero samples because of suspected gene-ID
+  remapping in their GFFs. Recoverable if needed by matching on
+  coordinate-based homology rather than strict gene-ID equality.
+- [ ] **Context-stratified headline (low priority).** Yorzoi's
+  over-prediction of LFC magnitude is strongly clustered by how much
+  of the 4992 bp window is preserved between alt and native. Reporting
+  metrics on (low-hamming, high-hamming) subsets separately would make
+  the model behaviour explicit. Quick to wire in once `hamming(alt,
+  native)` is a stored column.
 
 ## Native-genome track prediction
 

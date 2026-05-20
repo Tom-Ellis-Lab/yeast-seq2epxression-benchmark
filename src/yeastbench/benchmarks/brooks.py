@@ -43,7 +43,12 @@ from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import balanced_accuracy_score
 
 from yeastbench.adapters.protocols import CoverageTrackPredictor
-from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
+from yeastbench.benchmarks.base import (
+    Benchmark,
+    BenchmarkInfo,
+    MODEL_COLORS,
+    model_color,
+)
 
 WINDOW_LEN = 4992          # Legacy Yorzoi window — kept as an importable
                            # default for tests and scripts. The benchmark
@@ -906,12 +911,13 @@ def _plot_brooks_shared_metrics(
         ("dir-acc",     "dir_balanced_acc",  "ceiling_dir_balanced_acc"),
     ]
     model_names = sorted(loaded.keys())
+    colors = [model_color(m, model_names) for m in model_names]
     fig, axes = plt.subplots(len(rows), 1, figsize=(8, 1.7 * len(rows)),
                               squeeze=False)
     for i, (metric_name, key, ceil_key) in enumerate(rows):
         ax = axes[i, 0]
         ys = [shared_cohort[m][key] for m in model_names]
-        bars = ax.barh(model_names, ys, alpha=0.85)
+        bars = ax.barh(model_names, ys, color=colors, alpha=0.85)
         ax.axvline(0, color="grey", lw=0.5)
         if ceil_key:
             # The ceiling depends only on the truth labels, which are
@@ -934,15 +940,14 @@ def _plot_brooks_shared_metrics(
             fontsize=10,
         )
     fig.tight_layout()
-    fig.savefig(out_path, dpi=140)
+    fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
 
-# Palette for the per-sample plot: truth is blue, models cycle through
-# matplotlib's default cycle after that.
-_TRUTH_COLOR = "#1f77b4"
-_MODEL_COLORS = ("#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
-                  "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+# Per-sample plot: truth gets a fixed colour (grey) so it visually
+# anchors every sample, models pick from the shared MODEL_COLORS so
+# they match the metrics-bar plot above and the cross-task mosaic.
+_TRUTH_COLOR = "#444444"
 
 
 def _plot_brooks_shared_per_sample(
@@ -1030,7 +1035,7 @@ def _plot_brooks_shared_per_sample(
         pred = loaded[m]["pred_lfc_runs"][idx]
         finite_p = np.isfinite(pred)
         lo, hi, mn = _ranges(pred, finite_p)
-        color = _MODEL_COLORS[j % len(_MODEL_COLORS)]
+        color = model_color(m, model_names)
         ax.vlines(x + offsets[1 + j], lo, hi, colors=color, lw=1.0, alpha=0.7)
         ax.scatter(x + offsets[1 + j], mn, s=8, c=color, label=f"{m} pred")
 

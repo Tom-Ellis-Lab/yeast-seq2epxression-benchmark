@@ -72,18 +72,26 @@ class EQTLResults:
 class EQTLClassificationBenchmark(Benchmark[VariantEffectScorer, EQTLResults]):
     adapter_protocol: ClassVar[type] = VariantEffectScorer
 
-    def __init__(self, distribution_dir: Path, info: BenchmarkInfo) -> None:
+    def __init__(
+        self,
+        distribution_dir: Path,
+        fasta_path: Path,
+        gtf_path: Path,
+        info: BenchmarkInfo,
+    ) -> None:
         self.distribution_dir = Path(distribution_dir)
+        self._fasta_path = Path(fasta_path)
+        self._gtf_path = Path(gtf_path)
         self.info = info
         self.iteration_files = sorted(self.distribution_dir.glob("negset_*.tsv"))
 
     @property
     def fasta_path(self) -> Path:
-        return self.distribution_dir / "reference" / "R64-1-1.fa"
+        return self._fasta_path
 
     @property
     def gtf_path(self) -> Path:
-        return self.distribution_dir / "reference" / "R64-1-1.115.gtf"
+        return self._gtf_path
 
     def evaluate(self, adapter: VariantEffectScorer) -> EQTLResults:
         per_iter: list[EQTLIterationResult] = []
@@ -209,6 +217,15 @@ class EQTLClassificationBenchmark(Benchmark[VariantEffectScorer, EQTLResults]):
             f"|score| AUROC {results.mean_auroc:.4f} \u00b1 {results.sem_auroc:.4f}  "
             f"AUPRC {results.mean_auprc:.4f} \u00b1 {results.sem_auprc:.4f}"
         )
+
+    def headline_metric_labels(self) -> dict[str, str]:
+        return {
+            "auroc_abs_mean": "|score| AUROC",
+            "auprc_abs_mean": "|score| AUPRC",
+        }
+
+    def compare_plot_title(self) -> str:
+        return "Caudal et al. cis-eQTL classification"
 
 
 # ──────────────────────────────────────────────────────────────

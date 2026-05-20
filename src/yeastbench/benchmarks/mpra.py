@@ -218,6 +218,15 @@ class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults
             f"Spearman \u03c1 = {results.overall.spearman_rho:.4f}"
         )
 
+    def headline_metric_labels(self) -> dict[str, str]:
+        return {
+            "overall_pearson_r": "Pearson r",
+            "overall_spearman_rho": "Spearman \u03c1",
+        }
+
+    def compare_plot_title(self) -> str:
+        return "DREAM MPRA \u2014 fixed-context promoter"
+
 
 class MPRAMarginalizedBenchmark(MPRARegressionBenchmark):
     """MPRA benchmark variant using the marginalized / native-position
@@ -251,6 +260,9 @@ class MPRAMarginalizedBenchmark(MPRARegressionBenchmark):
         return np.asarray(
             adapter.predict_marginalized_expressions(self.sequences), dtype=float
         )
+
+    def compare_plot_title(self) -> str:
+        return "DREAM MPRA — marginalized / native-position"
 
 
 # ── Metric helpers ────────────────────────────────────────────

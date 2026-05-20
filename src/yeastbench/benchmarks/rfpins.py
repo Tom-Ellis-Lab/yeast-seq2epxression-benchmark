@@ -315,3 +315,19 @@ class RFPInsertionBenchmark(Benchmark[CassetteExpressionPredictor, WuResults]):
             f"extreme-high AUROC {results.high_auroc:.3f} "
             f"AUPRC {results.high_auprc:.3f}  (n = {results.n_scored})"
         )
+
+    def headline_metric_labels(self) -> dict[str, str]:
+        # Order: continuous-axis metrics first, then the binary-tail
+        # AUROC/AUPRC pairs. Skip the count-style `extreme_*_n_pos`
+        # numbers — they aren't comparable across models on a bar plot.
+        return {
+            "pearson_r":           "Pearson r",
+            "spearman_rho":        "Spearman ρ",
+            "extreme_low_auroc":   "extreme-low AUROC",
+            "extreme_high_auroc":  "extreme-high AUROC",
+            "extreme_low_auprc":   "extreme-low AUPRC",
+            "extreme_high_auprc":  "extreme-high AUPRC",
+        }
+
+    def compare_plot_title(self) -> str:
+        return "Wu et al. RFP-insertion position effects"

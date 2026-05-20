@@ -1,0 +1,21 @@
+# Brooks SCRaMBLE benchmark — Yorzoi (v1 = Yorzoi-only).
+#
+# The benchmark consumes only the self-contained distribution file
+# `data/tasks/brooks_scramble/brooks_scramble_v1.tsv` — no GCS, no
+# genomes, no R64 reference at run time.
+#
+#   uv run ybench run --config configs/brooks.yaml
+
+out_dir: results/brooks
+device: cuda
+
+tasks_config:
+  brooks_scramble:
+    data_path: data/tasks/brooks_scramble/brooks_scramble_v1.tsv
+
+runs:
+  - model: yorzoi
+    tasks: [brooks_scramble]
+    model_config:
+      hf_repo: tom-ellis-lab/yorzoi
+      use_rc: true

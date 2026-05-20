@@ -49,6 +49,23 @@ class MarginalizedSequenceExpressionPredictor(Protocol):
 
 
 @runtime_checkable
+class CoverageTrackPredictor(Protocol):
+    """Predict an RNA-seq-like *per-bin* coverage vector for a single
+    construct on a given strand. Used by the Brooks SCRaMBLE benchmark
+    (sequence-in / coverage-out, not variant-effect).
+
+    Adapters are also expected to expose three attributes so the
+    benchmark can align per-base truth to per-bin predictions:
+    ``bin_width``, ``crop_bp_each_side``, ``output_bins``."""
+
+    bin_width: int
+    crop_bp_each_side: int
+    output_bins: int
+
+    def predict_coverage(self, construct_seq: str, strand: str) -> np.ndarray: ...
+
+
+@runtime_checkable
 class TerminatorMarginalizedExpressionPredictor(Protocol):
     """Predict the marginalized effect of each input sequence across native
     host-gene contexts, inserted **downstream** of the host-gene stop codon

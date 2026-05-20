@@ -55,11 +55,13 @@ def _run_pair(cfg: Config, model_name: str, task_name: str, model_config: dict) 
     eval_s = time.time() - t0
     _echo(f"  evaluated in {eval_s:.1f}s")
 
+    # Persist prediction arrays first so a plotting bug doesn't lose
+    # the eval results (forcing a re-forward through the model).
+    task.save_results(results, out_dir)
+
     t0 = time.time()
     task.plot(results, out_dir)
     _echo(f"  plots  written in {time.time() - t0:.1f}s")
-
-    task.save_results(results, out_dir)
 
     summary = {
         "model": model_name,

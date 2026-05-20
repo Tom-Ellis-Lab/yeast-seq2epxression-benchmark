@@ -80,27 +80,39 @@ def brooks_tsv(tmp_path: Path) -> Path:
 
 
 class _MockAdapter:
-    """Perfect per-base predictor: returns coverage that yields
-    ``pred_lfc = true_lfc``. Alt CDS-region intensity is scaled by
-    ``2^true_lfc`` relative to native; everything else is constant noise.
-    Returns a length-``OUT_LEN`` (= 3000) per-base vector — already
-    untransformed/unbinned, per the protocol contract."""
+    """Perfect per-base batched predictor: for each construct that
+    matches a known alt_seq, returns a per-base vector scaled by
+    ``2^true_lfc`` (the alt). All other constructs (e.g. natives)
+    are constant noise around 1.0. Returns shape ``(B, OUT_LEN)``.
+
+    Already untransformed/unbinned, per the protocol contract."""
     seq_len = WINDOW_LEN
     crop_bp_each_side = CROP
+    batch_size = 4                              # arbitrary, for chunking test
+    varies_by_strain = True                     # Yorzoi-style routing
 
     def __init__(self, df: pd.DataFrame, seed: int = 0):
         self._df = df.set_index("alt_seq")
         self._rng = np.random.default_rng(seed)
 
-    def predict_coverage(self, construct_seq: str, strand: str,
-                         strain: str | None = None) -> np.ndarray:
-        if construct_seq in self._df.index:
-            tl = float(self._df.loc[construct_seq, "true_lfc"])
-            scale = float(2.0 ** tl)         # alt = scale * native
-        else:
-            scale = 1.0
-        base = self._rng.normal(1.0, 0.05, OUT_LEN).clip(0.1)
-        return base * scale
+    def predict_coverage_batch(self, seqs, strands, strains=None):
+        out = np.empty((len(seqs), OUT_LEN), dtype=np.float64)
+        for i, s in enumerate(seqs):
+            if s in self._df.index:
+                tl = float(self._df.loc[s, "true_lfc"])
+                scale = float(2.0 ** tl)        # alt = scale * native
+            else:
+                scale = 1.0
+            base = self._rng.normal(1.0, 0.05, OUT_LEN).clip(0.1)
+            out[i] = base * scale
+        return out
+
+
+class _MockBroadcastAdapter(_MockAdapter):
+    """Same prediction logic but mimics Shorkie-style adapters that do
+    not vary by strain — the benchmark should make a single native
+    forward pass and broadcast pred_lfc across replicates."""
+    varies_by_strain = False
 
 
 assert isinstance(_MockAdapter(pd.DataFrame({"alt_seq": [], "native_seq": [],
@@ -230,6 +242,23 @@ class TestBrooksBenchmark:
         # All three per-replicate ceilings are computed
         assert np.all(np.isfinite(res.ceiling_r_per_rep))
 
+    def test_broadcast_adapter_yields_identical_pred_columns(self, brooks_tsv):
+        """varies_by_strain=False: pred_lfc_runs has identical values
+        across the JS94-replicate axis on the rows where all 3 truth
+        replicates are finite."""
+        b = BrooksScrambleBenchmark(brooks_tsv, INFO)
+        res = b.evaluate(_MockBroadcastAdapter(b.df))
+        finite = np.isfinite(res.true_lfc_runs)
+        for i in np.where(finite.all(axis=1))[0]:
+            np.testing.assert_array_almost_equal(
+                res.pred_lfc_runs[i, 0] * np.ones(3),
+                res.pred_lfc_runs[i],
+            )
+        # Still computes per-replicate r's; they're all equal because
+        # pred_lfc is constant per sample (truth varies, but tightly).
+        assert np.all(np.isfinite(res.pearson_r_per_rep))
+        assert np.all(np.isfinite(res.ceiling_r_per_rep))
+
     def test_partial_replicate_support_keeps_sample_but_lowers_calibration(
             self, brooks_tsv):
         # one JS94 run below threshold on row 0 → n_reps == 2 (still calib);
@@ -252,8 +281,17 @@ class TestBrooksBenchmark:
 class TestBrooksRegistry:
     def test_task_registered(self):
         assert "brooks_scramble" in TASKS
+        assert "brooks_scramble_shorkie" in TASKS
 
     def test_factory_builds_benchmark(self, brooks_tsv):
         task = TASKS["brooks_scramble"](data_path=brooks_tsv)
         assert isinstance(task, BrooksScrambleBenchmark)
+        assert task.adapter_protocol is CoverageTrackPredictor
+
+    def test_shorkie_factory_builds_same_class(self, brooks_tsv):
+        # Same class, just a different BenchmarkInfo so the results dir
+        # is distinguishable in the run output.
+        task = TASKS["brooks_scramble_shorkie"](data_path=brooks_tsv)
+        assert isinstance(task, BrooksScrambleBenchmark)
+        assert task.info.name == "brooks_scramble_shorkie"
         assert task.adapter_protocol is CoverageTrackPredictor

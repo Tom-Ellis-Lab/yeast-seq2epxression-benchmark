@@ -45,7 +45,12 @@ from sklearn.metrics import balanced_accuracy_score
 from yeastbench.adapters.protocols import CoverageTrackPredictor
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 
-WINDOW_LEN = 4992          # gene-centred window length (set by the builder)
+WINDOW_LEN = 4992          # Legacy Yorzoi window — kept as an importable
+                           # default for tests and scripts. The benchmark
+                           # itself reads the window length from the loaded
+                           # TSV's `window_len` column so a single benchmark
+                           # class supports both the Yorzoi (4992) and the
+                           # Shorkie (16384) distributions.
 PSEUDOCOUNT = 1.0
 MIN_READS_PER_RUN = 10     # per-JS94-run raw read floor for that run to
                            # contribute a per-replicate true_lfc for the sample
@@ -131,10 +136,17 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                     "cds_end_in_window", "norm_cov_strain",
                     "norm_cov_js94_runs", "js94_reads_runs",
                     "true_cov_alt", "true_cov_native", "low_support",
-                    "strand", "sample_id"):
+                    "strand", "sample_id", "window_len"):
             assert col in df.columns, f"{col} missing from {self.data_path}"
-        assert (df.alt_seq.str.len() == WINDOW_LEN).all()
-        assert (df.native_seq.str.len() == WINDOW_LEN).all()
+        # Window length is set by the builder per distribution file. A
+        # single TSV must use one consistent window length.
+        window_len = int(df.window_len.iloc[0])
+        assert (df.window_len == window_len).all(), (
+            f"all rows of {self.data_path} must share window_len"
+        )
+        assert (df.alt_seq.str.len() == window_len).all()
+        assert (df.native_seq.str.len() == window_len).all()
+        self.window_len = window_len
         self.df = df.reset_index(drop=True)
 
     def _parse_cov(self, s: str) -> np.ndarray:
@@ -145,6 +157,34 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
 
     def _parse_raw_runs(self, s: str) -> np.ndarray:
         return np.fromstring(s, sep=",", dtype=np.int64)
+
+    def _run_batched(
+        self,
+        adapter: CoverageTrackPredictor,
+        seqs: list[str],
+        strands: list[str],
+        strains: list[str | None],
+        *,
+        desc: str,
+    ) -> np.ndarray:
+        """Chunk a list of inputs into adapter-sized batches and call
+        ``predict_coverage_batch`` on each chunk. Returns shape
+        ``(len(seqs), out_len)``."""
+        from tqdm import tqdm
+
+        if not seqs:
+            return np.empty((0, 0), dtype=np.float64)
+        bs = max(1, int(getattr(adapter, "batch_size", 1)))
+        out_chunks: list[np.ndarray] = []
+        for start in tqdm(range(0, len(seqs), bs), desc=desc, ncols=80):
+            end = min(start + bs, len(seqs))
+            arr = adapter.predict_coverage_batch(
+                seqs=seqs[start:end],
+                strands=strands[start:end],
+                strains=strains[start:end],
+            )
+            out_chunks.append(np.asarray(arr, dtype=np.float64))
+        return np.concatenate(out_chunks, axis=0)
 
     def evaluate(self, adapter: CoverageTrackPredictor) -> BrooksResults:
         n = len(self.df)
@@ -157,59 +197,93 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
 
         crop = adapter.crop_bp_each_side
         out_len = adapter.seq_len - 2 * crop  # per-base prediction length
+        assert adapter.seq_len == self.window_len, (
+            f"adapter seq_len {adapter.seq_len} != distribution window_len "
+            f"{self.window_len}; pick a TSV that matches the model "
+            "(`brooks_scramble_v1.tsv` for Yorzoi @ 4992, "
+            "`brooks_scramble_v1_w16384.tsv` for Shorkie @ 16384)."
+        )
+        varies_by_strain = bool(getattr(adapter, "varies_by_strain", True))
 
+        # ── Phase 1: per-replicate true LFCs (no GPU work) ──
+        j_raws_all = np.zeros((n, n_reps), dtype=np.int64)
         for i, row in self.df.iterrows():
-            # Per-replicate true LFCs from the JS94 deep runs.
             s_norm = float(row.norm_cov_strain)
             j_norms = self._parse_norm_runs(row.norm_cov_js94_runs)
             j_raws = self._parse_raw_runs(row.js94_reads_runs)
             for k in range(min(len(j_norms), len(j_raws), n_reps)):
+                j_raws_all[i, k] = int(j_raws[k])
                 if j_raws[k] < MIN_READS_PER_RUN:
                     continue
                 true_lfc_runs[i, k] = float(np.log2(
                     (s_norm + PSEUDOCOUNT) / (j_norms[k] + PSEUDOCOUNT)
                 ))
 
-            # Predicted LFCs — 1 alt prediction (strain-matched tracks)
-            # + 3 native predictions (one per JS94 deep-WT single-track
-            # alias). The benchmark passes the strain through; track-
-            # based models route to per-condition tracks. Adapters
-            # without per-strain routing are expected to ignore it.
-            pred_alt = np.asarray(
-                adapter.predict_coverage(row.alt_seq, row.strand,
-                                          strain=row.strain),
-                dtype=float,
-            )
-            assert pred_alt.shape == (out_len,), (
-                f"adapter must return per-base length {out_len}; got "
-                f"{pred_alt.shape}"
-            )
+        # ── Phase 2: batched alt predictions across all samples ──
+        all_alt_seqs = self.df.alt_seq.tolist()
+        all_strands = self.df.strand.tolist()
+        all_strains = self.df.strain.tolist()
+        pred_alt_all = self._run_batched(
+            adapter, all_alt_seqs, all_strands, all_strains,
+            desc=f"alt   (n={n})",
+        )
+        assert pred_alt_all.shape == (n, out_len), (
+            f"adapter returned {pred_alt_all.shape}, expected "
+            f"({n}, {out_len})"
+        )
 
+        # ── Phase 3: batched native predictions ──
+        # `pred_nat_runs[i, k]` is the model's prediction for sample i
+        # against JS94 replicate k. NaN where unused (truth NaN).
+        pred_nat_runs = np.full((n, n_reps, out_len), np.nan,
+                                 dtype=np.float64)
+        all_native_seqs = self.df.native_seq.tolist()
+        if varies_by_strain:
+            # One batched call per JS94 replicate; restrict to samples
+            # that need this replicate (truth is finite for it).
+            for k, alias in enumerate(JS94_REPLICATE_STRAIN_KEYS):
+                mask = np.isfinite(true_lfc_runs[:, k])
+                idx = np.where(mask)[0]
+                if idx.size == 0:
+                    continue
+                sub_pred = self._run_batched(
+                    adapter,
+                    seqs=[all_native_seqs[i] for i in idx],
+                    strands=[all_strands[i] for i in idx],
+                    strains=[alias] * idx.size,
+                    desc=f"nat {alias} (n={idx.size})",
+                )
+                pred_nat_runs[idx, k] = sub_pred
+        else:
+            # One forward across all samples; broadcast into supported reps.
+            pred_nat_one = self._run_batched(
+                adapter,
+                seqs=all_native_seqs,
+                strands=all_strands,
+                strains=["JS94"] * n,
+                desc=f"nat   (n={n})",
+            )
+            for k in range(n_reps):
+                mask = np.isfinite(true_lfc_runs[:, k])
+                pred_nat_runs[mask, k] = pred_nat_one[mask]
+
+        # ── Phase 4: per-sample LFCs + Tier-2 shape (CPU only) ──
+        for i, row in self.df.iterrows():
+            pred_alt = pred_alt_all[i]
             cs = max(0, int(row.cds_start_in_window) - crop)
             ce = min(out_len, int(row.cds_end_in_window) - crop)
             if ce <= cs:
                 continue
             alt_cds = pred_alt[cs:ce].sum()
 
-            # Per-replicate native predictions. Only run a JS94 forward
-            # if that replicate's truth is finite (otherwise the
-            # comparison won't be used and the GPU work is wasted).
-            for k, key in enumerate(JS94_REPLICATE_STRAIN_KEYS):
+            for k in range(n_reps):
                 if not np.isfinite(true_lfc_runs[i, k]):
                     continue
-                pred_nat_k = np.asarray(
-                    adapter.predict_coverage(row.native_seq, row.strand,
-                                              strain=key),
-                    dtype=float,
-                )
-                assert pred_nat_k.shape == (out_len,)
-                nat_cds_k = pred_nat_k[cs:ce].sum()
+                nat_cds_k = pred_nat_runs[i, k, cs:ce].sum()
                 pred_lfc_runs[i, k] = float(np.log2(
                     (alt_cds + PSEUDOCOUNT) / (nat_cds_k + PSEUDOCOUNT)
                 ))
 
-            # Tier-2 (per-base shape) on the alt construct only — uses
-            # the strain-matched alt prediction, no JS94 needed.
             true_alt = _crop_to_output(
                 self._parse_cov(row.true_cov_alt), crop, out_len
             )
@@ -390,10 +464,15 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
 
         fig, ax = plt.subplots(figsize=(7, 7))
         ax.axhline(0, color="grey", lw=0.5); ax.axvline(0, color="grey", lw=0.5)
+        # Clamp to >=0; tiny float-precision noise around mean ≈ min ≈ max
+        # for broadcast (varies_by_strain=False) predictions has slipped
+        # below zero in practice and matplotlib's errorbar rejects it.
+        x_lo = np.maximum(t_arr - true_lo, 0.0)
+        x_hi = np.maximum(true_hi - t_arr, 0.0)
+        y_lo = np.maximum(p_arr - pred_lo, 0.0)
+        y_hi = np.maximum(pred_hi - p_arr, 0.0)
         ax.errorbar(
-            t_arr, p_arr,
-            xerr=[t_arr - true_lo, true_hi - t_arr],
-            yerr=[p_arr - pred_lo, pred_hi - p_arr],
+            t_arr, p_arr, xerr=[x_lo, x_hi], yerr=[y_lo, y_hi],
             fmt="o", ms=4, ecolor="lightgrey", elinewidth=1, alpha=0.7,
         )
         lim = max(np.nanmax(np.abs(t_arr)), np.nanmax(np.abs(p_arr)), 1) + 0.5

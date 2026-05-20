@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Sequence
 
 import numpy as np
 
@@ -65,6 +65,9 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
     # Geometry exposed to the benchmark
     seq_len: ClassVar[int] = SEQ_LEN
     crop_bp_each_side: ClassVar[int] = CROP_BP_EACH_SIDE
+    # Yorzoi is a small single-fold model; relatively large batches fit.
+    batch_size: ClassVar[int] = 16
+    varies_by_strain: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -73,6 +76,7 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         use_rc: bool = True,
         autocast: bool = True,
         track_mode: TrackMode = "matched",
+        batch_size: int = 16,
     ) -> None:
         """``track_mode`` controls which output tracks the prediction
         averages across.
@@ -96,6 +100,8 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         self.use_rc = use_rc
         self.autocast = autocast
         self.track_mode = track_mode
+        # Per-call max batch; benchmark chunks larger inputs.
+        self.batch_size = int(batch_size)
         self.model.to(self.device).eval()
 
         plus = _torch.tensor(YORZOI_PLUS_TRACK_IDS, device=self.device,
@@ -113,11 +119,12 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         cls, hf_repo: str, device: str = "cuda",
         use_rc: bool = True, autocast: bool = True,
         track_mode: TrackMode = "matched",
+        batch_size: int = 16,
     ) -> "YorzoiBrooksPredictor":
         from yorzoi.model.borzoi import Borzoi
         return cls(Borzoi.from_pretrained(hf_repo),
                    device=device, use_rc=use_rc, autocast=autocast,
-                   track_mode=track_mode)
+                   track_mode=track_mode, batch_size=batch_size)
 
     def _plus_axis_indices(self, strain: str | None) -> list[int]:
         """Indices on the 81-track plus axis for this prediction.
@@ -152,35 +159,55 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         out_rc_aligned = out_rc.index_select(1, self._full_swap_idx).flip(dims=[2])
         return 0.5 * (out_fwd + out_rc_aligned)
 
-    def predict_coverage(self, construct_seq: str, strand: str,
-                         strain: str | None = None) -> np.ndarray:
-        """Per-base predicted Nanopore-like coverage over the central
-        ``seq_len - 2*crop`` = 3000 bp of the input window, **already
-        untransformed and unbinned** so the benchmark can compute LFC,
-        Pearson and JSD directly against raw per-base pileups in the
-        same units (predicted-count scale).
+    def predict_coverage_batch(
+        self,
+        seqs: Sequence[str],
+        strands: Sequence[str],
+        strains: Sequence[str | None] | None = None,
+    ) -> np.ndarray:
+        """Batched per-base predicted Nanopore-like coverage over the
+        central ``seq_len - 2*crop`` = 3000 bp of each input window,
+        **already untransformed and unbinned** so the benchmark can
+        compute LFC, Pearson and JSD directly against raw per-base
+        pileups in the same units (predicted-count scale).
 
-        ``strain`` routes to per-strain Nanopore tracks when
-        ``track_mode == "matched"`` (the default). See ``__init__``."""
+        Per-sample ``strains`` route each prediction to per-strain
+        Nanopore tracks when ``track_mode == "matched"`` (the default).
+        Returns shape ``(B, 3000)``."""
         import torch as _torch
 
-        assert len(construct_seq) == SEQ_LEN, (
-            f"Brooks construct must be {SEQ_LEN} bp; got {len(construct_seq)}"
-        )
-        x = _torch.from_numpy(
-            one_hot_encode_channels_first(construct_seq).T  # (L, 4) channels-last
-        ).unsqueeze(0).to(self.device)
-        with _torch.no_grad():
-            pred = self._forward(x).float()                  # (1, 162, OUTPUT_BINS)
-
-        plus_axis = self._plus_axis_indices(strain)
-        if strand == "+":
-            channels = plus_axis
+        B = len(seqs)
+        assert len(strands) == B
+        if strains is None:
+            strains = [None] * B
         else:
-            channels = [i + N_PLUS_TRACKS for i in plus_axis]
-        idx = _torch.tensor(channels, device=pred.device, dtype=_torch.long)
-        binned = pred[0].index_select(0, idx).mean(dim=0).cpu().numpy()
-        # 1. Invert Yorzoi's training transform (per-bin).
-        # 2. Spread each bin total back to per-base values (length 3000).
-        raw_binned = _borzoi_inv_transform(binned)            # raw counts per bin
-        return _unbin_per_base(raw_binned, BIN_WIDTH)         # (3000,)
+            assert len(strains) == B
+        for s in seqs:
+            assert len(s) == SEQ_LEN, (
+                f"Brooks construct must be {SEQ_LEN} bp; got {len(s)}"
+            )
+
+        # One-hot stack: (B, SEQ_LEN, 4) channels-last as the model expects.
+        arrs = np.stack(
+            [one_hot_encode_channels_first(s).T for s in seqs], axis=0
+        )
+        x = _torch.from_numpy(arrs).to(self.device)
+        with _torch.no_grad():
+            pred = self._forward(x).float()                  # (B, 162, OUTPUT_BINS)
+
+        # Per-sample track-subset averaging happens post-forward — the model
+        # always emits all 162 tracks; ``strain`` and ``strand`` only pick
+        # which tracks to mean across for each sample.
+        out = np.empty((B, OUTPUT_BINS * BIN_WIDTH), dtype=np.float64)
+        for i in range(B):
+            plus_axis = self._plus_axis_indices(strains[i])
+            channels = (
+                plus_axis
+                if strands[i] == "+"
+                else [c + N_PLUS_TRACKS for c in plus_axis]
+            )
+            idx = _torch.tensor(channels, device=pred.device, dtype=_torch.long)
+            binned = pred[i].index_select(0, idx).mean(dim=0).cpu().numpy()
+            raw_binned = _borzoi_inv_transform(binned)
+            out[i] = _unbin_per_base(raw_binned, BIN_WIDTH)
+        return out

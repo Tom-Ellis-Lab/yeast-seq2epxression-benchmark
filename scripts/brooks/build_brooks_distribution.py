@@ -26,8 +26,9 @@ Output: `data/tasks/brooks_scramble/brooks_scramble_v1.tsv` — one row per
 sample. Column schema in COLUMNS below.
 
 Run:
-  uv run python scripts/brooks/build_brooks_distribution.py            # 5 ROADMAP strains
+  uv run python scripts/brooks/build_brooks_distribution.py            # 5 ROADMAP strains, 4992 bp
   uv run python scripts/brooks/build_brooks_distribution.py --strains all
+  uv run python scripts/brooks/build_brooks_distribution.py --strains all --window 16384  # Shorkie
 """
 from __future__ import annotations
 
@@ -42,7 +43,9 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 BUCKET = "gs://brooks-nanopore"
 CACHE = ROOT / "data" / "tasks" / "brooks_scramble" / "_cache"
-OUT = ROOT / "data" / "tasks" / "brooks_scramble" / "brooks_scramble_v1.tsv"
+OUT_DIR = ROOT / "data" / "tasks" / "brooks_scramble"
+DEFAULT_WINDOW = 4992       # Yorzoi receptive field (default output filename)
+SHORKIE_WINDOW = 16384      # Shorkie receptive field
 
 CONTROL = "JS94"
 ROADMAP_STRAINS = ["JS606", "JS707", "JS711", "JS731", "JS732"]
@@ -51,7 +54,12 @@ NATIVE_CONTIGS = (
      "I II III IV V VI VII VIII X XI XII XIII XIV XV XVI".split()]
     + ["chrIXL"]
 )
-WINDOW = 4992          # Yorzoi receptive field; gene-centred
+WINDOW = DEFAULT_WINDOW    # Yorzoi receptive field; gene-centred. Set
+                           # from `--window` in main(); 4992 (Yorzoi) or
+                           # 16384 (Shorkie) are the two practical
+                           # values today. Coverage extraction, sequence
+                           # extraction, and per-base truth vectors all
+                           # depend on this constant.
 PSEUDOCOUNT = 1.0
 MIN_READS = 10         # strain-side raw CDS read floor → low_support flag
                        # on the sample. Same threshold is used per-JS94-run
@@ -272,7 +280,18 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--strains", default="roadmap",
                     help="'roadmap' (5), 'all', or comma list")
+    ap.add_argument("--window", type=int, default=DEFAULT_WINDOW,
+                    help=f"Gene-centred window length (bp). "
+                         f"{DEFAULT_WINDOW} for Yorzoi, "
+                         f"{SHORKIE_WINDOW} for Shorkie.")
     args = ap.parse_args()
+
+    # Set the module-level WINDOW so the helpers (gene_window,
+    # per_base_cov, ...) all use the same value.
+    global WINDOW
+    WINDOW = int(args.window)
+    out_path = (OUT_DIR / "brooks_scramble_v1.tsv" if WINDOW == DEFAULT_WINDOW
+                else OUT_DIR / f"brooks_scramble_v1_w{WINDOW}.tsv")
 
     # Control = JS94 (−SCRaMBLE). The bucket has NO JS94 FASTA, but
     # JS96_1 is the parental synIXR sequence: identical 98,752 bp length
@@ -411,11 +430,11 @@ def main() -> None:
         print(f"  {S}: {n_kept} samples (sf={s_sf:.3f}, {len(beds)} run(s))")
 
     df = pd.DataFrame(rows, columns=COLUMNS)
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(OUT, sep="\t", index=False)
-    print(f"\nwrote {OUT}  ({len(df)} samples, "
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, sep="\t", index=False)
+    print(f"\nwrote {out_path}  ({len(df)} samples, "
           f"{df.low_support.sum() if len(df) else 0} low-support; "
-          f"{OUT.stat().st_size/1e6:.1f} MB)")
+          f"{out_path.stat().st_size/1e6:.1f} MB)")
 
 
 if __name__ == "__main__":

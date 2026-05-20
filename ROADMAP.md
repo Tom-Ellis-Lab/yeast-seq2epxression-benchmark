@@ -292,9 +292,15 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   and direction are more trustworthy than the absolute magnitudes.
 
 **Open.**
-- [ ] Shorkie Tier-1 substitute — deferred (not Nanopore-trained;
-  scalar LFC comparison would be unfair). Tier-2 shape comparison on
-  Shorkie is a possible future angle but needs its own design.
+- [ ] **Unified max-window distribution (post-Shorkie).** v1 ships two
+  separate TSVs (`brooks_scramble_v1.tsv` @ 4,992 bp for Yorzoi,
+  `brooks_scramble_v1_w16384.tsv` @ 16,384 bp for Shorkie) and routes
+  via separate task names (`brooks_scramble` /
+  `brooks_scramble_shorkie`). The clean end-state is one TSV at the
+  maximum window any model needs, with the benchmark cropping the
+  central `adapter.seq_len` bp per call (and slicing the stored
+  per-base truth correspondingly). Avoids one TSV per receptive field
+  as new models land. Defer until a third model needs a third window.
 - [ ] **JS707 / JS710 recovery (low priority).** Both strains have
   heavily rearranged synIXR contigs (307 kb and 363 kb vs 98.7 kb
   parental) but produce zero samples because of suspected gene-ID

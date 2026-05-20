@@ -11,23 +11,26 @@ import pytest
 
 from yeastbench.adapters._genome import Gene, parse_gene_annotations
 from yeastbench.adapters._wu_scaffold import (
+    CASSETTE_FEATURES,
     PAYLOAD_LEN,
     RFP_CDS_LEN,
     RFP_CDS_START_IN_PAYLOAD,
     WuLocus,
     build_insertion_context,
     load_cassette_payload,
+    payload_feature_window_span,
     resolve_loci,
     reverse_complement,
+    span_to_bins,
 )
 from yeastbench.adapters.protocols import CassetteExpressionPredictor
 from yeastbench.benchmarks.base import BenchmarkInfo
 from yeastbench.benchmarks.rfpins import (
     CLASS_NAMES,
+    EXTREME_HIGH_CUTOFF,
+    EXTREME_LOW_CUTOFF,
     RFPInsertionBenchmark,
-    _classify_absolute,
     _metrics,
-    _rank_match_classes,
 )
 from yeastbench.registry import TASKS
 
@@ -105,29 +108,38 @@ class TestBuildInsertionContext:
         seq_len=16384, crop_bp_each_side=1024, bin_width=16, output_bins=896
     )
 
-    def test_plus_strand_centers_atg(self, mini_genome):
+    def test_plus_strand_stop_at_downstream_crop_edge(self, mini_genome):
         payload = load_cassette_payload(REAL_CASSETTE)
-        locus = WuLocus("G+", "I", "+", 30_000, 30_300)  # ORF 30000..30300
+        locus = WuLocus("G+", "I", "+", 30_000, 30_300)
         ctx = build_insertion_context(locus, payload, mini_genome, **self.PARAMS)
         assert ctx is not None
         assert len(ctx.window_seq) == self.PARAMS["seq_len"]
         assert ctx.rfp_bins.size > 0
-        # mCherry start codon centred (mid-chromosome → no clamping)
-        atg30 = payload[RFP_CDS_START_IN_PAYLOAD : RFP_CDS_START_IN_PAYLOAD + 30]
-        idx = ctx.window_seq.find(atg30)
-        assert idx != -1
-        assert abs(idx - self.PARAMS["seq_len"] // 2) <= 1
+        sl, crop = self.PARAMS["seq_len"], self.PARAMS["crop_bp_each_side"]
+        # mCherry stop at the right crop edge → CDS 5' at (sl-crop)-CDS_LEN
+        exp = (sl - crop) - RFP_CDS_LEN
+        assert ctx.rfp_start_in_window == exp
+        atg = payload[RFP_CDS_START_IN_PAYLOAD : RFP_CDS_START_IN_PAYLOAD + 30]
+        assert ctx.window_seq[exp : exp + 30] == atg
+        # payload placed forward; oriented payload starts where claimed
+        assert ctx.payload_rc is False
+        ps = ctx.payload_start_in_window
+        assert ctx.window_seq[ps : ps + 18] == payload[:18]  # U1
 
-    def test_minus_strand_inserts_revcomp(self, mini_genome):
+    def test_minus_strand_stop_at_upstream_genomic_crop_edge(self, mini_genome):
         payload = load_cassette_payload(REAL_CASSETTE)
         locus = WuLocus("G-", "I", "-", 30_000, 30_300)
         ctx = build_insertion_context(locus, payload, mini_genome, **self.PARAMS)
         assert ctx is not None
         assert len(ctx.window_seq) == self.PARAMS["seq_len"]
         assert ctx.rfp_bins.size > 0
-        # cassette is reverse-complemented for − strand ORFs
-        rc_chunk = reverse_complement(payload)[:30]
-        assert rc_chunk in ctx.window_seq
+        crop = self.PARAMS["crop_bp_each_side"]
+        # − strand: transcription stop at the LEFT crop edge → CDS 5' = crop
+        assert ctx.rfp_start_in_window == crop
+        assert ctx.payload_rc is True
+        rc = reverse_complement(payload)
+        rfp0 = len(payload) - RFP_CDS_START_IN_PAYLOAD - RFP_CDS_LEN
+        assert ctx.window_seq[crop : crop + 30] == rc[rfp0 : rfp0 + 30]
 
     def test_short_chromosome_returns_none(self, tmp_path):
         # Chromosome shorter than SEQ_LEN → native+payload can't fill a
@@ -146,34 +158,69 @@ class TestBuildInsertionContext:
         assert ctx is None
 
 
+# ── Annotation helpers ────────────────────────────────────────
+
+
+class TestAnnotationHelpers:
+    def test_cassette_features_consistent(self):
+        names = [f[0] for f in CASSETTE_FEATURES]
+        assert "mCherry" in names and "pURA3" in names
+        for _, _, a, b in CASSETTE_FEATURES:
+            assert 0 <= a < b <= PAYLOAD_LEN
+        mch = next(f for f in CASSETTE_FEATURES if f[0] == "mCherry")
+        assert mch[2] == RFP_CDS_START_IN_PAYLOAD
+        assert mch[3] == RFP_CDS_START_IN_PAYLOAD + RFP_CDS_LEN
+
+    def test_feature_window_span_forward(self):
+        lo, hi = payload_feature_window_span(10, 20, payload_start_in_window=100, payload_rc=False)
+        assert (lo, hi) == (110, 120)
+
+    def test_feature_window_span_rc(self):
+        # forward [10,20) → rc maps to [PAYLOAD_LEN-20, PAYLOAD_LEN-10)
+        lo, hi = payload_feature_window_span(10, 20, payload_start_in_window=0, payload_rc=True)
+        assert (lo, hi) == (PAYLOAD_LEN - 20, PAYLOAD_LEN - 10)
+
+    def test_span_to_bins(self):
+        # window [1024+0, 1024+32) with crop 1024, 16 bp/bin → bins [0,2)
+        assert span_to_bins(1024, 1056, 1024, 16, 896) == (0, 2)
+        # entirely in the cropped-out region → None
+        assert span_to_bins(0, 100, 1024, 16, 896) is None
+
+
 # ── Metrics ───────────────────────────────────────────────────
 
 
 class TestMetrics:
-    def test_classify_absolute(self):
-        v = np.array([0.98, 4.99, 5.0, 6.5, 7.99, 8.0, 12.9])
-        np.testing.assert_array_equal(
-            _classify_absolute(v), np.array([0, 0, 1, 2, 3, 4, 4])
-        )
+    def test_cutoffs(self):
+        assert EXTREME_LOW_CUTOFF == 5.0
+        assert EXTREME_HIGH_CUTOFF == 8.0
 
-    def test_rank_match_preserves_class_sizes(self):
-        true_cls = np.array([0, 0, 1, 1, 1, 2, 3, 4])
-        pred = np.array([0.1, 0.2, 9, 8, 7, 3, 4, 5], dtype=float)
-        pc = _rank_match_classes(pred, true_cls)
-        for c in range(5):
-            assert (pc == c).sum() == (true_cls == c).sum()
-        # lowest two predictions → class 0
-        assert set(pc[[0, 1]]) == {0}
-
-    def test_metrics_perfect_correlation(self):
+    def test_metrics_perfect_predictor(self):
         labels = np.linspace(1.0, 12.0, 200)
-        scores = labels * 3.0 + 7.0  # monotone → r = ρ = 1
+        scores = labels * 3.0 + 7.0  # monotone → perfect ranking
         m = _metrics(scores, labels)
         assert m["n_scored"] == 200
         assert m["pearson_r"] > 0.999
         assert m["spearman_rho"] > 0.999
-        assert m["qwk"] > 0.999
-        assert m["confusion"].sum() == 200
+        # tails perfectly separable by a monotone predictor
+        assert m["low_n_pos"] == int((labels < 5.0).sum())
+        assert m["high_n_pos"] == int((labels >= 8.0).sum())
+        assert m["low_auroc"] > 0.999 and m["low_auprc"] > 0.999
+        assert m["high_auroc"] > 0.999 and m["high_auprc"] > 0.999
+
+    def test_metrics_direction(self):
+        # adversarial (anti-correlated) predictor → AUROC ≈ 0
+        labels = np.linspace(1.0, 12.0, 200)
+        scores = -labels
+        m = _metrics(scores, labels)
+        assert m["low_auroc"] < 0.001 and m["high_auroc"] < 0.001
+
+    def test_metrics_one_class_is_nan(self):
+        labels = np.array([6.0, 6.5, 7.0, 6.2])  # no extreme-low/high
+        scores = np.array([0.1, 0.2, 0.3, 0.4])
+        m = _metrics(scores, labels)
+        assert m["low_n_pos"] == 0 and m["high_n_pos"] == 0
+        assert np.isnan(m["low_auroc"]) and np.isnan(m["high_auroc"])
 
     def test_metrics_ignores_nan(self):
         labels = np.array([1.0, 5.0, 7.0, np.nan, 9.0])
@@ -264,14 +311,19 @@ class TestRFPInsertionBenchmark:
         g2l = {b.gene_ids[i]: b.labels[i] for i in range(len(b.labels))}
         res = b.evaluate(_MockAdapter(g2l))
         b.plot(res, tmp_path / "p")
-        assert (tmp_path / "p" / "scatter.png").exists()
-        assert (tmp_path / "p" / "measured_classes.png").exists()
+        for png in ("scatter.png", "measured_classes.png",
+                    "roc_pr_extreme_low.png", "roc_pr_extreme_high.png"):
+            assert (tmp_path / "p" / png).exists(), png
         s = b.summary_dict(res)
         assert s["n_rows_total"] == 8
         assert s["n_rows_scored"] == 7
         assert s["n_dropped_unresolved"] == 1
-        assert len(s["confusion"]) == 5
-        assert "Pearson" in b.headline(res) and "Spearman" in b.headline(res)
+        assert s["extreme_low_n_pos"] == 2 and s["extreme_high_n_pos"] == 2
+        # perfect mock predictor separates both tails
+        assert s["extreme_low_auroc"] > 0.999
+        assert s["extreme_high_auroc"] > 0.999
+        h = b.headline(res)
+        assert "Pearson" in h and "extreme-low AUROC" in h
 
 
 class TestWuRegistry:

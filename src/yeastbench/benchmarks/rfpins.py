@@ -6,10 +6,11 @@ the genomic insertion site varies — this is a position-effect probe (see
 ``benchmarks/wu_rfpins.md``).
 
 Primary metric: Pearson r + Spearman ρ between predicted and measured
-relative fluorescence.  Secondary: agreement with the paper's five fixed
-absolute-cutoff classes, scored scale-free by rank-matching predictions
-to the ground-truth class sizes (quadratic-weighted Cohen's κ is the
-primary class statistic — the bins are ordinal and very imbalanced).
+relative fluorescence.  Secondary: two binary tail-classification tasks
+— detecting Wu et al.'s *extreme-low* ([0, 5)) and *extreme-high*
+([8, 13]) classes from the predicted score (AUROC + AUPRC, rank-based so
+no scale alignment is needed).  These are the biologically interesting
+extremes the paper highlights.
 """
 from __future__ import annotations
 
@@ -22,9 +23,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import (
-    cohen_kappa_score,
-    confusion_matrix,
-    f1_score,
+    average_precision_score,
+    precision_recall_curve,
+    roc_auc_score,
+    roc_curve,
 )
 
 from yeastbench.adapters._genome import parse_gene_annotations
@@ -32,13 +34,17 @@ from yeastbench.adapters._wu_scaffold import WuLocus, resolve_loci
 from yeastbench.adapters.protocols import CassetteExpressionPredictor
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 
-# Paper's five fixed absolute-cutoff classes (Wu et al. Fig. 1b).
-# np.digitize(value, CLASS_EDGES) → 0..4.
+# Paper's five fixed absolute-cutoff classes (Wu et al. Fig. 1b) — used
+# only for the descriptive histogram now.
 CLASS_EDGES: tuple[float, ...] = (5.0, 6.0, 7.0, 8.0)
 CLASS_NAMES: tuple[str, ...] = (
     "extreme_low", "low", "moderate", "high", "extreme_high",
 )
 CLASS_COLORS: tuple[str, ...] = ("red", "gold", "green", "violet", "blue")
+
+# Two binary tail-classification tasks (the paper's outermost classes).
+EXTREME_LOW_CUTOFF = CLASS_EDGES[0]    # measured < 5.0  → extreme-low
+EXTREME_HIGH_CUTOFF = CLASS_EDGES[-1]  # measured ≥ 8.0  → extreme-high
 
 LABEL_COL = "Relative_Fluorescence_Average"
 ERROR_COL = "Relative_Fluorescence_Error"
@@ -54,32 +60,25 @@ class WuResults:
     n_scored: int
     pearson_r: float
     spearman_rho: float
-    # 5-class (computed on the scored subset)
-    accuracy: float
-    macro_f1: float
-    qwk: float                    # quadratic-weighted Cohen's κ
-    confusion: np.ndarray         # (5, 5) rows = true class, cols = predicted
+    # Two binary tail tasks (computed on the scored subset)
+    low_n_pos: int                # # loci with measured < EXTREME_LOW_CUTOFF
+    low_auroc: float
+    low_auprc: float
+    high_n_pos: int               # # loci with measured ≥ EXTREME_HIGH_CUTOFF
+    high_auroc: float
+    high_auprc: float
 
 
-def _classify_absolute(values: np.ndarray) -> np.ndarray:
-    """Paper's fixed-cutoff class index 0..4 for each measured value."""
-    return np.digitize(values, CLASS_EDGES).astype(int)
-
-
-def _rank_match_classes(
-    pred: np.ndarray, true_cls: np.ndarray
-) -> np.ndarray:
-    """Assign predictions to classes 0..4 by rank so the predicted class
-    sizes equal the ground-truth class sizes (scale-free — a zero-shot
-    model's outputs are not on the assay's absolute scale)."""
-    sizes = np.array([(true_cls == c).sum() for c in range(len(CLASS_NAMES))])
-    order = np.argsort(pred, kind="stable")
-    pred_cls = np.empty(len(pred), dtype=int)
-    start = 0
-    for c, n in enumerate(sizes):
-        pred_cls[order[start : start + n]] = c
-        start += n
-    return pred_cls
+def _binary_scores(
+    y_true: np.ndarray, discriminant: np.ndarray
+) -> tuple[float, float]:
+    """AUROC, AUPRC for a binary task; NaN if a class is absent."""
+    if y_true.sum() == 0 or y_true.sum() == len(y_true):
+        return float("nan"), float("nan")
+    return (
+        float(roc_auc_score(y_true, discriminant)),
+        float(average_precision_score(y_true, discriminant)),
+    )
 
 
 def _metrics(scores: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
@@ -89,27 +88,26 @@ def _metrics(scores: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
     if n < 2:
         return dict(
             n_scored=n, pearson_r=float("nan"), spearman_rho=float("nan"),
-            accuracy=float("nan"), macro_f1=float("nan"), qwk=float("nan"),
-            confusion=np.zeros((5, 5), dtype=int),
+            low_n_pos=0, low_auroc=float("nan"), low_auprc=float("nan"),
+            high_n_pos=0, high_auroc=float("nan"), high_auprc=float("nan"),
         )
-    true_cls = _classify_absolute(m)
-    pred_cls = _rank_match_classes(p, true_cls)
-    labels5 = list(range(len(CLASS_NAMES)))
+    y_low = (m < EXTREME_LOW_CUTOFF).astype(int)
+    y_high = (m >= EXTREME_HIGH_CUTOFF).astype(int)
+    # extreme-low loci are expected to have *low* predicted expression,
+    # so the positive-class discriminant is −score; extreme-high uses
+    # +score directly.
+    low_auroc, low_auprc = _binary_scores(y_low, -p)
+    high_auroc, high_auprc = _binary_scores(y_high, p)
     return dict(
         n_scored=n,
         pearson_r=float(pearsonr(p, m).statistic),
         spearman_rho=float(spearmanr(p, m).statistic),
-        accuracy=float((pred_cls == true_cls).mean()),
-        macro_f1=float(
-            f1_score(
-                true_cls, pred_cls, labels=labels5,
-                average="macro", zero_division=0,
-            )
-        ),
-        qwk=float(
-            cohen_kappa_score(true_cls, pred_cls, labels=labels5, weights="quadratic")
-        ),
-        confusion=confusion_matrix(true_cls, pred_cls, labels=labels5),
+        low_n_pos=int(y_low.sum()),
+        low_auroc=low_auroc,
+        low_auprc=low_auprc,
+        high_n_pos=int(y_high.sum()),
+        high_auroc=high_auroc,
+        high_auprc=high_auprc,
     )
 
 
@@ -226,6 +224,47 @@ class RFPInsertionBenchmark(Benchmark[CassetteExpressionPredictor, WuResults]):
         fig.savefig(out_dir / "measured_classes.png", dpi=150)
         plt.close(fig)
 
+        # (3) ROC + PR for the two binary tail tasks
+        y_low = (meas < EXTREME_LOW_CUTOFF).astype(int)
+        y_high = (meas >= EXTREME_HIGH_CUTOFF).astype(int)
+        for name, y, disc, fname in (
+            ("extreme-low (< %.0f)" % EXTREME_LOW_CUTOFF, y_low, -pred,
+             "roc_pr_extreme_low.png"),
+            ("extreme-high (≥ %.0f)" % EXTREME_HIGH_CUTOFF, y_high, pred,
+             "roc_pr_extreme_high.png"),
+        ):
+            if y.sum() == 0 or y.sum() == len(y):
+                continue
+            fpr, tpr, _ = roc_curve(y, disc)
+            prec, rec, _ = precision_recall_curve(y, disc)
+            auroc = roc_auc_score(y, disc)
+            auprc = average_precision_score(y, disc)
+            base = y.mean()
+            fig, (axr, axp) = plt.subplots(1, 2, figsize=(11, 5))
+            axr.plot(fpr, tpr, color="C0", label=f"AUROC = {auroc:.3f}")
+            axr.plot([0, 1], [0, 1], "--", color="grey", label="random")
+            axr.set_xlabel("False positive rate")
+            axr.set_ylabel("True positive rate")
+            axr.set_xlim(0, 1); axr.set_ylim(0, 1)
+            axr.set_aspect("equal", "box")
+            axr.legend(loc="lower right", fontsize=8); axr.set_title("ROC")
+            axp.plot(rec, prec, color="C1", label=f"AUPRC = {auprc:.3f}")
+            axp.axhline(base, ls="--", color="grey",
+                        label=f"random (base = {base:.3f})")
+            axp.set_xlabel("Recall"); axp.set_ylabel("Precision")
+            axp.set_xlim(0, 1); axp.set_ylim(0, 1.02)
+            axp.set_aspect("equal", "box")
+            axp.legend(loc="upper right", fontsize=8)
+            axp.set_title("Precision–Recall")
+            fig.suptitle(
+                f"Wu {name} tail detection"
+                + (f" — {title_model}" if title_model else "")
+                + f"   (n+={int(y.sum())} / {len(y)})"
+            )
+            fig.tight_layout()
+            fig.savefig(out_dir / fname, dpi=150)
+            plt.close(fig)
+
     def save_results(self, results: WuResults, out_dir: Path) -> None:
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -259,15 +298,20 @@ class RFPInsertionBenchmark(Benchmark[CassetteExpressionPredictor, WuResults]):
             "n_dropped_unresolved": len(results.dropped_ids),
             "pearson_r": results.pearson_r,
             "spearman_rho": results.spearman_rho,
-            "class_accuracy": results.accuracy,
-            "class_macro_f1": results.macro_f1,
-            "class_qwk": results.qwk,
-            "confusion": results.confusion.tolist(),
+            "extreme_low_n_pos": results.low_n_pos,
+            "extreme_low_auroc": results.low_auroc,
+            "extreme_low_auprc": results.low_auprc,
+            "extreme_high_n_pos": results.high_n_pos,
+            "extreme_high_auroc": results.high_auroc,
+            "extreme_high_auprc": results.high_auprc,
         }
 
     def headline(self, results: WuResults) -> str:
         return (
             f"Pearson r = {results.pearson_r:.4f}  "
-            f"Spearman ρ = {results.spearman_rho:.4f}  "
-            f"κ_w = {results.qwk:.3f}  (n = {results.n_scored})"
+            f"Spearman ρ = {results.spearman_rho:.4f}  | "
+            f"extreme-low AUROC {results.low_auroc:.3f} "
+            f"AUPRC {results.low_auprc:.3f}  | "
+            f"extreme-high AUROC {results.high_auroc:.3f} "
+            f"AUPRC {results.high_auprc:.3f}  (n = {results.n_scored})"
         )

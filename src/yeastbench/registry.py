@@ -15,11 +15,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from yeastbench.adapters.protocols import (
+    CassetteExpressionPredictor,
+    CoverageTrackPredictor,
     MarginalizedSequenceExpressionPredictor,
     SequenceExpressionPredictor,
     TerminatorMarginalizedExpressionPredictor,
     VariantEffectScorer,
-    CassetteExpressionPredictor,
 )
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
@@ -148,6 +149,18 @@ def _yorzoi_wu_adapter(device, fasta_path, gtf_path, **cfg):
     )
 
 
+def _yorzoi_brooks_adapter(device, **cfg):
+    from yeastbench.adapters.yorzoi_brooks import YorzoiBrooksPredictor
+
+    return YorzoiBrooksPredictor.from_pretrained(device=device, **cfg)
+
+
+def _shorkie_brooks_adapter(device, **cfg):
+    from yeastbench.adapters.shorkie_brooks import ShorkieBrooksPredictor
+
+    return ShorkieBrooksPredictor.from_checkpoints(device=device, **cfg)
+
+
 # protocol → (build_fn, needs_refs)
 SHORKIE_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     VariantEffectScorer: (_shorkie_eqtl_adapter, True),
@@ -155,6 +168,7 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     MarginalizedSequenceExpressionPredictor: (_shorkie_mpra_marginalized_adapter, True),
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, True),
     CassetteExpressionPredictor: (_shorkie_wu_adapter, True),
+    CoverageTrackPredictor: (_shorkie_brooks_adapter, False),
 }
 
 YORZOI_ADAPTERS: dict[type, tuple[Callable, bool]] = {
@@ -163,6 +177,7 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     MarginalizedSequenceExpressionPredictor: (_yorzoi_mpra_marginalized_adapter, True),
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, True),
     CassetteExpressionPredictor: (_yorzoi_wu_adapter, True),
+    CoverageTrackPredictor: (_yorzoi_brooks_adapter, False),
 }
 
 
@@ -312,6 +327,38 @@ def _build_wu_rfpins(
     )
 
 
+def _build_brooks_scramble(data_path: str | Path) -> Benchmark:
+    from yeastbench.benchmarks.brooks import BrooksScrambleBenchmark
+
+    return BrooksScrambleBenchmark(
+        data_path=Path(data_path),
+        info=BenchmarkInfo(
+            name="brooks_scramble",
+            version="v1",
+            description="Brooks et al. SCRaMBLE structural-rearrangement effect",
+            distribution_uri="",
+        ),
+    )
+
+
+def _build_brooks_scramble_shorkie(data_path: str | Path) -> Benchmark:
+    """Same benchmark class, but reads the 16,384 bp distribution
+    rebuilt for Shorkie's receptive field. Until we have a unified
+    max-window distribution (ROADMAP), separate task names are how
+    we route the right TSV to the right model."""
+    from yeastbench.benchmarks.brooks import BrooksScrambleBenchmark
+
+    return BrooksScrambleBenchmark(
+        data_path=Path(data_path),
+        info=BenchmarkInfo(
+            name="brooks_scramble_shorkie",
+            version="v1-shorkie",
+            description="Brooks et al. SCRaMBLE — 16,384 bp window (Shorkie)",
+            distribution_uri="",
+        ),
+    )
+
+
 TASKS: dict[str, TaskFactory] = {
     "caudal_eqtl": _build_caudal_eqtl,
     "kita_eqtl": _build_kita_eqtl,
@@ -319,4 +366,6 @@ TASKS: dict[str, TaskFactory] = {
     "rafi_mpra_marginalized": _build_rafi_mpra_marginalized,
     "shalem_mpra_marginalized": _build_shalem_mpra_marginalized,
     "wu_rfpins": _build_wu_rfpins,
+    "brooks_scramble": _build_brooks_scramble,
+    "brooks_scramble_shorkie": _build_brooks_scramble_shorkie,
 }

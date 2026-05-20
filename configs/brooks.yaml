@@ -1,0 +1,44 @@
+# Brooks SCRaMBLE benchmark — Yorzoi + Shorkie.
+#
+# Two distribution files, one per model receptive field:
+#   - brooks_scramble_v1.tsv         (4,992 bp window, Yorzoi)
+#   - brooks_scramble_v1_w16384.tsv  (16,384 bp window, Shorkie)
+#
+#   uv run ybench run --config configs/brooks.yaml
+#   uv run ybench run --config configs/brooks.yaml --model shorkie
+
+out_dir: results/brooks
+device: cuda
+
+tasks_config:
+  brooks_scramble:
+    data_path: data/tasks/brooks_scramble/brooks_scramble_v1.tsv
+  brooks_scramble_shorkie:
+    data_path: data/tasks/brooks_scramble/brooks_scramble_v1_w16384.tsv
+
+runs:
+  - model: yorzoi
+    tasks: [brooks_scramble]
+    model_config:
+      hf_repo: tom-ellis-lab/yorzoi
+      use_rc: true
+      # Per-sample matched-track routing: alt prediction uses the
+      # strain's own Nanopore track(s); native uses JS94's 3 deep-WT
+      # tracks (the same set as the truth-side denominator). Options:
+      # "matched" (default), "nanopore_all", "all".
+      track_mode: matched
+
+  - model: shorkie
+    tasks: [brooks_scramble_shorkie]
+    model_config:
+      params_path: data/models/shorkie/params.json
+      checkpoint_paths:
+        - data/models/shorkie/checkpoints/f0.h5
+        - data/models/shorkie/checkpoints/f1.h5
+        - data/models/shorkie/checkpoints/f2.h5
+        - data/models/shorkie/checkpoints/f3.h5
+        - data/models/shorkie/checkpoints/f4.h5
+        - data/models/shorkie/checkpoints/f5.h5
+        - data/models/shorkie/checkpoints/f6.h5
+        - data/models/shorkie/checkpoints/f7.h5
+      use_rc: true

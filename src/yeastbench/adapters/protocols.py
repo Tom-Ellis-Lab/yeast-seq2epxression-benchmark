@@ -50,17 +50,24 @@ class MarginalizedSequenceExpressionPredictor(Protocol):
 
 @runtime_checkable
 class CoverageTrackPredictor(Protocol):
-    """Predict an RNA-seq-like *per-bin* coverage vector for a single
-    construct on a given strand. Used by the Brooks SCRaMBLE benchmark
+    """Predict an RNA-seq-like coverage profile for a single construct
+    on a given strand. Used by the Brooks SCRaMBLE benchmark
     (sequence-in / coverage-out, not variant-effect).
 
-    Adapters are also expected to expose three attributes so the
-    benchmark can align per-base truth to per-bin predictions:
-    ``bin_width``, ``crop_bp_each_side``, ``output_bins``."""
+    **Output contract:** ``predict_coverage`` must return a 1D numpy
+    array of length ``seq_len - 2 * crop_bp_each_side``, in **raw
+    per-base predicted-count units** — adapters are responsible for
+    inverting any model-specific training transform (e.g. Borzoi/Yorzoi's
+    `x^0.75 + sqrt`-squash + 4 bp binning) and unbinning back to per-base
+    before returning, so the benchmark can compute LFC / Pearson / JSD
+    directly against raw per-base pileups in matching units.
 
-    bin_width: int
+    Adapters expose ``seq_len`` and ``crop_bp_each_side`` so the
+    benchmark can slice the true per-base coverage to the predicted
+    central region and map CDS coordinates correctly."""
+
+    seq_len: int
     crop_bp_each_side: int
-    output_bins: int
 
     def predict_coverage(self, construct_seq: str, strand: str) -> np.ndarray: ...
 

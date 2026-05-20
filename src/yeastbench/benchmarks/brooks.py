@@ -2,17 +2,23 @@
 
 Two tiers (see ``benchmarks/brooks_scramble.md``):
 
-  Tier 1 — scalar LFC.  Predicted CDS log-fold-change (alt / native);
-    metrics: direction balanced accuracy → Spearman ρ → Pearson r,
-    reported against the JS94×3 reproducibility ceiling (derivable from
-    ``norm_cov_js94_runs`` in the distribution file).
+  Tier 1 — scalar LFC.  log2((sum pred over CDS bp + 1) /
+    (sum native pred over CDS bp + 1)) vs the distribution's
+    ``true_lfc`` (computed from library-size-normalised raw CDS pileups).
+    Metrics: direction balanced accuracy → Spearman ρ → Pearson r,
+    reported against the JS94×3 reproducibility ceiling derivable from
+    ``norm_cov_js94_runs`` in the same file.
 
-  Tier 2 — coverage shape.  Full-window per-bin predicted coverage
-    compared to the per-base truth (binned to the adapter's resolution);
+  Tier 2 — coverage shape.  Per-base predicted vs per-base true
+    Nanopore pileup over the central ``seq_len - 2 * crop`` region;
     metrics: Pearson + Jensen–Shannon divergence per sample, mean across.
 
-The benchmark consumes only ``brooks_scramble_v1.tsv`` — no GCS, no
-genomes, no R64 reference.
+**Units.** The benchmark expects adapter predictions in **raw per-base
+predicted-count units** (i.e. with any model-specific training transform
+inverted inside the adapter); the distribution's ``true_cov_*`` columns
+are raw per-base Nanopore pileups. Library size cancels in the LFC
+ratio and is normalised away by the sum-to-1 step before the shape
+metrics.
 """
 from __future__ import annotations
 
@@ -57,17 +63,10 @@ class BrooksResults:
 # ── shape metric helpers ─────────────────────────────────────
 
 
-def _bin_per_base(vec: np.ndarray, bin_width: int, crop: int,
-                  output_bins: int) -> np.ndarray:
-    """Sum a length-`window_len` per-base array into `output_bins` bins
-    of width `bin_width`, dropping the cropped flanks each side."""
-    core = vec[crop : crop + bin_width * output_bins]
-    return core.reshape(output_bins, bin_width).sum(axis=1).astype(np.float64)
-
-
-def _normalise(v: np.ndarray) -> np.ndarray:
-    s = v.sum()
-    return (v + 1e-9) / (s + 1e-9 * len(v)) if s > 0 else None  # type: ignore[return-value]
+def _crop_to_output(per_base: np.ndarray, crop: int, out_len: int) -> np.ndarray:
+    """Slice a length-`window_len` per-base vector to the
+    `[crop, crop + out_len)` region the adapter actually predicts."""
+    return per_base[crop : crop + out_len].astype(np.float64)
 
 
 def _js_divergence(p: np.ndarray, q: np.ndarray) -> float:
@@ -112,6 +111,9 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         tier2_pearson = np.full(n, np.nan)
         tier2_js = np.full(n, np.nan)
 
+        crop = adapter.crop_bp_each_side
+        out_len = adapter.seq_len - 2 * crop  # per-base prediction length
+
         for i, row in self.df.iterrows():
             pred_alt = np.asarray(
                 adapter.predict_coverage(row.alt_seq, row.strand), dtype=float
@@ -119,27 +121,31 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             pred_nat = np.asarray(
                 adapter.predict_coverage(row.native_seq, row.strand), dtype=float
             )
-            # Tier 1: CDS-bin LFC
-            cs, ce = int(row.cds_start_in_window), int(row.cds_end_in_window)
-            crop, bw, ob = (adapter.crop_bp_each_side, adapter.bin_width,
-                            adapter.output_bins)
-            b_lo = max(0, (cs - crop) // bw)
-            b_hi = min(ob, (ce - crop + bw - 1) // bw)
-            if b_hi <= b_lo:
+            assert pred_alt.shape == pred_nat.shape == (out_len,), (
+                f"adapter must return per-base length {out_len}; got "
+                f"{pred_alt.shape}"
+            )
+            # CDS interval mapped to the predicted (cropped) region
+            cs = max(0, int(row.cds_start_in_window) - crop)
+            ce = min(out_len, int(row.cds_end_in_window) - crop)
+            if ce <= cs:
                 continue
-            alt_cds = pred_alt[b_lo:b_hi].sum()
-            nat_cds = pred_nat[b_lo:b_hi].sum()
+            # Tier 1: per-base CDS sum → LFC. Both sides are in the same
+            # untransformed predicted-count units; library size cancels.
+            alt_cds = pred_alt[cs:ce].sum()
+            nat_cds = pred_nat[cs:ce].sum()
             pred_lfc[i] = float(np.log2(
                 (alt_cds + PSEUDOCOUNT) / (nat_cds + PSEUDOCOUNT)
             ))
-            # Tier 2: full-window coverage shape on the alt construct
-            true_alt = self._parse_cov(row.true_cov_alt)
-            true_alt_binned = _bin_per_base(true_alt, bw, crop, ob)
-            if true_alt_binned.sum() > 0 and pred_alt.sum() > 0:
+            # Tier 2: per-base coverage shape over the predicted region
+            true_alt = _crop_to_output(
+                self._parse_cov(row.true_cov_alt), crop, out_len
+            )
+            if true_alt.sum() > 0 and pred_alt.sum() > 0:
                 tier2_pearson[i] = float(
-                    pearsonr(true_alt_binned, pred_alt).statistic
+                    pearsonr(true_alt, pred_alt).statistic
                 )
-                p = true_alt_binned / true_alt_binned.sum()
+                p = true_alt / true_alt.sum()
                 q = pred_alt / pred_alt.sum()
                 tier2_js[i] = _js_divergence(p, q)
 

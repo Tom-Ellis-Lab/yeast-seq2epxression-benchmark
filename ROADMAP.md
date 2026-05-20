@@ -229,6 +229,15 @@ paper (Schneider et al. 2025, Figure 4).
   Yorzoi coverage shape (Pearson + Jensen–Shannon); plots.
 - [ ] Yorzoi `CoverageTrackPredictor` adapter (RC/strand machinery
   reused). Leakage assumed clean per user (2026-05-19).
+- [ ] **Restrict to Nanopore-direct-RNA tracks only.** v1 averages
+  across *all* 81 strand-matched Yorzoi tracks, mixing Illumina /
+  Nanopore / various protocols. Brooks truth is Nanopore direct RNA →
+  putting the model in-distribution should improve every Brooks metric.
+  Prereq: identify the Nanopore-direct-RNA track indices from
+  `yorzoi/track_annotation.json` (user maintains Yorzoi). Then add a
+  `track_subset` arg to `YorzoiBrooksPredictor` (mirroring the
+  T0-subset pattern in Shorkie's `SHORKIE_T0_RNA_SEQ_TRACK_IDS`) and
+  pin the indices in `_yorzoi_constants.py`. Re-run; compare.
 - [ ] Shorkie Tier-1 substitute — deferred (not Nanopore-trained).
 
 ## Native-genome track prediction
@@ -261,6 +270,48 @@ Direction (revisit before designing):
   file), keep the registry's protocol-driven dispatch.
 
 Not blocking any benchmark; queued for explicit design discussion.
+
+### Correctness sweep — always evaluate on the untransformed, unbinned scale
+
+Yorzoi was trained with the Borzoi piecewise transform
+``y = transform(bin_4bp(x))`` where ``transform(x) = min(x^0.75, 384 +
+sqrt(x^0.75 − 384))`` (`yorzoi/yorzoi/utils.py`). Every metric we
+compute on a transformed quantity is wrong in principle:
+``sum(T(x_i)) ≠ T(sum(x_i))`` and the squash compresses log-ratios at
+high counts. Rank-based metrics (Spearman / AUROC / balanced acc) are
+roughly preserved; Pearson r and any scalar magnitude prediction are
+distorted. Shorkie was trained with Poisson loss + softplus head, so its
+outputs are already in raw-count units — no inverse-transform needed,
+but its 16 bp output bins introduce CDS-boundary rounding that
+unbinning to per-base eliminates.
+
+**Audit (2026-05-20).** Only `yorzoi_brooks` operates on
+untransformed, per-base predictions. Every other Yorzoi adapter sums
+transformed binned values directly:
+
+| Adapter | Aggregation | Transform-affected? | Bin-boundary-rounding? |
+| --- | --- | :-: | :-: |
+| `yorzoi_eqtl` | `log2(alt_sum+1) − log2(ref_sum+1)` over exon bins | yes | yes |
+| `yorzoi_mpra` | scalar `cov[:, yfp_bins].sum()` (DREAM YFP) | yes | yes |
+| `yorzoi_mpra_marginalized` | per-host logSED → mean | yes | yes |
+| `yorzoi_shalem` | per-host logSED → mean | yes | yes |
+| `yorzoi_wu` | strand-matched 81-track mean × CDS-bin sum | yes | yes |
+| `yorzoi_brooks` | per-base, untransformed (fixed in PR #2) | — | — |
+| `shorkie_*` (all five) | log2 / scalar sums over 16 bp bins | **no transform** | yes |
+
+**Planned fix — in one place, as part of the refactor above.** The
+`Yorzoi` model class owns `_borzoi_inv_transform` and the per-base
+unbin; the `Shorkie` model class owns the per-base unbin. Adapters
+become thin and consume per-base raw-count predictions exclusively —
+exactly the protocol contract already established by
+`CoverageTrackPredictor` for Brooks. Then every existing benchmark
+re-runs naturally on the corrected scale; expect:
+
+- Rank metrics (Spearman / AUROC / balanced acc): largely unchanged.
+- Pearson r: slight shifts (typically improvement; matches Brooks's
+  Tier-1 r and Tier-2 r̄/JS̄ behaviour after the fix).
+- Scalar magnitude predictions (DREAM YFP, Wu mCherry): can shift
+  meaningfully.
 
 ## Documentation
 

@@ -1,11 +1,19 @@
 """Yorzoi adapter for the Brooks SCRaMBLE benchmark.
 
-Sequence-in / per-bin-coverage-out: predict an RNA-seq-like coverage
-profile over a 4992 bp construct, strand-matched to the gene's strand,
-RC-averaged with the standard plus↔minus track swap.
+Sequence-in / **per-base, untransformed** coverage-out. Yorzoi was
+trained with the Borzoi-style target transform
+``y = transform(bin_4bp(x))`` where
+``transform(x) = min(x^0.75, 384 + sqrt(x^0.75 - 384))`` is a piecewise
+power+sqrt squash (`yorzoi/yorzoi/utils.py`). Predictions therefore live
+in a transformed binned space — log-ratios / shape metrics computed
+directly on them do not match what you'd compute on raw pileups. This
+adapter inverts the transform and unbins back to a per-base predicted
+count vector so the benchmark can compare apples-to-apples with the
+raw Nanopore per-base truth in the distribution.
 
-Exposes ``bin_width``, ``crop_bp_each_side``, ``output_bins`` so the
-benchmark can align per-base truth to the per-bin output.
+Geometry exposed: ``seq_len`` (input length, 4992 bp) and
+``crop_bp_each_side`` (996 bp). The returned vector covers the central
+``seq_len - 2 * crop_bp_each_side`` = 3000 bp, base-by-base.
 """
 from __future__ import annotations
 
@@ -34,10 +42,24 @@ log = logging.getLogger(__name__)
 N_TRACKS_TOTAL = 162
 
 
+def _borzoi_inv_transform(y: np.ndarray) -> np.ndarray:
+    """Numpy port of yorzoi.utils._borzoi_transform_inv (per-bin)."""
+    expd = np.where(y <= 384.0, y, 384.0 + (y - 384.0) ** 2)
+    return np.power(np.clip(expd, 0.0, None), 1.0 / 0.75)
+
+
+def _unbin_per_base(binned: np.ndarray, bin_width: int) -> np.ndarray:
+    """Spread per-bin totals back to per-base values (each bin's total ÷
+    bin_width, repeated bin_width times). Sum across the bin's bases
+    recovers the original bin total — what we want for downstream sums
+    over CDS intervals."""
+    return np.repeat(binned, bin_width) / float(bin_width)
+
+
 class YorzoiBrooksPredictor(CoverageTrackPredictor):
-    bin_width: ClassVar[int] = BIN_WIDTH
+    # Geometry exposed to the benchmark
+    seq_len: ClassVar[int] = SEQ_LEN
     crop_bp_each_side: ClassVar[int] = CROP_BP_EACH_SIDE
-    output_bins: ClassVar[int] = OUTPUT_BINS
 
     def __init__(
         self,
@@ -93,6 +115,11 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         return 0.5 * (out_fwd + out_rc_aligned)
 
     def predict_coverage(self, construct_seq: str, strand: str) -> np.ndarray:
+        """Per-base predicted Nanopore-like coverage over the central
+        ``seq_len - 2*crop`` = 3000 bp of the input window, **already
+        untransformed and unbinned** so the benchmark can compute LFC,
+        Pearson and JSD directly against raw per-base pileups in the
+        same units (predicted-count scale)."""
         import torch as _torch
 
         assert len(construct_seq) == SEQ_LEN, (
@@ -102,6 +129,10 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
             one_hot_encode_channels_first(construct_seq).T  # (L, 4) channels-last
         ).unsqueeze(0).to(self.device)
         with _torch.no_grad():
-            pred = self._forward(x).float()  # (1, 162, bins)
+            pred = self._forward(x).float()                  # (1, 162, OUTPUT_BINS)
         ts, te = (0, 81) if strand == "+" else (81, 162)
-        return pred[0, ts:te].mean(dim=0).cpu().numpy()  # (OUTPUT_BINS,)
+        binned = pred[0, ts:te].mean(dim=0).cpu().numpy()     # (OUTPUT_BINS,)
+        # 1. Invert Yorzoi's training transform (per-bin).
+        # 2. Spread each bin total back to per-base values (length 3000).
+        raw_binned = _borzoi_inv_transform(binned)            # raw counts per bin
+        return _unbin_per_base(raw_binned, BIN_WIDTH)         # (3000,)

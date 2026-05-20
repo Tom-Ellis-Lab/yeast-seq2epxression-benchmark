@@ -17,7 +17,6 @@ from yeastbench.benchmarks.base import BenchmarkInfo
 from yeastbench.benchmarks.brooks import (
     BrooksScrambleBenchmark,
     WINDOW_LEN,
-    _bin_per_base,
     _js_divergence,
 )
 from yeastbench.registry import TASKS
@@ -25,11 +24,10 @@ from yeastbench.registry import TASKS
 INFO = BenchmarkInfo(name="test_brooks", version="test", description="t",
                      distribution_uri="")
 
-# Model geometry the tests use (matches Yorzoi but expressed locally so
+# Mock model geometry (matches Yorzoi numerically; expressed locally so
 # the test isn't coupled to the real adapter)
-BIN = 10
 CROP = 996
-OB = 300
+OUT_LEN = WINDOW_LEN - 2 * CROP   # 3000
 
 
 def _make_seq(rng: np.random.Generator) -> str:
@@ -73,29 +71,25 @@ def brooks_tsv(tmp_path: Path) -> Path:
 
 
 class _MockAdapter:
-    """Perfect predictor: returns coverage that gives `pred_lfc = true_lfc`.
-
-    For + strand samples we make alt = 2^|true_lfc| × native over the CDS
-    bins, with the sign baked in (alt > native → positive pred_lfc)."""
-    bin_width = BIN
+    """Perfect per-base predictor: returns coverage that gives
+    ``pred_lfc = true_lfc``. Alt CDS-region intensity is scaled by
+    ``2^true_lfc`` relative to native; everything else is constant noise.
+    Returns a length-``OUT_LEN`` (= 3000) per-base vector — already
+    untransformed/unbinned, per the protocol contract."""
+    seq_len = WINDOW_LEN
     crop_bp_each_side = CROP
-    output_bins = OB
 
     def __init__(self, df: pd.DataFrame, seed: int = 0):
         self._df = df.set_index("alt_seq")
-        self._native_lookup = df.set_index("native_seq")
         self._rng = np.random.default_rng(seed)
 
     def predict_coverage(self, construct_seq: str, strand: str) -> np.ndarray:
-        # Determine whether this is an alt or native call and the
-        # corresponding true_lfc for the sample
         if construct_seq in self._df.index:
             tl = float(self._df.loc[construct_seq, "true_lfc"])
             scale = float(2.0 ** tl)         # alt = scale * native
         else:
-            scale = 1.0                       # native baseline
-        # smooth profile peaking in the CDS region; same shape both ways
-        base = self._rng.normal(1.0, 0.05, OB).clip(0.1)
+            scale = 1.0
+        base = self._rng.normal(1.0, 0.05, OUT_LEN).clip(0.1)
         return base * scale
 
 
@@ -108,12 +102,6 @@ assert isinstance(_MockAdapter(pd.DataFrame({"alt_seq": [], "native_seq": [],
 
 
 class TestHelpers:
-    def test_bin_per_base_shape_and_sum(self):
-        v = np.ones(WINDOW_LEN, dtype=np.int32)
-        b = _bin_per_base(v, BIN, CROP, OB)
-        assert b.shape == (OB,)
-        assert b.sum() == BIN * OB        # 3000 base positions covered
-
     def test_js_divergence_symmetric_and_zero(self):
         p = np.array([0.2, 0.3, 0.5])
         q = np.array([0.5, 0.3, 0.2])

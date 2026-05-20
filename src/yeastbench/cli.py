@@ -136,6 +136,55 @@ def run_cmd(
 
     _echo("\nAll runs complete.")
 
+    # Auto-trigger the cross-model comparison. Walks the FULL config's
+    # `out_dir` (i.e. ignores --model / --task filters when looking for
+    # peer results), so a run that just produced one of two models still
+    # gets paired against the prior model's results on disk.
+    full_cfg = load_config(config)
+    _run_compare(full_cfg)
+
+
+def _run_compare(cfg: Config) -> None:
+    """Shared between `ybench run`'s auto-trigger and `ybench compare`.
+    Silent no-op when there's nothing to compare."""
+    from yeastbench.compare import compare
+
+    result = compare(cfg)
+    if result.empty:
+        return
+    _echo(f"\nCross-model comparison → {result.out_dir}")
+    _echo(f"  tasks compared: {', '.join(result.tasks_compared)}")
+    if result.tasks_skipped:
+        _echo(
+            "  tasks skipped (< 2 models): "
+            + ", ".join(result.tasks_skipped)
+        )
+    if result.summary_csv:
+        _echo(f"  summary.csv:    {result.summary_csv}")
+    if result.summary_md:
+        _echo(f"  summary.md:     {result.summary_md}")
+    if result.overview_path:
+        _echo(f"  overview.png:   {result.overview_path}")
+
+
+@app.command("compare")
+def compare_cmd(
+    config: Annotated[
+        Path, typer.Option("--config", "-c", help="YAML run-spec path")
+    ],
+) -> None:
+    """Build cross-model comparison plots / tables from existing results.
+
+    Walks the config's ``out_dir`` for ``<model>__<task>/summary.json``,
+    groups by task, and for every task with ≥ 2 models writes a
+    comparison plot + summary under ``out_dir/compare/per_task/<task>/``.
+    Also emits the cross-task ``summary.csv`` / ``summary.md`` and an
+    ``overview.png`` mosaic. Silent no-op if nothing is comparable."""
+    cfg = load_config(config)
+    _echo(f"config:   {cfg.source_path}  [hash {cfg.source_hash}]")
+    _echo(f"out_dir:  {cfg.out_dir}")
+    _run_compare(cfg)
+
 
 @app.command("replot")
 def replot_cmd(

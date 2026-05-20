@@ -35,7 +35,7 @@ import json
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Sequence
+from typing import Any, ClassVar, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -685,3 +685,360 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             f"Tier-2: r̄ {results.tier2_pearson_mean:.3f}  "
             f"JS̄ {results.tier2_js_mean:.3f}"
         )
+
+    # ── Cross-model comparison override ──────────────────────────────────
+    #
+    # Different receptive fields → different sample sets per model
+    # (Yorzoi @ 4992 bp dedups byte-identical copies that Shorkie @
+    # 16,384 bp keeps separate). Headline numbers are computed on the
+    # **intersection of sample_ids** so the comparison is apples-to-
+    # apples; per-model full-set metrics are recorded as secondary.
+    # Generalises to N models, not just two.
+
+    @property
+    def compare_task_name(self) -> str:
+        """Brooks ships two registry entries (`brooks_scramble` for
+        Yorzoi @ 4992, `brooks_scramble_shorkie` for Shorkie @ 16384)
+        because the two models need differently-sized distributions.
+        Cross-model comparisons should treat them as the same task —
+        the canonical name is `brooks_scramble`."""
+        return "brooks_scramble"
+
+    def compare_plot(
+        self,
+        model_dirs: Mapping[str, Path],
+        out_dir: Path,
+    ) -> Path | None:
+        """Shared-cohort comparison across N models. Writes:
+
+          - ``shared_tier1.png``: bar chart of Pearson r / Spearman ρ /
+            dir-acc per model on the shared cohort, with the LOO
+            reproducibility ceiling marked as a grey dashed line.
+          - ``shared_per_sample.png``: per-sample interval plot — every
+            shared-cohort sample gets one blue range (truth) plus one
+            range per model, sorted left-to-right by mean true LFC.
+          - ``summary.json``: shared-cohort + secondary full-set numbers
+            for every model.
+
+        Returns the Tier-1 plot path so the runner can include it in
+        the cross-task mosaic."""
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        loaded = {
+            name: _load_brooks_run_dir(Path(d)) for name, d in model_dirs.items()
+        }
+        # Drop any that don't have the per-replicate arrays (older / partial
+        # runs). Need at least 2 to compare.
+        loaded = {n: r for n, r in loaded.items() if r is not None}
+        if len(loaded) < 2:
+            return None
+
+        shared = sorted(
+            set.intersection(*(set(r["sample_ids"]) for r in loaded.values()))
+        )
+        if not shared:
+            return None
+        indexers = {
+            name: np.array([{sid: i for i, sid in enumerate(r["sample_ids"])}[s]
+                              for s in shared])
+            for name, r in loaded.items()
+        }
+
+        shared_cohort: dict[str, Any] = {
+            "sample_ids": shared,
+            "n": len(shared),
+        }
+        for name, r in loaded.items():
+            shared_cohort[name] = _brooks_metrics(r, indexers[name])
+
+        secondary = {
+            name: _brooks_metrics(r, np.arange(len(r["sample_ids"])))
+            for name, r in loaded.items()
+        }
+
+        out_summary = {
+            "shared_cohort": shared_cohort,
+            "secondary_full_set": secondary,
+            "note": (
+                "Headline metrics are computed on the intersection of all "
+                "models' sample sets. Full-set metrics for each model are "
+                "kept as secondary so the gap is documented."
+            ),
+        }
+        (out_dir / "summary.json").write_text(json.dumps(out_summary, indent=2))
+
+        plot_path = out_dir / "shared_tier1.png"
+        _plot_brooks_shared_metrics(loaded, indexers, shared_cohort, plot_path)
+        _plot_brooks_shared_per_sample(
+            loaded, indexers, out_dir / "shared_per_sample.png"
+        )
+        return plot_path
+
+
+# ── Brooks-specific compare helpers (lifted from
+#    scripts/brooks/compare_models.py) ──────────────────────────────────
+
+
+def _load_brooks_run_dir(model_dir: Path) -> dict | None:
+    """Load one model's per-replicate prediction arrays + sample IDs.
+    Returns None if the expected files aren't present (older / partial
+    runs from before the per-replicate framework)."""
+    samples_path = model_dir / "samples.json"
+    pred_path = model_dir / "pred_lfc_runs.npy"
+    true_path = model_dir / "true_lfc_runs.npy"
+    n_reps_path = model_dir / "n_reps_supported.npy"
+    if not all(p.exists() for p in (samples_path, pred_path, true_path,
+                                       n_reps_path)):
+        return None
+    meta = json.loads(samples_path.read_text())
+    return {
+        "sample_ids": meta["sample_ids"],
+        "low_support": np.asarray(meta["low_support"], dtype=bool),
+        "pred_lfc_runs": np.load(pred_path),
+        "true_lfc_runs": np.load(true_path),
+        "n_reps_supported": np.load(n_reps_path),
+    }
+
+
+def _brooks_metrics(d: dict, idx: np.ndarray) -> dict:
+    """Per-replicate r / ρ / dir-acc + LOO ceiling + calibration metrics
+    on the row subset ``idx``. Mirrors the in-class compute path so the
+    cross-model comparison uses identical definitions."""
+    pred = d["pred_lfc_runs"][idx]
+    true = d["true_lfc_runs"][idx]
+    n_reps = d["n_reps_supported"][idx]
+    low = d["low_support"][idx]
+    nk = pred.shape[1]
+
+    pr_per = np.full(nk, np.nan)
+    sr_per = np.full(nk, np.nan)
+    da_per = np.full(nk, np.nan)
+    ceil_pr_per = np.full(nk, np.nan)
+    ceil_da_per = np.full(nk, np.nan)
+
+    finite_t = np.isfinite(true)
+    finite_p = np.isfinite(pred)
+    for k in range(nk):
+        mk = (~low) & finite_t[:, k] & finite_p[:, k]
+        if mk.sum() >= 2:
+            t_k, p_k = true[mk, k], pred[mk, k]
+            pr_per[k] = float(pearsonr(p_k, t_k).statistic)
+            sr_per[k] = float(spearmanr(p_k, t_k).statistic)
+            da_per[k] = float(balanced_accuracy_score(
+                np.sign(t_k).astype(int), np.sign(p_k).astype(int)))
+        others = [j for j in range(nk) if j != k]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            loo = np.nanmean(true[:, others], axis=1)
+        ck = (~low) & finite_t[:, k] & np.isfinite(loo)
+        if ck.sum() >= 2:
+            t_k, l_k = true[ck, k], loo[ck]
+            ceil_pr_per[k] = float(pearsonr(l_k, t_k).statistic)
+            ceil_da_per[k] = float(balanced_accuracy_score(
+                np.sign(t_k).astype(int), np.sign(l_k).astype(int)))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        mean_true = np.where(n_reps > 0, np.nanmean(true, axis=1), np.nan)
+        mean_pred = np.where(n_reps > 0, np.nanmean(pred, axis=1), np.nan)
+
+    calib_mask = (
+        (~low) & (n_reps >= 2)
+        & np.isfinite(mean_true) & np.isfinite(mean_pred)
+    )
+    if calib_mask.sum() >= 1:
+        hits = 0
+        zs = []
+        for ii in np.where(calib_mask)[0]:
+            runs = true[ii][finite_t[ii]]
+            lo, hi = float(runs.min()), float(runs.max())
+            if lo <= mean_pred[ii] <= hi:
+                hits += 1
+            zs.append(abs(mean_pred[ii] - mean_true[ii])
+                       / max(hi - lo, RANGE_EPS))
+        within = hits / calib_mask.sum()
+        mz = float(np.mean(zs))
+    else:
+        within = mz = float("nan")
+
+    scored = (~low) & (n_reps >= 1)
+    return {
+        "n_total": int(len(idx)),
+        "n_low_support": int(low.sum()),
+        "n_scored": int(scored.sum()),
+        "n_calibration": int(calib_mask.sum()),
+        "n_weak_baseline": int((n_reps == 0).sum()),
+        "pearson_r": (float(np.nanmean(pr_per))
+                       if np.any(np.isfinite(pr_per)) else float("nan")),
+        "spearman_rho": (float(np.nanmean(sr_per))
+                          if np.any(np.isfinite(sr_per)) else float("nan")),
+        "dir_balanced_acc": (float(np.nanmean(da_per))
+                              if np.any(np.isfinite(da_per)) else float("nan")),
+        "ceiling_pearson_r": (float(np.nanmean(ceil_pr_per))
+                               if np.any(np.isfinite(ceil_pr_per)) else float("nan")),
+        "ceiling_dir_balanced_acc": (float(np.nanmean(ceil_da_per))
+                                      if np.any(np.isfinite(ceil_da_per))
+                                      else float("nan")),
+        "pearson_r_per_rep": pr_per.tolist(),
+        "spearman_rho_per_rep": sr_per.tolist(),
+        "dir_balanced_acc_per_rep": da_per.tolist(),
+        "ceiling_pearson_r_per_rep": ceil_pr_per.tolist(),
+        "ceiling_dir_balanced_acc_per_rep": ceil_da_per.tolist(),
+        "within_range_rate": within,
+        "mean_abs_z": mz,
+    }
+
+
+def _plot_brooks_shared_metrics(
+    loaded: Mapping[str, dict],
+    indexers: Mapping[str, np.ndarray],
+    shared_cohort: dict,
+    out_path: Path,
+) -> None:
+    """Bar chart of Pearson r / Spearman ρ / dir-acc per model on the
+    shared cohort. Ceiling marked as a grey dashed line where defined."""
+    import matplotlib.pyplot as plt
+
+    rows = [
+        ("Pearson r",   "pearson_r",         "ceiling_pearson_r"),
+        ("Spearman ρ",  "spearman_rho",      None),
+        ("dir-acc",     "dir_balanced_acc",  "ceiling_dir_balanced_acc"),
+    ]
+    model_names = sorted(loaded.keys())
+    fig, axes = plt.subplots(len(rows), 1, figsize=(8, 1.7 * len(rows)),
+                              squeeze=False)
+    for i, (metric_name, key, ceil_key) in enumerate(rows):
+        ax = axes[i, 0]
+        ys = [shared_cohort[m][key] for m in model_names]
+        bars = ax.barh(model_names, ys, alpha=0.85)
+        ax.axvline(0, color="grey", lw=0.5)
+        if ceil_key:
+            # The ceiling depends only on the truth labels, which are
+            # identical for all models on the shared cohort — read it
+            # from the first model.
+            ceil = shared_cohort[model_names[0]][ceil_key]
+            ax.axvline(ceil, color="grey", lw=1.0, ls="--",
+                        label=f"LOO ceiling {ceil:+.3f}")
+            ax.legend(loc="lower right", fontsize=8)
+        for b, v in zip(bars, ys):
+            ax.text(v + 0.005, b.get_y() + b.get_height() / 2,
+                     f"{v:+.3f}", va="center", fontsize=9)
+        all_vals = ys + ([shared_cohort[model_names[0]].get(ceil_key, 0)]
+                          if ceil_key else [])
+        ax.set_xlim(min(-0.05, min(all_vals) - 0.05),
+                    max(1.0, *all_vals) * 1.05 + 0.05)
+        ax.set_title(
+            f"{metric_name}  (shared cohort, n_scored="
+            f"{shared_cohort[model_names[0]]['n_scored']})",
+            fontsize=10,
+        )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+
+
+# Palette for the per-sample plot: truth is blue, models cycle through
+# matplotlib's default cycle after that.
+_TRUTH_COLOR = "#1f77b4"
+_MODEL_COLORS = ("#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+                  "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+
+
+def _plot_brooks_shared_per_sample(
+    loaded: Mapping[str, dict],
+    indexers: Mapping[str, np.ndarray],
+    out_path: Path,
+) -> None:
+    """Per-sample interval plot on the shared cohort. Each scored sample
+    becomes one column: truth (blue) + one range per model (red, green,
+    purple, …). Models with `varies_by_strain=False` collapse to a dot.
+    Sorted left-to-right by mean true LFC."""
+    import matplotlib.pyplot as plt
+
+    model_names = sorted(loaded.keys())
+    # Use the first model's truth as the canonical truth (identical
+    # across models on the shared cohort by construction).
+    ref = loaded[model_names[0]]
+    ref_idx = indexers[model_names[0]]
+    true = ref["true_lfc_runs"][ref_idx]
+    n_reps_ref = ref["n_reps_supported"][ref_idx]
+    finite_t = np.isfinite(true)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        mean_true = np.where(n_reps_ref > 0, np.nanmean(true, axis=1), np.nan)
+
+    # Which samples are scored on every model?
+    scored_mask = (~ref["low_support"][ref_idx]) & (n_reps_ref >= 1) & np.isfinite(mean_true)
+    for m in model_names:
+        idx = indexers[m]
+        scored_mask = scored_mask & (~loaded[m]["low_support"][idx])
+        pred = loaded[m]["pred_lfc_runs"][idx]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            finite_p = np.isfinite(pred)
+            mean_pred = np.where(
+                finite_p.any(axis=1), np.nanmean(pred, axis=1), np.nan
+            )
+        scored_mask = scored_mask & np.isfinite(mean_pred)
+
+    K = int(scored_mask.sum())
+    if K == 0:
+        return
+    idx_sorted = np.array(sorted(np.where(scored_mask)[0],
+                                  key=lambda i: mean_true[i]))
+    x = np.arange(K, dtype=float)
+
+    # Layout: 1 (truth) + N model entries; one column per sample with
+    # equal-spaced x-offsets.
+    n_series = 1 + len(model_names)
+    total_width = 0.85
+    spacing = total_width / n_series
+    offsets = np.linspace(
+        -total_width / 2 + spacing / 2,
+        total_width / 2 - spacing / 2,
+        n_series,
+    )
+
+    fig_w = max(8.0, 0.08 * K)
+    fig, ax = plt.subplots(figsize=(fig_w, 6))
+    ax.axhline(0, color="grey", lw=0.3)
+
+    def _ranges(arr: np.ndarray, mask: np.ndarray) -> tuple[
+        np.ndarray, np.ndarray, np.ndarray
+    ]:
+        lo = np.array([
+            arr[i][mask[i]].min() if mask[i].any() else np.nan
+            for i in idx_sorted
+        ])
+        hi = np.array([
+            arr[i][mask[i]].max() if mask[i].any() else np.nan
+            for i in idx_sorted
+        ])
+        mn = np.array([
+            arr[i][mask[i]].mean() if mask[i].any() else np.nan
+            for i in idx_sorted
+        ])
+        return lo, hi, mn
+
+    t_lo, t_hi, t_mn = _ranges(true, finite_t)
+    ax.vlines(x + offsets[0], t_lo, t_hi, colors=_TRUTH_COLOR, lw=1.0, alpha=0.7)
+    ax.scatter(x + offsets[0], t_mn, s=8, c=_TRUTH_COLOR, label="true")
+
+    for j, m in enumerate(model_names):
+        idx = indexers[m]
+        pred = loaded[m]["pred_lfc_runs"][idx]
+        finite_p = np.isfinite(pred)
+        lo, hi, mn = _ranges(pred, finite_p)
+        color = _MODEL_COLORS[j % len(_MODEL_COLORS)]
+        ax.vlines(x + offsets[1 + j], lo, hi, colors=color, lw=1.0, alpha=0.7)
+        ax.scatter(x + offsets[1 + j], mn, s=8, c=color, label=f"{m} pred")
+
+    ax.set_xlim(-1, K)
+    ax.set_xlabel(f"sample (sorted by mean true LFC, n={K})")
+    ax.set_ylabel("log2 LFC (alt / native)")
+    ax.set_title("Brooks SCRaMBLE — per-sample LFC ranges (shared cohort)")
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=100)
+    plt.close(fig)

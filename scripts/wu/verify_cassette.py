@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-GB = ROOT / "archive/wu/0-foorfp_tu-from-plasmid-from-paper-part.gb"
+GB = ROOT / "data/tasks/wu_rfpins/cassette_reconstruction.gb"
 FA = ROOT / "data/tasks/R64-1-1.fa"
 FAI = ROOT / "data/tasks/R64-1-1.fa.fai"
 

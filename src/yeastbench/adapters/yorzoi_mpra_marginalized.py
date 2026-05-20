@@ -33,7 +33,7 @@ from yeastbench.adapters._marginalized_mpra import (
     reverse_complement,
 )
 from yeastbench.adapters.protocols import MarginalizedSequenceExpressionPredictor
-from yeastbench.adapters.yorzoi_eqtl import (
+from yeastbench.adapters._yorzoi_constants import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,

@@ -28,7 +28,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-GB = ROOT / "archive/wu/0-foorfp_tu-from-plasmid-from-paper-part.gb"
+GB = ROOT / "data/tasks/wu_rfpins/cassette_reconstruction.gb"
 OUT = ROOT / "data/tasks/wu_rfpins/expression_cassette.fasta"
 
 TAG = "N" * 20  # strain-specific barcode placeholder (injected per locus)

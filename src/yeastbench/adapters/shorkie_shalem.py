@@ -33,13 +33,11 @@ from yeastbench.adapters._shalem_scaffold import (
     load_host_genes,
 )
 from yeastbench.adapters.protocols import TerminatorMarginalizedExpressionPredictor
-from yeastbench.adapters.shorkie_eqtl import (
+from yeastbench.adapters._shorkie_constants import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,
     SEQ_LEN,
-)
-from yeastbench.adapters.shorkie_mpra_marginalized import (
     SHORKIE_T0_RNA_SEQ_TRACK_IDS,
 )
 

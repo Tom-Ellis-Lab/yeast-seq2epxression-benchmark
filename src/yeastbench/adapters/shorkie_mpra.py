@@ -19,7 +19,7 @@ from tqdm import tqdm
 from yeastbench.adapters._deboer_scaffold import YFP_END, YFP_START, build_construct
 from yeastbench.adapters._genome import one_hot_encode_channels_first
 from yeastbench.adapters.protocols import SequenceExpressionPredictor
-from yeastbench.adapters.shorkie_eqtl import (
+from yeastbench.adapters._shorkie_constants import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,

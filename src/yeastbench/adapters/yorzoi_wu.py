@@ -27,7 +27,7 @@ from yeastbench.adapters._wu_scaffold import (
     load_cassette_payload,
 )
 from yeastbench.adapters.protocols import CassetteExpressionPredictor
-from yeastbench.adapters.yorzoi_eqtl import (
+from yeastbench.adapters._yorzoi_constants import (
     BIN_WIDTH,
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,

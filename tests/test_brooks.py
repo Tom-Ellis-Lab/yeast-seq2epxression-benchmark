@@ -92,7 +92,8 @@ class _MockAdapter:
         self._df = df.set_index("alt_seq")
         self._rng = np.random.default_rng(seed)
 
-    def predict_coverage(self, construct_seq: str, strand: str) -> np.ndarray:
+    def predict_coverage(self, construct_seq: str, strand: str,
+                         strain: str | None = None) -> np.ndarray:
         if construct_seq in self._df.index:
             tl = float(self._df.loc[construct_seq, "true_lfc"])
             scale = float(2.0 ** tl)         # alt = scale * native

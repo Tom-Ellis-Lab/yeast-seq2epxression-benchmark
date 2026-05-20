@@ -153,12 +153,20 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                     (s_norm + PSEUDOCOUNT) / (j_norms[k] + PSEUDOCOUNT)
                 ))
 
-            # Predicted LFC + Tier-2 shape from the adapter.
+            # Predicted LFC + Tier-2 shape from the adapter. Pass the
+            # strain identity through: track-based models (e.g. Yorzoi)
+            # can route to per-condition tracks (alt = strain's tracks;
+            # native = JS94 deep-WT tracks). Adapters without per-strain
+            # routing are expected to ignore the kwarg.
             pred_alt = np.asarray(
-                adapter.predict_coverage(row.alt_seq, row.strand), dtype=float
+                adapter.predict_coverage(row.alt_seq, row.strand,
+                                          strain=row.strain),
+                dtype=float,
             )
             pred_nat = np.asarray(
-                adapter.predict_coverage(row.native_seq, row.strand), dtype=float
+                adapter.predict_coverage(row.native_seq, row.strand,
+                                          strain="JS94"),
+                dtype=float,
             )
             assert pred_alt.shape == pred_nat.shape == (out_len,), (
                 f"adapter must return per-base length {out_len}; got "

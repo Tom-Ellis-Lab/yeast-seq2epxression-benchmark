@@ -64,12 +64,20 @@ class CoverageTrackPredictor(Protocol):
 
     Adapters expose ``seq_len`` and ``crop_bp_each_side`` so the
     benchmark can slice the true per-base coverage to the predicted
-    central region and map CDS coordinates correctly."""
+    central region and map CDS coordinates correctly.
+
+    **Optional ``strain`` argument.** For track-based models (e.g.
+    Yorzoi), the benchmark may pass the strain identifier of the
+    construct so the adapter can route the prediction to the
+    matching experimental tracks (Brooks SCRaMBLE strain S → use S's
+    Nanopore tracks; native construct → use JS94's deep-WT tracks).
+    Adapters without per-condition track selection may ignore it."""
 
     seq_len: int
     crop_bp_each_side: int
 
-    def predict_coverage(self, construct_seq: str, strand: str) -> np.ndarray: ...
+    def predict_coverage(self, construct_seq: str, strand: str,
+                         strain: str | None = None) -> np.ndarray: ...
 
 
 @runtime_checkable

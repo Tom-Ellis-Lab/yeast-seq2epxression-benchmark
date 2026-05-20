@@ -19,3 +19,8 @@ runs:
     model_config:
       hf_repo: tom-ellis-lab/yorzoi
       use_rc: true
+      # Per-sample matched-track routing: alt prediction uses the
+      # strain's own Nanopore track(s); native uses JS94's 3 deep-WT
+      # tracks (the same set as the truth-side denominator). Options:
+      # "matched" (default), "nanopore_all", "all".
+      track_mode: matched

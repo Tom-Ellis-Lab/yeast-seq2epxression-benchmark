@@ -229,6 +229,23 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   Tier-2 (shape): per-base Pearson r + Jensen–Shannon divergence over
   the scored cohort. Scatter plot shows the JS94 replicate envelope as
   per-sample horizontal error bars.
+- [x] **Cross-model comparison on the shared sample set (2026-05-20).**
+  Different model receptive fields produce different distribution
+  files (Yorzoi → 698 samples, Shorkie → 1055 samples) — the
+  Shorkie-only extras (357 wider-window-distinct rearrangement
+  contexts) bias side-by-side headlines. Convention: **headline
+  metrics are computed on the intersection of the two models'
+  sample sets** (the shared cohort), reported as the primary number.
+  Full-set per-model numbers are reported as secondary so the gap is
+  documented. `scripts/brooks/compare_models.py` reads each model's
+  result dir, intersects on `sample_id`, recomputes per-replicate
+  metrics + LOO ceiling on the shared cohort, and writes
+  `results/brooks/compare__shared/summary.json` + a Tier-1 chart
+  (`shared_tier1.png`). Yorzoi and Shorkie share 698 samples
+  (= full Yorzoi set); on that subset Shorkie's dir-acc rises
+  0.517 → 0.553 (the 357 wider-only extras were a bit harder), but
+  Pearson r stays ≈ 0 and ρ stays ≈ 0 — qualitative finding
+  preserved.
 - [x] **Inter-run JS94 reproducibility diagnostic (2026-05-20).** On
   per-native-gene sense reads (log1p), pairwise Pearson r between the
   three JS94 deep runs lands at **0.67–0.86**, well below the > 0.95

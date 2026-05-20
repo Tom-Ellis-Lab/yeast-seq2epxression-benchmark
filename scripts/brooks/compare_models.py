@@ -143,6 +143,97 @@ def _metrics(d: dict, idx: np.ndarray) -> dict:
     }
 
 
+def _plot_shared_per_sample(
+    Y: dict, S: dict, y_idx: np.ndarray, s_idx: np.ndarray,
+    out_path: Path,
+) -> None:
+    """Per-sample interval plot on the shared cohort. For each scored
+    sample: three small vertical ranges side by side, with mean dots:
+        blue  = truth (min..max of JS94 deep-run true LFCs)
+        red   = Yorzoi pred (min..max across the 3 JS94 reps)
+        green = Shorkie pred (same; range collapses to a single value
+                because Shorkie's varies_by_strain=False)
+    Samples are sorted left-to-right by mean true LFC."""
+    import matplotlib.pyplot as plt
+
+    true = Y["true_lfc_runs"][y_idx]                       # (n_shared, 3)
+    pred_y = Y["pred_lfc_runs"][y_idx]
+    pred_s = S["pred_lfc_runs"][s_idx]
+    n_reps_y = Y["n_reps_supported"][y_idx]
+    low_y = Y["low_support"][y_idx]
+    low_s = S["low_support"][s_idx]
+
+    finite_t = np.isfinite(true)
+    finite_y = np.isfinite(pred_y)
+    finite_s = np.isfinite(pred_s)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        mean_true = np.where(n_reps_y > 0, np.nanmean(true, axis=1), np.nan)
+        mean_pred_y = np.where(
+            finite_y.any(axis=1), np.nanmean(pred_y, axis=1), np.nan
+        )
+        mean_pred_s = np.where(
+            finite_s.any(axis=1), np.nanmean(pred_s, axis=1), np.nan
+        )
+
+    # Shared-scored mask: not low_support on either side, at least one
+    # replicate truth, and both models produced predictions.
+    m = (
+        (~low_y) & (~low_s) & (n_reps_y >= 1)
+        & np.isfinite(mean_true)
+        & np.isfinite(mean_pred_y) & np.isfinite(mean_pred_s)
+    )
+    K = int(m.sum())
+    if K == 0:
+        return
+    idx_sorted = np.array(sorted(np.where(m)[0], key=lambda i: mean_true[i]))
+
+    # Per-sample ranges (min..max of finite per-replicate values)
+    def ranges(arr, finite_mask):
+        lo = np.array([
+            arr[i][finite_mask[i]].min() if finite_mask[i].any() else np.nan
+            for i in idx_sorted
+        ])
+        hi = np.array([
+            arr[i][finite_mask[i]].max() if finite_mask[i].any() else np.nan
+            for i in idx_sorted
+        ])
+        mn = np.array([
+            arr[i][finite_mask[i]].mean() if finite_mask[i].any() else np.nan
+            for i in idx_sorted
+        ])
+        return lo, hi, mn
+
+    t_lo, t_hi, t_mn = ranges(true, finite_t)
+    y_lo, y_hi, y_mn = ranges(pred_y, finite_y)
+    s_lo, s_hi, s_mn = ranges(pred_s, finite_s)
+
+    fig_w = max(8.0, 0.08 * K)
+    fig, ax = plt.subplots(figsize=(fig_w, 6))
+    ax.axhline(0, color="grey", lw=0.3)
+    x = np.arange(K, dtype=float)
+    off = 0.22                                  # x-offset between the 3 groups
+    sz = 8
+    ax.vlines(x - off, t_lo, t_hi, colors="#1f77b4", lw=1.0, alpha=0.7)
+    ax.scatter(x - off, t_mn, s=sz, c="#1f77b4", label="true")
+    ax.vlines(x,        y_lo, y_hi, colors="#d62728", lw=1.0, alpha=0.7)
+    ax.scatter(x,        y_mn, s=sz, c="#d62728", label="Yorzoi pred")
+    ax.vlines(x + off, s_lo, s_hi, colors="#2ca02c", lw=1.0, alpha=0.7)
+    ax.scatter(x + off, s_mn, s=sz, c="#2ca02c", label="Shorkie pred")
+
+    ax.set_xlim(-1, K)
+    ax.set_xlabel(f"sample (sorted by mean true LFC, n={K})")
+    ax.set_ylabel("log2 LFC (alt / native)")
+    ax.set_title(
+        "Brooks SCRaMBLE — per-sample LFC ranges (shared cohort)"
+    )
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=100)
+    plt.close(fig)
+
+
 def _plot_shared(results: dict, out_path: Path) -> None:
     """Bar-chart-ish comparison on the shared cohort. One row per
     metric: Yorzoi (red) vs Shorkie (blue) with the LOO ceiling marked
@@ -218,6 +309,9 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "summary.json").write_text(json.dumps(out, indent=2))
     _plot_shared(out, OUT_DIR / "shared_tier1.png")
+    _plot_shared_per_sample(
+        Y, S, y_idx, s_idx, OUT_DIR / "shared_per_sample.png"
+    )
 
     # Console table
     sh = out["shared_cohort"]
@@ -243,6 +337,7 @@ def main() -> None:
           f"dir-acc {ful['shorkie']['dir_balanced_acc']:.3f}\n")
     print(f"wrote {OUT_DIR / 'summary.json'}")
     print(f"wrote {OUT_DIR / 'shared_tier1.png'}")
+    print(f"wrote {OUT_DIR / 'shared_per_sample.png'}")
 
 
 if __name__ == "__main__":

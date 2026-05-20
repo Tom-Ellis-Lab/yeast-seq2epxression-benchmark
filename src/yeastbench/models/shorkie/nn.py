@@ -500,7 +500,7 @@ class Cropping1D(nn.Module):
 # ──────────────────────────────────────────────────────────────
 
 
-class Shorkie(nn.Module):
+class ShorkieModule(nn.Module):
     def __init__(self, config: dict) -> None:
         super().__init__()
         self.config = config
@@ -624,13 +624,13 @@ class Shorkie(nn.Module):
         return x  # (B, T_out, 5215)
 
     @staticmethod
-    def from_tf_checkpoint(config: dict, h5_path: str) -> "Shorkie":
+    def from_tf_checkpoint(config: dict, h5_path: str) -> "ShorkieModule":
         """Load a Shorkie model with weights from an original TF/Keras H5 checkpoint.
 
         The checkpoint must contain the full 170-channel conv_dna kernel
         (4 nucleotide + 1 reserved + 165 species channels).
         """
-        model = Shorkie(config)
+        model = ShorkieModule(config)
         _load_tf_weights(model, h5_path)
         return model
 
@@ -660,7 +660,7 @@ def _get_tf_layer(h5root, name):
     return params
 
 
-def _load_tf_weights(model: Shorkie, h5_path: str):
+def _load_tf_weights(model: ShorkieModule, h5_path: str):
     """Convert and load TF/Keras weights into the PyTorch model."""
     with h5py.File(h5_path, "r") as f:
         root = f["model_weights"] if "model_weights" in f else f
@@ -835,7 +835,7 @@ if __name__ == "__main__":
     with open("data/shorkie_params.json") as f:
         config = json.load(f)
 
-    model = Shorkie(config["model"])
+    model = ShorkieModule(config["model"])
     print(model)
 
     # Test forward pass

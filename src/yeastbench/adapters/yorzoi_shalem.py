@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import numpy as np
 from tqdm import tqdm
@@ -32,9 +32,8 @@ from yeastbench.adapters._yorzoi_constants import (
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,
     SEQ_LEN,
-    YORZOI_MINUS_TRACK_IDS,
-    YORZOI_PLUS_TRACK_IDS,
 )
+from yeastbench.models.yorzoi import Yorzoi
 
 if TYPE_CHECKING:
     import torch
@@ -47,14 +46,11 @@ N_TRACKS_TOTAL = 162
 class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
     def __init__(
         self,
-        model: Any,  # yorzoi.model.borzoi.Borzoi
+        model: Yorzoi,
         fasta_path: str | Path,
         gtf_path: str | Path,
         host_genes_json: str | Path | None = None,
-        device: "str | torch.device" = "cuda",
         batch_size: int = 64,
-        use_rc: bool = True,
-        autocast: bool = True,
         n_sample: int | None = None,
         seed: int = 42,
     ) -> None:
@@ -63,13 +59,9 @@ class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
 
         self.model = model
         self.fasta = pysam.FastaFile(str(fasta_path))
-        self.device = _torch.device(device)
         self.batch_size = batch_size
-        self.use_rc = use_rc
-        self.autocast = autocast
         self.n_sample = n_sample
         self.seed = seed
-        self.model.to(self.device).eval()
 
         self.genes = parse_gene_annotations(gtf_path)
         host_genes = load_host_genes(
@@ -93,14 +85,6 @@ class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
         self.filler: str = build_filler(self.fasta, self.genes)
         assert len(self.filler) == 300
 
-        # Full RC-swap index (swap + ↔ − strand tracks) for RC averaging
-        plus_ids = _torch.tensor(YORZOI_PLUS_TRACK_IDS, device=self.device, dtype=_torch.long)
-        minus_ids = _torch.tensor(YORZOI_MINUS_TRACK_IDS, device=self.device, dtype=_torch.long)
-        full_swap = _torch.empty(N_TRACKS_TOTAL, dtype=_torch.long, device=self.device)
-        full_swap[plus_ids] = minus_ids
-        full_swap[minus_ids] = plus_ids
-        self._full_swap_idx = full_swap
-
         # Per-context strand-matched track slice
         self._ctx_track_start: list[int] = []
         self._ctx_track_end: list[int] = []
@@ -120,7 +104,7 @@ class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
                 gene.chrom_roman, ctx.window_start, ctx.window_start + SEQ_LEN,
             ).upper()
             ref_np[i] = one_hot_encode_channels_first(seq).T
-        self._ref_ohs_gpu = _torch.from_numpy(ref_np).to(self.device)
+        self._ref_ohs_gpu = _torch.from_numpy(ref_np).to(self.model.device)
 
         # (n_ctx, 162) REF exon sums
         self._ref_exon_sums = self._precompute_baselines()
@@ -139,42 +123,23 @@ class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
         n_sample: int | None = None,
         seed: int = 42,
     ) -> "YorzoiShalemPredictor":
-        from yorzoi.model.borzoi import Borzoi
-
-        model = Borzoi.from_pretrained(hf_repo)
         return cls(
-            model, fasta_path, gtf_path, host_genes_json,
-            device, batch_size, use_rc=use_rc, autocast=autocast,
-            n_sample=n_sample, seed=seed,
+            Yorzoi.from_pretrained(
+                hf_repo, device=device, use_rc=use_rc, autocast=autocast,
+            ),
+            fasta_path=fasta_path,
+            gtf_path=gtf_path,
+            host_genes_json=host_genes_json,
+            batch_size=batch_size,
+            n_sample=n_sample,
+            seed=seed,
         )
-
-    # ── Forward pass ────────────────────────────────────────
-
-    def _forward_full_tracks(self, x: "torch.Tensor") -> "torch.Tensor":
-        """Run forward (+ RC averaging with strand swap). Returns (B, 162, OUTPUT_BINS)."""
-        import torch as _torch
-
-        ctx = (
-            _torch.autocast(device_type="cuda")
-            if self.autocast and self.device.type == "cuda"
-            else _torch.amp.autocast(device_type="cpu", enabled=False)
-        )
-        with ctx:
-            out_fwd = self.model(x)
-        if not self.use_rc:
-            return out_fwd
-
-        x_rc = x.flip(dims=[1, 2])
-        with ctx:
-            out_rc = self.model(x_rc)
-        out_rc_aligned = out_rc.index_select(1, self._full_swap_idx).flip(dims=[2])
-        return 0.5 * (out_fwd + out_rc_aligned)
 
     def _precompute_baselines(self) -> "torch.Tensor":
         import torch as _torch
 
         n_ctx = len(self.contexts)
-        ref_sums = _torch.zeros(n_ctx, N_TRACKS_TOTAL, device=self.device, dtype=_torch.float32)
+        ref_sums = _torch.zeros(n_ctx, N_TRACKS_TOTAL, device=self.model.device, dtype=_torch.float32)
 
         for batch_start in tqdm(
             range(0, n_ctx, self.batch_size), desc="Yorzoi REF baseline"
@@ -182,10 +147,10 @@ class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
             batch_end = min(batch_start + self.batch_size, n_ctx)
             x = self._ref_ohs_gpu[batch_start:batch_end]
             with _torch.no_grad():
-                pred = self._forward_full_tracks(x).float()  # (B, 162, bins)
+                pred = self.model.forward_tracks_binned(x).float()  # (B, 162, bins)
             for i in range(batch_end - batch_start):
                 ctx = self.contexts[batch_start + i]
-                bins_t = _torch.as_tensor(ctx.exon_bins, device=self.device, dtype=_torch.long)
+                bins_t = _torch.as_tensor(ctx.exon_bins, device=self.model.device, dtype=_torch.long)
                 ref_sums[batch_start + i] = pred[i].index_select(1, bins_t).sum(dim=1)
 
         return ref_sums
@@ -211,13 +176,13 @@ class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
         # Yorzoi needs channels-last (L, 4)
         insert_oh_fwd = _torch.from_numpy(
             one_hot_encode_channels_first(rep_fwd).T
-        ).to(self.device)
+        ).to(self.model.device)
         insert_oh_rc = _torch.from_numpy(
             one_hot_encode_channels_first(rep_rc).T
-        ).to(self.device)
+        ).to(self.model.device)
 
         n_ctx = len(self.contexts)
-        alt_exon_sums = _torch.zeros(n_ctx, N_TRACKS_TOTAL, device=self.device, dtype=_torch.float32)
+        alt_exon_sums = _torch.zeros(n_ctx, N_TRACKS_TOTAL, device=self.model.device, dtype=_torch.float32)
 
         for batch_start in range(0, n_ctx, self.batch_size):
             batch_end = min(batch_start + self.batch_size, n_ctx)
@@ -225,15 +190,15 @@ class YorzoiShalemPredictor(TerminatorMarginalizedExpressionPredictor):
                 insert_oh_fwd, insert_oh_rc, batch_start, batch_end,
             )
             with _torch.no_grad():
-                pred = self._forward_full_tracks(x).float()
+                pred = self.model.forward_tracks_binned(x).float()
             for i in range(batch_end - batch_start):
                 ctx = self.contexts[batch_start + i]
-                bins_t = _torch.as_tensor(ctx.exon_bins, device=self.device, dtype=_torch.long)
+                bins_t = _torch.as_tensor(ctx.exon_bins, device=self.model.device, dtype=_torch.long)
                 alt_exon_sums[batch_start + i] = pred[i].index_select(1, bins_t).sum(dim=1)
 
         # Cross-track mean over strand-matched 81 tracks BEFORE log (logSED_agg convention)
-        alt_mean = _torch.zeros(n_ctx, device=self.device, dtype=_torch.float32)
-        ref_mean = _torch.zeros(n_ctx, device=self.device, dtype=_torch.float32)
+        alt_mean = _torch.zeros(n_ctx, device=self.model.device, dtype=_torch.float32)
+        ref_mean = _torch.zeros(n_ctx, device=self.model.device, dtype=_torch.float32)
         for i in range(n_ctx):
             ts, te = self._ctx_track_start[i], self._ctx_track_end[i]
             alt_mean[i] = alt_exon_sums[i, ts:te].mean()

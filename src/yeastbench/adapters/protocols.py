@@ -101,3 +101,29 @@ class TerminatorMarginalizedExpressionPredictor(Protocol):
     so the two protocols cleanly disambiguate in the registry."""
 
     def predict_terminator_marginalized(self, seqs: Sequence[str]) -> np.ndarray: ...
+
+
+@runtime_checkable
+class LocalCodingVariantPredictor(Protocol):
+    """Predict scalar expression for synonymous (or local) coding-region
+    variants of a single construct gene per library. Given a parallel pair
+    of (library_id, 36 nt variant block) sequences, return one scalar per
+    variant in adapter-defined units; the benchmark only requires monotone
+    correspondence to the measured label for Pearson scoring.
+
+    Used by the Chen et al. 2017 synonymous-mutation MPRA benchmark.
+    See ``benchmarks/chen_synonymous.md``.
+
+    Contract:
+    - ``library_ids[i]`` is one of the strings the adapter advertises via
+      its registry config (e.g. ``"gfp_r1"``, ``"gfp_r2"``, ``"tdh3"``).
+    - ``variant_seqs[i]`` is the 36-nt variable block for variant ``i``.
+    - The same call may mix libraries; adapters are free to chunk by
+      library internally to amortize per-library context computation.
+    """
+
+    def predict_local_variants(
+        self,
+        library_ids: Sequence[str],
+        variant_seqs: Sequence[str],
+    ) -> np.ndarray: ...

@@ -251,7 +251,7 @@ def _default_compare_plot(
     if title:
         ax.set_title(title, fontsize=11)
     fig.tight_layout()
-    out_path = out_dir / "plot.png"
-    fig.savefig(out_path, dpi=180)
+    out_path = out_dir / "plot.svg"
+    fig.savefig(out_path)
     plt.close(fig)
     return out_path

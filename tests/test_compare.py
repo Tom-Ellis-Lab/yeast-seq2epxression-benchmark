@@ -3,11 +3,11 @@
 Covered:
 - `_discover_results` groups `<model>__<task>/` dirs correctly and
   ignores `compare*` siblings.
-- The default `Benchmark.compare_plot` writes a PNG when given two
+- The default `Benchmark.compare_plot` writes an SVG when given two
   fake summary dicts and returns ``None`` for a single model.
 - `compare()` no-ops cleanly on a single-model fixture and writes
-  outputs (per-task plot, summary.csv, summary.md, overview.png) on
-  a two-model fixture.
+  outputs (per-task plot, summary.csv, summary.md) on a two-model
+  fixture.
 - Group aliasing via ``Benchmark.compare_task_name`` pulls two
   registry tasks (e.g. ``brooks_scramble`` + ``brooks_scramble_shorkie``)
   into the same comparison group.
@@ -93,7 +93,7 @@ class TestDiscoverResults:
 
 
 class TestDefaultComparePlot:
-    def test_writes_png_with_two_models(self, tmp_path: Path):
+    def test_writes_svg_with_two_models(self, tmp_path: Path):
         _write_summary(tmp_path / "yorzoi__t", pearson_r=0.5, dir_acc=0.8)
         _write_summary(tmp_path / "shorkie__t", pearson_r=0.3, dir_acc=0.6)
         out = _default_compare_plot(
@@ -105,7 +105,7 @@ class TestDefaultComparePlot:
         )
         assert out is not None
         assert out.exists()
-        assert out.name == "plot.png"
+        assert out.name == "plot.svg"
 
     def test_returns_none_with_single_model(self, tmp_path: Path):
         _write_summary(tmp_path / "yorzoi__t", pearson_r=0.5)
@@ -164,7 +164,6 @@ class TestCompareRunner:
         assert result.empty is True
         assert result.tasks_compared == []
         assert result.tasks_skipped == ["task_a"]
-        assert result.overview_path is None
         # No compare/ dir was created since nothing was comparable
         assert not (tmp_path / "compare").exists()
 
@@ -177,7 +176,6 @@ class TestCompareRunner:
         assert result.tasks_skipped == []
         assert result.summary_csv is not None and result.summary_csv.exists()
         assert result.summary_md is not None and result.summary_md.exists()
-        assert result.overview_path is not None and result.overview_path.exists()
         assert "task_a" in result.per_task_plots
         assert result.per_task_plots["task_a"].exists()
 

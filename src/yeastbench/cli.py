@@ -163,8 +163,6 @@ def _run_compare(cfg: Config) -> None:
         _echo(f"  summary.csv:    {result.summary_csv}")
     if result.summary_md:
         _echo(f"  summary.md:     {result.summary_md}")
-    if result.overview_path:
-        _echo(f"  overview.png:   {result.overview_path}")
 
 
 @app.command("compare")
@@ -178,8 +176,8 @@ def compare_cmd(
     Walks the config's ``out_dir`` for ``<model>__<task>/summary.json``,
     groups by task, and for every task with ≥ 2 models writes a
     comparison plot + summary under ``out_dir/compare/per_task/<task>/``.
-    Also emits the cross-task ``summary.csv`` / ``summary.md`` and an
-    ``overview.png`` mosaic. Silent no-op if nothing is comparable."""
+    Also emits the cross-task ``summary.csv`` / ``summary.md``. Silent
+    no-op if nothing is comparable."""
     cfg = load_config(config)
     _echo(f"config:   {cfg.source_path}  [hash {cfg.source_hash}]")
     _echo(f"out_dir:  {cfg.out_dir}")

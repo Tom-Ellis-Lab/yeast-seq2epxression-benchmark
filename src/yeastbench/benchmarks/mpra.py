@@ -6,9 +6,10 @@ fixed-context adapter protocol only (SequenceExpressionPredictor).
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Mapping
 
 import numpy as np
 import pandas as pd
@@ -19,7 +20,7 @@ from yeastbench.adapters.protocols import (
     SequenceExpressionPredictor,
 )
 from yeastbench.benchmarks._metrics import MPRAStratumResult
-from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
+from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo, model_color
 
 
 # ── Stratum catalogue ─────────────────────────────────────────
@@ -263,6 +264,97 @@ class MPRAMarginalizedBenchmark(MPRARegressionBenchmark):
 
     def compare_plot_title(self) -> str:
         return "DREAM MPRA — marginalized / native-position"
+
+    def compare_plot(
+        self,
+        model_dirs: Mapping[str, Path],
+        out_dir: Path,
+    ) -> Path | None:
+        """Per-stratum Pearson r + Spearman ρ across models. Reads
+        ``per_stratum`` blocks from each model's ``summary.json`` (so
+        no re-scoring) and renders a stacked 2-row SVG: top row Pearson,
+        bottom row Spearman. Each stratum is a group on the x-axis with
+        one bar per model; ``overall`` is the leftmost group.
+
+        Returns the SVG path, or ``None`` when < 2 models have summary
+        files."""
+        import matplotlib.pyplot as plt
+
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        per_model: dict[str, dict[str, dict[str, float]]] = {}
+        for name, mdir in model_dirs.items():
+            sp = Path(mdir) / "summary.json"
+            if not sp.exists():
+                continue
+            try:
+                summary = json.loads(sp.read_text())
+            except json.JSONDecodeError:
+                continue
+            entries: dict[str, dict[str, float]] = {
+                "overall": {
+                    "pearson_r": float(summary.get("overall_pearson_r", float("nan"))),
+                    "spearman_rho": float(summary.get("overall_spearman_rho", float("nan"))),
+                }
+            }
+            for s in summary.get("per_stratum", []):
+                entries[str(s["name"])] = {
+                    "pearson_r": float(s.get("pearson_r", float("nan"))),
+                    "spearman_rho": float(s.get("spearman_rho", float("nan"))),
+                }
+            per_model[name] = entries
+        if len(per_model) < 2:
+            return None
+
+        model_names = sorted(per_model.keys())
+        # Stratum order: "overall" first, then the registry order from
+        # `STRATA_FILES`. Drop any stratum not present in every model.
+        ordered: list[str] = ["overall"] + [s for s in STRATA_FILES if all(
+            s in per_model[m] for m in model_names
+        )]
+        ordered = [s for s in ordered if all(s in per_model[m] for m in model_names)]
+        if len(ordered) < 1:
+            return None
+
+        x = np.arange(len(ordered))
+        n_models = len(model_names)
+        width = 0.8 / n_models
+        colors = {m: model_color(m, model_names) for m in model_names}
+
+        fig, (ax_p, ax_s) = plt.subplots(2, 1, figsize=(max(8.0, 1.1 * len(ordered)), 8))
+        for metric_key, ax, ylabel in (
+            ("pearson_r", ax_p, "Pearson r"),
+            ("spearman_rho", ax_s, "Spearman ρ"),
+        ):
+            for i, m in enumerate(model_names):
+                ys = [per_model[m][s][metric_key] for s in ordered]
+                offset = (i - (n_models - 1) / 2) * width
+                bars = ax.bar(
+                    x + offset, ys, width=width, label=m, color=colors[m],
+                )
+                for b, v in zip(bars, ys):
+                    if not np.isfinite(v):
+                        continue
+                    ax.text(
+                        b.get_x() + b.get_width() / 2,
+                        v + (0.005 if v >= 0 else -0.02),
+                        f"{v:+.3f}",
+                        ha="center", va="bottom" if v >= 0 else "top",
+                        fontsize=6.5, alpha=0.8,
+                    )
+            ax.axhline(0, color="grey", lw=0.5)
+            ax.set_xticks(x)
+            ax.set_xticklabels(ordered, rotation=25, ha="right", fontsize=9)
+            ax.set_ylabel(ylabel)
+            ax.legend(loc="best", fontsize=9)
+
+        fig.suptitle(self.compare_plot_title() + " — per-stratum correlations", fontsize=12)
+        fig.tight_layout()
+        out_path = out_dir / "plot.svg"
+        fig.savefig(out_path)
+        plt.close(fig)
+        return out_path
 
 
 # ── Metric helpers ────────────────────────────────────────────

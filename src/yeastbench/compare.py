@@ -4,9 +4,8 @@ Walks ``config.out_dir`` for ``<model>__<task>/summary.json`` files,
 groups them by task, and for each task with **≥ 2 models** produces a
 per-task comparison plot + a per-task summary directory under
 ``config.out_dir/compare/per_task/<task>/``. Then aggregates the
-per-task summaries into a cross-task `summary.csv` (long format),
-`summary.md` (wide tables), and `overview.png` (mosaic of every
-per-task plot).
+per-task summaries into a cross-task `summary.csv` (long format) and
+`summary.md` (wide tables).
 
 Each benchmark's plot shape is controlled by its `compare_plot` method
 (see `yeastbench.benchmarks.base.Benchmark.compare_plot`). The default
@@ -50,7 +49,6 @@ class CompareSummary:
     tasks_compared: list[str] = field(default_factory=list)
     tasks_skipped: list[str] = field(default_factory=list)  # < 2 models
     per_task_plots: dict[str, Path] = field(default_factory=dict)
-    overview_path: Path | None = None
     summary_csv: Path | None = None
     summary_md: Path | None = None
 
@@ -202,38 +200,6 @@ def _build_md(
     return out_path
 
 
-def _build_mosaic(
-    per_task_plots: dict[str, Path], out_path: Path,
-) -> Path | None:
-    """Combine every per-task plot into one big PNG. One row per task
-    (each per-task PNG loaded and displayed as an image)."""
-    if not per_task_plots:
-        return None
-    import matplotlib.image as mpimg
-    import matplotlib.pyplot as plt
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    tasks = sorted(per_task_plots)
-    n = len(tasks)
-    fig, axes = plt.subplots(
-        nrows=n, ncols=1, figsize=(10, 4.5 * n), squeeze=False,
-    )
-    for i, task in enumerate(tasks):
-        ax = axes[i, 0]
-        try:
-            img = mpimg.imread(per_task_plots[task])
-            ax.imshow(img)
-        except (FileNotFoundError, ValueError, OSError):
-            ax.text(0.5, 0.5, f"[plot not loadable]",
-                    ha="center", va="center", transform=ax.transAxes)
-        ax.set_title(task, fontsize=11)
-        ax.axis("off")
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=110)
-    plt.close(fig)
-    return out_path
-
-
 def compare(config: Config) -> CompareSummary:
     """Run the cross-model comparison for *config*. Always safe to call
     — silent no-op when no compare-task group has ≥ 2 models with
@@ -311,23 +277,18 @@ def compare(config: Config) -> CompareSummary:
     # Aggregate CSV / MD use the *group* view (one row per (group, model))
     # so callers get one table even when Brooks ships under two registry
     # keys. Pass `by_group_flat` instead of `by_task`.
-    overview_path: Path | None = None
     summary_csv: Path | None = None
     summary_md: Path | None = None
     if tasks_compared:
         compare_root.mkdir(parents=True, exist_ok=True)
         summary_csv = _build_csv(by_group_flat, compare_root / "summary.csv")
         summary_md = _build_md(by_group_flat, compare_root / "summary.md")
-        overview_path = _build_mosaic(
-            per_task_plots, compare_root / "overview.png"
-        )
 
     return CompareSummary(
         out_dir=compare_root,
         tasks_compared=tasks_compared,
         tasks_skipped=tasks_skipped,
         per_task_plots=per_task_plots,
-        overview_path=overview_path,
         summary_csv=summary_csv,
         summary_md=summary_md,
     )

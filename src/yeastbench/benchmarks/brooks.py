@@ -773,10 +773,10 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         }
         (out_dir / "summary.json").write_text(json.dumps(out_summary, indent=2))
 
-        plot_path = out_dir / "shared_tier1.png"
+        plot_path = out_dir / "shared_tier1.svg"
         _plot_brooks_shared_metrics(loaded, indexers, shared_cohort, plot_path)
         _plot_brooks_shared_per_sample(
-            loaded, indexers, out_dir / "shared_per_sample.png"
+            loaded, indexers, out_dir / "shared_per_sample.svg"
         )
         return plot_path
 
@@ -940,7 +940,7 @@ def _plot_brooks_shared_metrics(
             fontsize=10,
         )
     fig.tight_layout()
-    fig.savefig(out_path, dpi=200)
+    fig.savefig(out_path)
     plt.close(fig)
 
 
@@ -1045,5 +1045,5 @@ def _plot_brooks_shared_per_sample(
     ax.set_title("Brooks SCRaMBLE — per-sample LFC ranges (shared cohort)")
     ax.legend(loc="upper left", fontsize=9)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=100)
+    fig.savefig(out_path)
     plt.close(fig)

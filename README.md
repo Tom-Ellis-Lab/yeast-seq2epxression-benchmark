@@ -9,25 +9,12 @@ reproducible way to compare sequence-to-expression models across a shared
 set of tasks — eQTL classification, MPRA generalization, and native-genome
 track prediction.
 
-**Status:** under construction. Currently live (Shorkie + Yorzoi adapters):
-
-- `caudal_eqtl` — Caudal et al. *cis*-eQTL classification.
-  Spec: [`benchmarks/caudal_eqtl.md`](benchmarks/caudal_eqtl.md).
-- `rafi_mpra_promoter` — Rafi / deBoer DREAM MPRA, fixed-context
-  scoring (embed 110 bp into the 5 kb plasmid, sum YFP-CDS bins).
-  Spec: [`benchmarks/rafi_mpra_promoter.md`](benchmarks/rafi_mpra_promoter.md).
-- `rafi_mpra_marginalized` — same test set, marginalized native-position
-  scoring (insert into 22 host genes at 180 bp upstream, logSED over
-  exons, mean across genes).
-
-In flight: Kita et al. eQTL, Shalem et al. MPRA (terminator),
-Cuperus et al. 5′ UTR, native-genome track-prediction comparison.
+**Status:** under construction.
 
 ## Install
 
 The benchmark framework uses [`uv`](https://docs.astral.sh/uv/). Model-specific
-dependencies (PyTorch, Shorkie weights, Yorzoi) are isolated behind extras so
-the core install stays light.
+dependencies (PyTorch, Shorkie weights, Yorzoi) are isolated behind extras:
 
 ```bash
 # Minimal install: core benchmark framework + data loaders (no model deps)
@@ -99,8 +86,6 @@ by a registry:
   *type* of benchmark. Current protocols:
   - `VariantEffectScorer.score_variants(variants) -> np.ndarray`
     — for eQTL-style benchmarks.
-  - `SequenceExpressionPredictor.predict_expressions(seqs) -> np.ndarray`
-    — for fixed-context MPRA scoring.
   - `MarginalizedSequenceExpressionPredictor.predict_marginalized_expressions(seqs) -> np.ndarray`
     — for native-position marginalized MPRA scoring.
 - **Benchmarks** (`src/yeastbench/benchmarks/`) — a `Benchmark` subclass
@@ -171,7 +156,8 @@ Most new benchmarks reuse an existing protocol. The workflow:
    ```
    The `needs_refs` flag controls whether the dispatcher passes the
    task's `fasta_path`/`gtf_path` to the adapter (true for
-   genomic-context tasks, false for fixed-context MPRA, etc.).
+   genomic-context tasks; false for protocol-only adapters that need
+   neither reference, e.g. the Brooks coverage track).
 3. **Reference the model in `configs/default.yaml`** under `runs:`
    with the model-specific kwargs it accepts (checkpoint paths, batch
    size, `use_rc`, etc.).

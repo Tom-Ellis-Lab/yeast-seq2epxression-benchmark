@@ -1,8 +1,12 @@
-"""MPRA regression benchmark — Rafi / deBoer et al. random promoter expression.
+"""MPRA marginalized benchmark — Rafi / deBoer et al. random promoter expression.
 
 Evaluates zero-shot prediction of scalar expression for 71,103 80-bp random
-promoter sequences spanning eight DREAM test-set strata.  v1 supports the
-fixed-context adapter protocol only (SequenceExpressionPredictor).
+promoter sequences across eight DREAM test-set strata. Each insert is
+scored by marginalizing its logSED over 22 native host-gene contexts (the
+``MarginalizedSequenceExpressionPredictor`` protocol). The earlier
+fixed-context plasmid-construct variant was retired on 2026-05-21 — the
+marginalized / native-position evaluation is what Shorkie / Yorzoi were
+trained for and is the canonical Rafi benchmark going forward.
 """
 from __future__ import annotations
 
@@ -15,10 +19,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 
-from yeastbench.adapters.protocols import (
-    MarginalizedSequenceExpressionPredictor,
-    SequenceExpressionPredictor,
-)
+from yeastbench.adapters.protocols import MarginalizedSequenceExpressionPredictor
 from yeastbench.benchmarks._metrics import MPRAStratumResult
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo, model_color
 
@@ -73,11 +74,28 @@ class MPRAResults:
 # ── Benchmark ─────────────────────────────────────────────────
 
 
-class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults]):
-    adapter_protocol: ClassVar[type] = SequenceExpressionPredictor
+class MPRAMarginalizedBenchmark(
+    Benchmark[MarginalizedSequenceExpressionPredictor, MPRAResults]
+):
+    """Rafi / deBoer MPRA, marginalized / native-position scoring.
 
-    def __init__(self, data_dir: Path, info: BenchmarkInfo) -> None:
+    Adapters implement ``predict_marginalized_expressions`` and return a
+    scalar per insert that's the mean logSED across 22 native host-gene
+    contexts (configured in the adapter, not the benchmark).
+    """
+
+    adapter_protocol: ClassVar[type] = MarginalizedSequenceExpressionPredictor
+
+    def __init__(
+        self,
+        data_dir: Path,
+        fasta_path: Path,
+        gtf_path: Path,
+        info: BenchmarkInfo,
+    ) -> None:
         self.data_dir = Path(data_dir)
+        self._fasta_path = Path(fasta_path)
+        self._gtf_path = Path(gtf_path)
         self.info = info
 
         # Load master file (no header, two columns: seq, el)
@@ -109,13 +127,20 @@ class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults
             else:
                 self.strata_indices[stratum] = df["pos"].to_numpy(dtype=int)
 
-    def _score_sequences(self, adapter: Any) -> np.ndarray:
-        """Adapter dispatch hook — overridden in subclasses that use a
-        different protocol method name (e.g. marginalized variant)."""
-        return np.asarray(adapter.predict_expressions(self.sequences), dtype=float)
+    @property
+    def fasta_path(self) -> Path:
+        return self._fasta_path
 
-    def evaluate(self, adapter: SequenceExpressionPredictor) -> MPRAResults:
-        scores = self._score_sequences(adapter)
+    @property
+    def gtf_path(self) -> Path:
+        return self._gtf_path
+
+    def evaluate(
+        self, adapter: MarginalizedSequenceExpressionPredictor
+    ) -> MPRAResults:
+        scores = np.asarray(
+            adapter.predict_marginalized_expressions(self.sequences), dtype=float
+        )
         assert len(scores) == len(self.labels)
 
         overall = _stratum_result("overall", scores, self.labels)
@@ -186,7 +211,7 @@ class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults
         )
 
     def summary_dict(self, results: MPRAResults) -> dict[str, Any]:
-        d: dict[str, Any] = {
+        return {
             "n_sequences": len(results.scores),
             "overall_pearson_r": results.overall.pearson_r,
             "overall_spearman_rho": results.overall.spearman_rho,
@@ -211,56 +236,18 @@ class MPRARegressionBenchmark(Benchmark[SequenceExpressionPredictor, MPRAResults
                 for s in results.per_pair_stratum
             ],
         }
-        return d
 
     def headline(self, results: MPRAResults) -> str:
         return (
             f"overall Pearson r = {results.overall.pearson_r:.4f}  "
-            f"Spearman \u03c1 = {results.overall.spearman_rho:.4f}"
+            f"Spearman ρ = {results.overall.spearman_rho:.4f}"
         )
 
     def headline_metric_labels(self) -> dict[str, str]:
         return {
             "overall_pearson_r": "Pearson r",
-            "overall_spearman_rho": "Spearman \u03c1",
+            "overall_spearman_rho": "Spearman ρ",
         }
-
-    def compare_plot_title(self) -> str:
-        return "DREAM MPRA \u2014 fixed-context promoter"
-
-
-class MPRAMarginalizedBenchmark(MPRARegressionBenchmark):
-    """MPRA benchmark variant using the marginalized / native-position
-    protocol.  Adapters score a sequence by marginalizing its logSED over
-    22 native host-gene contexts.  Evaluation, plotting, and persistence
-    logic are inherited from the fixed-context variant.
-    """
-
-    adapter_protocol: ClassVar[type] = MarginalizedSequenceExpressionPredictor
-
-    def __init__(
-        self,
-        data_dir: Path,
-        fasta_path: Path,
-        gtf_path: Path,
-        info: BenchmarkInfo,
-    ) -> None:
-        super().__init__(data_dir, info)
-        self._fasta_path = Path(fasta_path)
-        self._gtf_path = Path(gtf_path)
-
-    @property
-    def fasta_path(self) -> Path:
-        return self._fasta_path
-
-    @property
-    def gtf_path(self) -> Path:
-        return self._gtf_path
-
-    def _score_sequences(self, adapter: Any) -> np.ndarray:
-        return np.asarray(
-            adapter.predict_marginalized_expressions(self.sequences), dtype=float
-        )
 
     def compare_plot_title(self) -> str:
         return "DREAM MPRA — marginalized / native-position"
@@ -458,7 +445,7 @@ def _scatter_one(
     ax.set_ylabel("predicted")
     ax.set_title(
         f"{label} (n={sr.n})\n"
-        f"r={sr.pearson_r:.3f}  \u03c1={sr.spearman_rho:.3f}",
+        f"r={sr.pearson_r:.3f}  ρ={sr.spearman_rho:.3f}",
         fontsize=9,
     )
     # Regression line

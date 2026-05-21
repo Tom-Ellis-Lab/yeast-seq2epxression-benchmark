@@ -21,14 +21,6 @@ class VariantEffectScorer(Protocol):
 
 
 @runtime_checkable
-class SequenceExpressionPredictor(Protocol):
-    """Predict the expression of each input sequence in a fixed construct
-    context (e.g., embedded in the DREAM MPRA plasmid scaffold)."""
-
-    def predict_expressions(self, seqs: Sequence[str]) -> np.ndarray: ...
-
-
-@runtime_checkable
 class CassetteExpressionPredictor(Protocol):
     """Predict expression of a reporter in one constant cassette that is
     integrated at varying genomic loci (Wu et al. position-effect task).

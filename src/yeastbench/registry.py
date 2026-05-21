@@ -18,16 +18,12 @@ from yeastbench.adapters.protocols import (
     CassetteExpressionPredictor,
     CoverageTrackPredictor,
     MarginalizedSequenceExpressionPredictor,
-    SequenceExpressionPredictor,
     TerminatorMarginalizedExpressionPredictor,
     VariantEffectScorer,
 )
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
-from yeastbench.benchmarks.mpra import (
-    MPRAMarginalizedBenchmark,
-    MPRARegressionBenchmark,
-)
+from yeastbench.benchmarks.mpra import MPRAMarginalizedBenchmark
 from yeastbench.benchmarks.shalem import ShalemMPRAMarginalizedBenchmark
 from yeastbench.benchmarks.rfpins import RFPInsertionBenchmark
 
@@ -56,12 +52,6 @@ def _shorkie_eqtl_adapter(device, fasta_path, gtf_path, **cfg):
     )
 
 
-def _shorkie_mpra_fixed_adapter(device, **cfg):
-    from yeastbench.adapters.shorkie_mpra import ShorkieMPRAPredictor
-
-    return ShorkieMPRAPredictor.from_checkpoints(device=device, **cfg)
-
-
 def _shorkie_mpra_marginalized_adapter(device, fasta_path, gtf_path, **cfg):
     from yeastbench.adapters.shorkie_mpra_marginalized import (
         ShorkieMPRAMarginalizedPredictor,
@@ -84,12 +74,6 @@ def _yorzoi_eqtl_adapter(device, fasta_path, gtf_path, **cfg):
         device=device,
         **cfg,
     )
-
-
-def _yorzoi_mpra_fixed_adapter(device, **cfg):
-    from yeastbench.adapters.yorzoi_mpra import YorzoiMPRAPredictor
-
-    return YorzoiMPRAPredictor.from_pretrained(device=device, **cfg)
 
 
 def _yorzoi_mpra_marginalized_adapter(device, fasta_path, gtf_path, **cfg):
@@ -164,7 +148,6 @@ def _shorkie_brooks_adapter(device, **cfg):
 # protocol → (build_fn, needs_refs)
 SHORKIE_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     VariantEffectScorer: (_shorkie_eqtl_adapter, True),
-    SequenceExpressionPredictor: (_shorkie_mpra_fixed_adapter, False),
     MarginalizedSequenceExpressionPredictor: (_shorkie_mpra_marginalized_adapter, True),
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, True),
     CassetteExpressionPredictor: (_shorkie_wu_adapter, True),
@@ -173,7 +156,6 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, bool]] = {
 
 YORZOI_ADAPTERS: dict[type, tuple[Callable, bool]] = {
     VariantEffectScorer: (_yorzoi_eqtl_adapter, True),
-    SequenceExpressionPredictor: (_yorzoi_mpra_fixed_adapter, False),
     MarginalizedSequenceExpressionPredictor: (_yorzoi_mpra_marginalized_adapter, True),
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, True),
     CassetteExpressionPredictor: (_yorzoi_wu_adapter, True),
@@ -255,18 +237,6 @@ def _build_kita_eqtl(
             version="v1",
             description="Kita et al. yeast cis-eQTL classification",
             distribution_uri="gs://yeast-seq2expression/kita_eqtl_v1/",
-        ),
-    )
-
-
-def _build_rafi_mpra_promoter(data_dir: str | Path) -> Benchmark:
-    return MPRARegressionBenchmark(
-        data_dir=Path(data_dir),
-        info=BenchmarkInfo(
-            name="rafi_mpra_promoter",
-            version="v1",
-            description="Rafi / deBoer DREAM MPRA promoter expression (fixed-context)",
-            distribution_uri="",
         ),
     )
 
@@ -362,7 +332,6 @@ def _build_brooks_scramble_shorkie(data_path: str | Path) -> Benchmark:
 TASKS: dict[str, TaskFactory] = {
     "caudal_eqtl": _build_caudal_eqtl,
     "kita_eqtl": _build_kita_eqtl,
-    "rafi_mpra_promoter": _build_rafi_mpra_promoter,
     "rafi_mpra_marginalized": _build_rafi_mpra_marginalized,
     "shalem_mpra_marginalized": _build_shalem_mpra_marginalized,
     "wu_rfpins": _build_wu_rfpins,

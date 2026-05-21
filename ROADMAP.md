@@ -3,8 +3,9 @@
 ## Infrastructure
 
 - [x] Protocol-based adapter dispatch (`VariantEffectScorer`,
-  `SequenceExpressionPredictor`, `MarginalizedSequenceExpressionPredictor`,
-  `TerminatorMarginalizedExpressionPredictor`)
+  `MarginalizedSequenceExpressionPredictor`,
+  `TerminatorMarginalizedExpressionPredictor`,
+  `CassetteExpressionPredictor`, `CoverageTrackPredictor`)
 - [x] Benchmark ABC with `evaluate` / `plot` / `save_results` / `load_results`
   / `summary_dict` / `headline` contract
 - [x] Registry (`SHORKIE_ADAPTERS` / `YORZOI_ADAPTERS` keyed by protocol,
@@ -71,24 +72,36 @@
 
 ### Rafi / deBoer et al. (promoter, DREAM)
 
-- [x] Fixed-context benchmark (`MPRARegressionBenchmark` + 8-stratum
-  split: high/low/yeast/random/challenging + SNVs / motif_perturbation /
-  motif_tiling pair strata)
-- [x] Shorkie fixed-context adapter (r = 0.739 on all 71,103 seqs)
-- [x] Yorzoi fixed-context adapter (r = 0.458 on all 71,103)
-- [ ] DREAM-RNN supervised baseline adapter (`SequenceExpressionPredictor`,
-  fixed-context only — DREAM-RNN's input is a fixed 80-bp promoter
-  predicting a scalar, so it does not fit `MarginalizedSequenceExpressionPredictor`).
-  DREAM-RNN is the optimal Prix Fixe model from the BHI core layer block
-  in Rafi / de Boer et al.; weights and architecture from
+- [x] Deleted the fixed-context variant (2026-05-21). The fixed-context
+  `MPRARegressionBenchmark` + its Shorkie / Yorzoi adapters + the
+  `rafi_mpra_promoter` task entry + the `SequenceExpressionPredictor`
+  protocol are all gone. The marginalized / native-position variant is
+  the honest evaluation for Shorkie / Yorzoi (sequence-in-yeast-context
+  is what they were trained for); the fixed-context plasmid construct
+  was an extra hop that didn't add benchmark signal we weren't already
+  getting from the marginalized version. Doesn't kill the DREAM-RNN
+  follow-up below: it'll pull 80-bp inserts straight from the
+  marginalized benchmark's input sequences and persist scalars in the
+  same `summary.json` shape — no fixed-context benchmark required.
+- [ ] DREAM-RNN supervised reference baseline. DREAM-RNN is the
+  optimal Prix Fixe model from the BHI core layer block in
+  Rafi / de Boer et al.; weights + architecture from
   [random-promoter-dream-challenge-2022](https://github.com/de-Boer-Lab/random-promoter-dream-challenge-2022).
-  Counts as a **supervised upper bound**, not zero-shot — DREAM-RNN was
-  trained on this MPRA, so its score should be reported separately from
-  the Shorkie/Yorzoi zero-shot numbers (clearly labelled as in-distribution).
-  The Prix Fixe BHI architecture code is already locally available at
+  Takes the raw 80-bp promoter and predicts a scalar — does NOT
+  marginalize over host-gene contexts. Counts as a **supervised
+  upper bound**, not zero-shot: DREAM-RNN was trained on this MPRA,
+  so its score is reported separately from the Shorkie/Yorzoi
+  marginalized numbers (clearly labelled as in-distribution).
+  Implementation: minimal scoring adapter that pulls each row's
+  raw 80-bp insert from the marginalized benchmark's input
+  sequences, runs DREAM-RNN on the bare 80 bp, and persists scalars
+  in the same `summary.json` layout so the compare runner picks it
+  up alongside the marginalized predictions (different scoring
+  paths, comparable headline metrics). The Prix Fixe BHI
+  architecture code is already locally available at
   `shorkie-paper/from_kuanhao/eQTL/data/eQTL_MPRA_models_eval/prixfixe/bhi/`
-  (vendored via Kuanhao's email); pretrained weights need to come from
-  the de-Boer-Lab repo or be retrained.
+  (vendored via Kuanhao's email); pretrained weights need to come
+  from the de-Boer-Lab repo or be retrained.
 - [x] Marginalized / native-position benchmark
   (`MPRAMarginalizedBenchmark`, 22 host genes at 180 bp upstream of TSS,
   logSED_agg over host-gene exon bins)
@@ -102,8 +115,7 @@
 - [ ] Bootstrap confidence intervals (10 000× 10 %-subsample per stratum)
 - [ ] Compare marginalized vs fixed-context per stratum in a unified
   report
-- [ ] **ExoShorkie adapters** (both `SequenceExpressionPredictor` fixed-
-  context AND `MarginalizedSequenceExpressionPredictor` native-position).
+- [ ] **ExoShorkie adapter** (`MarginalizedSequenceExpressionPredictor`).
   ExoShorkie is a transfer-learning extension of Shorkie on
   exogenous-RNA-seq-in-yeast (Mandl & Orenstein 2026,
   [DOI](https://doi.org/10.64898/2026.01.25.701486)). Random 80 bp
@@ -112,8 +124,8 @@
   trained for, so expect it to outperform Shorkie/Yorzoi here.
   Architecture is Shorkie-compatible: add a `ExoShorkie` wrapper
   subclassing or paralleling `Shorkie` in `models/`, then a thin
-  per-task adapter forwarding to it (per the Part-1 refactor). Code +
-  weights in `shorkie-paper/` (vendored locally).
+  marginalized per-task adapter forwarding to it (per the Part-1
+  refactor). Code + weights in `shorkie-paper/` (vendored locally).
 
 ### Shalem / Segal et al. (terminator)
 
@@ -486,6 +498,17 @@ re-runs naturally on the corrected scale; expect:
 - [ ] CI / automated smoke-test run on synthetic data (no GPU)
 - [ ] Lock data distribution versions in a manifest (SHA256 of each raw
   input file)
+- [ ] `ybench data` CLI to fetch benchmark artifacts from a hosted store
+  - `--all` or `--tasks t1,t2,...` (task names match `data/tasks/` subdirs:
+    `caudal_eqtl`, `kita_eqtl`, `rafi_mpra`, `shalem_mpra_terminator`,
+    `wu_rfpins`, `brooks_scramble`)
+  - Resolves shared assets (e.g. `R64-1-1.fa`/GTF, `1011Matrix.gvcf.gz`)
+    once across tasks rather than per-task
+  - Verifies each file against the SHA256 manifest above; refuses partial
+    downloads; idempotent (skip files already present and matching)
+  - Open questions: ship prepared task artifacts vs raw inputs + local
+    regeneration; hosting (Zenodo / HuggingFace datasets / GCS); whether
+    to use `pooch` rather than hand-rolling fetch+verify
 
 ## v2 release
 

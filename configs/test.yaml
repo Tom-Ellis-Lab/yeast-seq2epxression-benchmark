@@ -25,8 +25,6 @@ tasks_config:
     distribution_dir: data/tasks/kita_eqtl
     fasta_path: data/tasks/R64-1-1.fa
     gtf_path: data/tasks/R64-1-1.115.gtf
-  rafi_mpra_promoter:
-    data_dir: data/tasks/rafi_mpra
   rafi_mpra_marginalized:
     data_dir: data/tasks/rafi_mpra
     fasta_path: data/tasks/R64-1-1.fa

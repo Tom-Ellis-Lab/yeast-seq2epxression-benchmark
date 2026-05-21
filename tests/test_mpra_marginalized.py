@@ -1,4 +1,6 @@
-"""Tests for the marginalized / native-position MPRA infrastructure."""
+"""Tests for the marginalized / native-position MPRA scaffolding
+(``adapters/_marginalized_mpra.py``). Benchmark-class behaviour itself
+lives in ``test_mpra.py``."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -101,36 +103,12 @@ class TestHostGenes:
             assert gene_id.startswith("Y"), f"{gene_id} is not a systematic yeast gene ID"
 
 
-# ── MPRAMarginalizedBenchmark ─────────────────────────────────
+# ── Registry ──────────────────────────────────────────────────
+
 
 INFO = BenchmarkInfo(
     name="test", version="test", description="test", distribution_uri=""
 )
-
-
-class TestMPRAMarginalizedBenchmark:
-    def test_has_genome_paths(self, mpra_distribution, tmp_path):
-        fasta = tmp_path / "ref.fa"
-        gtf = tmp_path / "ref.gtf"
-        fasta.write_text(">chrI\nACGT\n")
-        gtf.write_text("")
-        bench = MPRAMarginalizedBenchmark(mpra_distribution, fasta, gtf, INFO)
-        assert bench.fasta_path == fasta
-        assert bench.gtf_path == gtf
-
-    def test_inherits_evaluate(self, mpra_distribution, tmp_path):
-        """MPRAMarginalizedBenchmark should inherit evaluate from parent."""
-        fasta = tmp_path / "ref.fa"
-        gtf = tmp_path / "ref.gtf"
-        fasta.write_text(">chrI\nACGT\n")
-        gtf.write_text("")
-        bench = MPRAMarginalizedBenchmark(mpra_distribution, fasta, gtf, INFO)
-        assert hasattr(bench, "evaluate")
-        assert hasattr(bench, "plot")
-        assert hasattr(bench, "save_results")
-
-
-# ── Registry ──────────────────────────────────────────────────
 
 
 class TestMarginalizedRegistry:

@@ -18,21 +18,37 @@ device: cuda
 
 tasks_config:
   caudal_eqtl:
-    distribution_dir: data/processed/caudal_eqtl_v1
-  rafi_mpra_promoter:
-    data_dir: data/raw/deboer
+    distribution_dir: data/tasks/caudal_eqtl
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  kita_eqtl:
+    distribution_dir: data/tasks/kita_eqtl
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
   rafi_mpra_marginalized:
-    data_dir: data/raw/deboer
-    fasta_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.fa
-    gtf_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.115.gtf
+    data_dir: data/tasks/rafi_mpra
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
   shalem_mpra_marginalized:
-    data_path: archive/Shalem/segal_2015.tsv
-    fasta_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.fa
-    gtf_path: data/processed/caudal_eqtl_v1/reference/R64-1-1.115.gtf
+    data_path: data/tasks/shalem_mpra_terminator/segal_2015.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  wu_rfpins:
+    cassette_seq: data/tasks/wu_rfpins/expression_cassette.fasta
+    labels_path: data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
 
 runs:
   - model: shorkie
-    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized, shalem_mpra_marginalized]
+    tasks:
+      [
+        caudal_eqtl,
+        kita_eqtl,
+        rafi_mpra_marginalized,
+        shalem_mpra_marginalized,
+        wu_rfpins,
+      ]
     model_config:
       params_path: data/models/shorkie/params.json
       checkpoint_paths:
@@ -48,7 +64,14 @@ runs:
       use_rc: true
 
   - model: yorzoi
-    tasks: [caudal_eqtl, rafi_mpra_promoter, rafi_mpra_marginalized, shalem_mpra_marginalized]
+    tasks:
+      [
+        caudal_eqtl,
+        kita_eqtl,
+        rafi_mpra_marginalized,
+        shalem_mpra_marginalized,
+        wu_rfpins,
+      ]
     model_config:
       hf_repo: tom-ellis-lab/yorzoi
       batch_size: 64

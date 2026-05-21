@@ -136,6 +136,15 @@ class ShalemMPRAMarginalizedBenchmark(
             f"(n = {results.overall.n})"
         )
 
+    def headline_metric_labels(self) -> dict[str, str]:
+        return {
+            "overall_pearson_r":   "Pearson r",
+            "overall_spearman_rho": "Spearman \u03c1",
+        }
+
+    def compare_plot_title(self) -> str:
+        return "Shalem / Segal MPRA \u2014 terminator (marginalized)"
+
 
 def _scored_pearson(
     name: str, pred: np.ndarray, measured: np.ndarray

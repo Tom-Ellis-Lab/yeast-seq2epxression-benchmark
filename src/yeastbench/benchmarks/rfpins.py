@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Sequence
+from typing import Any, ClassVar, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -32,7 +32,11 @@ from sklearn.metrics import (
 from yeastbench.adapters._genome import parse_gene_annotations
 from yeastbench.adapters._wu_scaffold import WuLocus, resolve_loci
 from yeastbench.adapters.protocols import CassetteExpressionPredictor
-from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
+from yeastbench.benchmarks.base import (
+    Benchmark,
+    BenchmarkInfo,
+    model_color,
+)
 
 # Paper's five fixed absolute-cutoff classes (Wu et al. Fig. 1b) — used
 # only for the descriptive histogram now.
@@ -315,3 +319,160 @@ class RFPInsertionBenchmark(Benchmark[CassetteExpressionPredictor, WuResults]):
             f"extreme-high AUROC {results.high_auroc:.3f} "
             f"AUPRC {results.high_auprc:.3f}  (n = {results.n_scored})"
         )
+
+    def headline_metric_labels(self) -> dict[str, str]:
+        # Order: continuous-axis metrics first, then the binary-tail
+        # AUROC/AUPRC pairs. Skip the count-style `extreme_*_n_pos`
+        # numbers — they aren't comparable across models on a bar plot.
+        return {
+            "pearson_r":           "Pearson r",
+            "spearman_rho":        "Spearman ρ",
+            "extreme_low_auroc":   "extreme-low AUROC",
+            "extreme_high_auroc":  "extreme-high AUROC",
+            "extreme_low_auprc":   "extreme-low AUPRC",
+            "extreme_high_auprc":  "extreme-high AUPRC",
+        }
+
+    def compare_plot_title(self) -> str:
+        return "Wu et al. RFP-insertion position effects"
+
+    def compare_plot(
+        self,
+        model_dirs: Mapping[str, Path],
+        out_dir: Path,
+    ) -> Path | None:
+        """Custom 1×3 compare panel:
+          (1) bar — Pearson r + Spearman ρ per model,
+          (2) ROC — both tail tasks overlaid per model (solid = extreme-high,
+              dashed = extreme-low), with a random diagonal,
+          (3) PR  — same overlay scheme, with per-tail base-rate lines.
+
+        Returns the SVG path, or ``None`` if < 2 models have loadable
+        scores+labels on disk."""
+        import matplotlib.pyplot as plt
+
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        loaded: dict[str, dict[str, np.ndarray]] = {}
+        for name, mdir in model_dirs.items():
+            mdir = Path(mdir)
+            scores_p = mdir / "scores.npy"
+            labels_p = mdir / "labels.npy"
+            if not (scores_p.exists() and labels_p.exists()):
+                continue
+            scores = np.load(scores_p)
+            labels = np.load(labels_p)
+            mask = np.isfinite(scores) & np.isfinite(labels)
+            if mask.sum() < 2:
+                continue
+            loaded[name] = {
+                "pred": scores[mask].astype(float),
+                "meas": labels[mask].astype(float),
+            }
+        if len(loaded) < 2:
+            return None
+
+        model_names = sorted(loaded.keys())
+        colors = {m: model_color(m, model_names) for m in model_names}
+
+        fig, (ax_bar, ax_roc, ax_pr) = plt.subplots(
+            1, 3, figsize=(16, 5.2),
+            gridspec_kw={"width_ratios": [1.05, 1.0, 1.0]},
+        )
+
+        # ── (1) bar: Pearson r + Spearman ρ ──
+        groups = ["Pearson r", "Spearman ρ"]
+        x = np.arange(len(groups))
+        width = 0.8 / len(model_names)
+        bar_vals: list[float] = []
+        for i, m in enumerate(model_names):
+            p, q = loaded[m]["pred"], loaded[m]["meas"]
+            vals = [
+                float(pearsonr(p, q).statistic),
+                float(spearmanr(p, q).statistic),
+            ]
+            bar_vals.extend(vals)
+            offset = (i - (len(model_names) - 1) / 2) * width
+            ax_bar.bar(
+                x + offset, vals, width=width, label=m, color=colors[m],
+            )
+        # Set ylim *before* annotating so the label offset is meaningful.
+        vmin, vmax = min(bar_vals + [0.0]), max(bar_vals + [0.0])
+        span = max(vmax - vmin, 0.05)
+        pad = 0.18 * span    # leaves room for value labels above the tallest bar
+        ax_bar.set_ylim(vmin - pad, vmax + pad)
+        for i, m in enumerate(model_names):
+            offset = (i - (len(model_names) - 1) / 2) * width
+            vals = bar_vals[i * len(groups) : (i + 1) * len(groups)]
+            for xi, v in zip(x + offset, vals):
+                ax_bar.text(
+                    xi, v + (0.02 * span if v >= 0 else -0.02 * span),
+                    f"{v:+.3f}",
+                    ha="center", va="bottom" if v >= 0 else "top",
+                    fontsize=8,
+                )
+        ax_bar.axhline(0, color="grey", lw=0.5)
+        ax_bar.set_xticks(x); ax_bar.set_xticklabels(groups)
+        ax_bar.set_ylabel("correlation")
+        ax_bar.set_title("Continuous-axis correlations", pad=8)
+        ax_bar.legend(loc="best", fontsize=9)
+
+        # ── (2) ROC + (3) PR, both tails overlaid ──
+        # tail-name → (label, linestyle, y-mask fn, discriminant sign)
+        tails = (
+            ("extreme-low",  "--", lambda y: (y < EXTREME_LOW_CUTOFF),  -1),
+            ("extreme-high", "-",  lambda y: (y >= EXTREME_HIGH_CUTOFF), +1),
+        )
+        # Track per-tail base rates so we can draw PR-baseline lines once.
+        first = loaded[model_names[0]]["meas"]
+        base_rates = {
+            "extreme-low":  float((first < EXTREME_LOW_CUTOFF).mean()),
+            "extreme-high": float((first >= EXTREME_HIGH_CUTOFF).mean()),
+        }
+
+        for m in model_names:
+            pred, meas = loaded[m]["pred"], loaded[m]["meas"]
+            for tail_name, ls, mask_fn, sign in tails:
+                y = mask_fn(meas).astype(int)
+                if y.sum() == 0 or y.sum() == len(y):
+                    continue
+                disc = sign * pred
+                fpr, tpr, _ = roc_curve(y, disc)
+                prec, rec, _ = precision_recall_curve(y, disc)
+                au_roc = roc_auc_score(y, disc)
+                au_pr = average_precision_score(y, disc)
+                ax_roc.plot(
+                    fpr, tpr, color=colors[m], linestyle=ls, lw=1.4,
+                    label=f"{m} · {tail_name} (AUROC {au_roc:.3f})",
+                )
+                ax_pr.plot(
+                    rec, prec, color=colors[m], linestyle=ls, lw=1.4,
+                    label=f"{m} · {tail_name} (AUPRC {au_pr:.3f})",
+                )
+
+        ax_roc.plot([0, 1], [0, 1], color="grey", lw=1.0, ls=":", label="random")
+        ax_roc.set_xlim(0, 1); ax_roc.set_ylim(0, 1)
+        ax_roc.set_aspect("equal", "box")
+        ax_roc.set_xlabel("False positive rate"); ax_roc.set_ylabel("True positive rate")
+        ax_roc.set_title("ROC — extreme-low (dashed), extreme-high (solid)", pad=8)
+        ax_roc.legend(loc="lower right", fontsize=7)
+
+        for tail_name, ls, _, _ in tails:
+            br = base_rates[tail_name]
+            ax_pr.axhline(
+                br, color="grey", lw=1.0, ls=ls, alpha=0.7,
+                label=f"random {tail_name} (base = {br:.3f})",
+            )
+        ax_pr.set_xlim(0, 1); ax_pr.set_ylim(0, 1.02)
+        ax_pr.set_aspect("equal", "box")
+        ax_pr.set_xlabel("Recall"); ax_pr.set_ylabel("Precision")
+        ax_pr.set_title("Precision–Recall — same overlay scheme", pad=8)
+        ax_pr.legend(loc="upper right", fontsize=7)
+
+        fig.suptitle(self.compare_plot_title(), fontsize=12)
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        out_path = out_dir / "plot.svg"
+        fig.savefig(out_path)
+        plt.close(fig)
+        return out_path

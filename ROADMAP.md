@@ -16,6 +16,23 @@
   Shorkie's expression scoring formula on real data)
 - [ ] Refactor MPRA / Shalem benchmark classes to share an abstract
   `RegressionBenchmark` base (data-source-agnostic)
+- [ ] **Automated cross-model comparison runner (`ybench compare` or
+  equivalent).** Walks `results/<config>/<model>__<task>/summary.json`
+  + raw arrays, intersects on a common per-task sample axis where
+  applicable (mirroring `scripts/brooks/compare_models.py`), and
+  emits a unified per-task comparison directory under
+  `results/<config>/compare__shared/<task>/` with:
+    - a side-by-side metrics table (per-task summary CSV/JSON
+      with one row per model, primary metric column highlighted),
+    - per-task standardised plot (scatter / dir-acc bar / ROC, etc.
+      depending on protocol — defined by the benchmark class's new
+      `compare_plot(results_by_model, out_dir)` hook), and
+    - a top-level `compare__all/index.md` that aggregates the per-task
+      summaries into a single results page (the existing Documentation
+      "Results summary page" item collapses into this).
+  Today only Brooks has this (`scripts/brooks/compare_models.py`).
+  Generalising means defining a `Benchmark.compare(...)` classmethod
+  + a per-protocol shared-cohort intersection helper.
 
 ## eQTL
 
@@ -85,6 +102,18 @@
 - [ ] Bootstrap confidence intervals (10 000× 10 %-subsample per stratum)
 - [ ] Compare marginalized vs fixed-context per stratum in a unified
   report
+- [ ] **ExoShorkie adapters** (both `SequenceExpressionPredictor` fixed-
+  context AND `MarginalizedSequenceExpressionPredictor` native-position).
+  ExoShorkie is a transfer-learning extension of Shorkie on
+  exogenous-RNA-seq-in-yeast (Mandl & Orenstein 2026,
+  [DOI](https://doi.org/10.64898/2026.01.25.701486)). Random 80 bp
+  promoters in the YFP-plasmid construct are the canonical
+  exogenous-DNA-in-yeast setup — this is the task ExoShorkie was
+  trained for, so expect it to outperform Shorkie/Yorzoi here.
+  Architecture is Shorkie-compatible: add a `ExoShorkie` wrapper
+  subclassing or paralleling `Shorkie` in `models/`, then a thin
+  per-task adapter forwarding to it (per the Part-1 refactor). Code +
+  weights in `shorkie-paper/` (vendored locally).
 
 ### Shalem / Segal et al. (terminator)
 
@@ -109,6 +138,13 @@
   `SetName` values into ~9 coarse strata (RBP random, scanning mut-
   pos / neg / quantile, native 3′ UTRs, motif moves, GC variants, etc.)
 - [ ] Bootstrap CIs
+- [ ] **ExoShorkie adapter**
+  (`TerminatorMarginalizedExpressionPredictor`). 150 bp exogenous
+  insert + 300 bp filler downstream of a native host gene's stop
+  codon is structurally close to ExoShorkie's training distribution
+  (foreign DNA inserted into native yeast context). Same wrapper as
+  Rafi above + a per-task adapter. Weights + code from
+  `shorkie-paper/`.
 
 ### Wu et al. (RFP Genome wide position effects)
 - [x] Spec complete (`benchmarks/wu_rfpins.md`); evaluation design
@@ -144,6 +180,12 @@
   track dump (track + strand-matched mean) for all 1043 windows,
   annotated with cassette sub-features and native gene bodies; ROC/PR
   + detailed plots for measured extremes.
+- [ ] **ExoShorkie adapter** (`CassetteExpressionPredictor`). The Wu
+  task is literally "a constant foreign cassette (mCherry + URA3 +
+  LEU2 etc.) inserted at varying yeast loci" — the canonical
+  exogenous-DNA-in-yeast measurement ExoShorkie was trained on.
+  Re-uses the `_wu_scaffold.py` insertion machinery; only the model
+  wrapper changes. Weights + code from `shorkie-paper/`.
 
 ### Cuperus et al. (5′ UTR)
 
@@ -154,6 +196,10 @@
 - [ ] Marginalized benchmark (analogous to Rafi, upstream of TSS;
   new `FivePrimeUtrMarginalizedExpressionPredictor` protocol)
 - [ ] Shorkie + Yorzoi adapters
+- [ ] **ExoShorkie adapter** (same new protocol). Random 50 bp 5′
+  UTRs in the CYC1-YFP plasmid construct are the same exogenous-in-
+  yeast flavour as Rafi and Wu — should benefit from ExoShorkie's
+  training distribution. Reuses the wrapper from Rafi.
 
 ## Structural rearrangements
 
@@ -343,6 +389,14 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   metrics on (low-hamming, high-hamming) subsets separately would make
   the model behaviour explicit. Quick to wire in once `hamming(alt,
   native)` is a stored column.
+- [ ] **ExoShorkie adapter** (`CoverageTrackPredictor`). SCRaMBLE
+  rearrangements aren't strictly exogenous DNA, but the rearranged
+  synIXR contigs put native genes into novel sequence contexts that
+  ExoShorkie's training distribution (foreign sequence in yeast)
+  arguably covers better than vanilla Shorkie's all-native training.
+  Worth comparing as a third model on the same per-replicate /
+  shared-cohort framework PR #2 set up. Reuses the Shorkie wrapper
+  pattern; new thin adapter only.
 
 ## Native-genome track prediction
 
@@ -432,3 +486,8 @@ re-runs naturally on the corrected scale; expect:
 - [ ] CI / automated smoke-test run on synthetic data (no GPU)
 - [ ] Lock data distribution versions in a manifest (SHA256 of each raw
   input file)
+
+## v2 release
+
+*Empty by design — anything that doesn't make the v1 cut goes here so
+the v1 scope stays bounded. Move items in once v1 is locked.*

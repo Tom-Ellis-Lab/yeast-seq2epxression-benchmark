@@ -38,6 +38,27 @@ tasks_config:
     labels_path: data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv
     fasta_path: data/tasks/R64-1-1.fa
     gtf_path: data/tasks/R64-1-1.115.gtf
+  chen_gfp_r1:
+    library: gfp_r1
+    data_path: data/tasks/chen_synonymous/gfp_r1.tsv
+    fasta_path: data/tasks/chen_synonymous/construct_chrII_gfp.fa
+    gtf_path: data/tasks/chen_synonymous/construct_gfp.gtf
+    library_loci_path: data/tasks/chen_synonymous/library_loci.json
+    replicate_ceiling_pearson: 0.83
+  chen_gfp_r2:
+    library: gfp_r2
+    data_path: data/tasks/chen_synonymous/gfp_r2.tsv
+    fasta_path: data/tasks/chen_synonymous/construct_chrII_gfp.fa
+    gtf_path: data/tasks/chen_synonymous/construct_gfp.gtf
+    library_loci_path: data/tasks/chen_synonymous/library_loci.json
+    replicate_ceiling_pearson: 0.73
+  chen_tdh3:
+    library: tdh3
+    data_path: data/tasks/chen_synonymous/tdh3.tsv
+    fasta_path: data/tasks/chen_synonymous/construct_chrII_tdh3.fa
+    gtf_path: data/tasks/chen_synonymous/construct_tdh3.gtf
+    library_loci_path: data/tasks/chen_synonymous/library_loci.json
+    replicate_ceiling_pearson: 0.72
 
 runs:
   - model: shorkie
@@ -48,6 +69,9 @@ runs:
         rafi_mpra_marginalized,
         shalem_mpra_marginalized,
         wu_rfpins,
+        chen_gfp_r1,
+        chen_gfp_r2,
+        chen_tdh3,
       ]
     model_config:
       params_path: data/models/shorkie/params.json
@@ -71,8 +95,19 @@ runs:
         rafi_mpra_marginalized,
         shalem_mpra_marginalized,
         wu_rfpins,
+        chen_gfp_r1,
+        chen_gfp_r2,
+        chen_tdh3,
       ]
     model_config:
       hf_repo: tom-ellis-lab/yorzoi
       batch_size: 64
       use_rc: true
+
+  - model: cai
+    tasks: [chen_gfp_r1, chen_gfp_r2, chen_tdh3]
+    model_config: {}
+
+  - model: codon_transformer
+    tasks: [chen_gfp_r1, chen_gfp_r2, chen_tdh3]
+    model_config: {}

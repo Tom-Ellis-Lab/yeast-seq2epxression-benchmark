@@ -134,16 +134,24 @@ def build_library(
             f"{expected_peptide!r}; first bad peptides: {sample}"
         )
 
+    from scipy.stats import spearmanr  # local import keeps top of file light
+
     if library_id == "tdh3":
-        empirical_ceiling = float("nan")  # single column, no replicate comparison
+        # S9 ships only one merged log2(mRNA) column, so we can't recompute
+        # either ceiling from the data. Carry the paper's Pearson ceiling
+        # through; leave Spearman ceiling as null and surface it to the
+        # benchmark, which then plots / reports it as "unknown".
+        empirical_ceiling_pearson = float("nan")
+        empirical_ceiling_spearman = float("nan")
     else:
-        empirical_ceiling = float(
-            df["log2mRNA_rep1"].astype(float).corr(df["log2mRNA_rep2"].astype(float))
-        )
-        if abs(empirical_ceiling - published_ceiling) > 0.01:
+        rep1 = df["log2mRNA_rep1"].astype(float)
+        rep2 = df["log2mRNA_rep2"].astype(float)
+        empirical_ceiling_pearson = float(rep1.corr(rep2))
+        empirical_ceiling_spearman = float(spearmanr(rep1, rep2).statistic)
+        if abs(empirical_ceiling_pearson - published_ceiling) > 0.01:
             raise ValueError(
                 f"{library_id}: empirical replicate Pearson "
-                f"{empirical_ceiling:.3f} differs from published "
+                f"{empirical_ceiling_pearson:.3f} differs from published "
                 f"{published_ceiling} by >0.01"
             )
 
@@ -151,9 +159,10 @@ def build_library(
     out_path = out_dir / f"{library_id}.tsv"
     df.to_csv(out_path, sep="\t", index=False)
     log.info(
-        "%s: %d rows → %s  (replicate r=%.3f, published=%.2f)",
+        "%s: %d rows → %s  (replicate Pearson=%.3f / Spearman=%.3f, published Pearson=%.2f)",
         library_id, len(df), out_path,
-        empirical_ceiling if not np.isnan(empirical_ceiling) else 0.0,
+        empirical_ceiling_pearson if not np.isnan(empirical_ceiling_pearson) else 0.0,
+        empirical_ceiling_spearman if not np.isnan(empirical_ceiling_spearman) else 0.0,
         published_ceiling,
     )
     return {
@@ -161,7 +170,10 @@ def build_library(
         "n_rows": int(len(df)),
         "published_ceiling_pearson": float(published_ceiling),
         "empirical_ceiling_pearson": (
-            None if np.isnan(empirical_ceiling) else float(empirical_ceiling)
+            None if np.isnan(empirical_ceiling_pearson) else float(empirical_ceiling_pearson)
+        ),
+        "empirical_ceiling_spearman": (
+            None if np.isnan(empirical_ceiling_spearman) else float(empirical_ceiling_spearman)
         ),
     }
 
@@ -185,7 +197,19 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
 
-    ceilings = {s["library_id"]: s["published_ceiling_pearson"] for s in summaries}
+    # ``replicate_ceilings.json`` carries both Pearson and Spearman ceilings.
+    # Pearson value is the published number from Chen 2017 (the empirical
+    # value from our supp parse agrees to within 0.01 — verified above).
+    # Spearman is the empirical value over the same rep1/rep2 columns; on
+    # TDH3 (single merged column in S9) Spearman is null and consumers
+    # should plot it as "unknown".
+    ceilings = {
+        s["library_id"]: {
+            "pearson": s["published_ceiling_pearson"],
+            "spearman": s["empirical_ceiling_spearman"],
+        }
+        for s in summaries
+    }
     (args.out_dir / "replicate_ceilings.json").write_text(
         json.dumps(ceilings, indent=2) + "\n"
     )

@@ -38,7 +38,8 @@ class ChenResults:
     scores: np.ndarray                   # (N,) predicted scalar per variant
     label_columns: tuple[str, ...]       # ("log2mRNA_rep1", "log2mRNA_rep2") or ("log2mRNA",)
     labels: np.ndarray                   # (N, len(label_columns)) — per-replicate normalised log2(mRNA)
-    ceiling_pearson: float               # published replicate-replicate ceiling
+    ceiling_pearson: float               # published replicate-replicate Pearson ceiling
+    ceiling_spearman: float | None       # empirical replicate-replicate Spearman ceiling; None on TDH3 (single column in S9)
 
 
 class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults]):
@@ -53,6 +54,7 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         library_loci_path: Path,
         replicate_ceiling_pearson: float,
         info: BenchmarkInfo,
+        replicate_ceiling_spearman: float | None = None,
     ) -> None:
         if library not in {"gfp_r1", "gfp_r2", "tdh3"}:
             raise ValueError(f"unknown Chen library: {library!r}")
@@ -62,6 +64,11 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         self._gtf_path = Path(gtf_path)
         self._library_loci_path = Path(library_loci_path)
         self.ceiling_pearson = float(replicate_ceiling_pearson)
+        self.ceiling_spearman = (
+            float(replicate_ceiling_spearman)
+            if replicate_ceiling_spearman is not None
+            else None
+        )
         self.info = info
 
         df = pd.read_csv(self.data_path, sep="\t")
@@ -117,6 +124,7 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
             label_columns=self.label_columns,
             labels=self.labels,
             ceiling_pearson=self.ceiling_pearson,
+            ceiling_spearman=self.ceiling_spearman,
         )
 
     def _per_column_stats(self, results: ChenResults) -> list[dict[str, float]]:
@@ -163,11 +171,14 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
             ax.set_xlabel(f"measured {col}")
             ax.set_ylabel("predicted (adapter scalar)")
             s = stats[j]
+            ceiling_text = f"ceiling r ≤ {results.ceiling_pearson:.2f}"
+            if results.ceiling_spearman is not None:
+                ceiling_text += f", ρ ≤ {results.ceiling_spearman:.2f}"
             ax.set_title(
                 f"{col}\n"
                 f"n = {s['n']}  r = {s['pearson']:.3f}  "
                 f"ρ = {s['spearman']:.3f}  "
-                f"ceiling r ≤ {results.ceiling_pearson:.2f}",
+                f"{ceiling_text}",
                 fontsize=10,
             )
 
@@ -188,12 +199,14 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
             "library_id": results.library_id,
             "label_columns": list(results.label_columns),
             "ceiling_pearson": results.ceiling_pearson,
+            "ceiling_spearman": results.ceiling_spearman,
             "variant_ids": [str(v) for v in results.variant_ids],
         }))
 
     def load_results(self, out_dir: Path) -> ChenResults:
         out_dir = Path(out_dir)
         meta = json.loads((out_dir / "results_meta.json").read_text())
+        ceiling_spearman = meta.get("ceiling_spearman")
         return ChenResults(
             library_id=meta["library_id"],
             variant_ids=np.array(meta["variant_ids"], dtype=object),
@@ -201,6 +214,9 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
             label_columns=tuple(meta["label_columns"]),
             labels=np.load(out_dir / "labels.npy"),
             ceiling_pearson=float(meta["ceiling_pearson"]),
+            ceiling_spearman=(
+                float(ceiling_spearman) if ceiling_spearman is not None else None
+            ),
         )
 
     def summary_dict(self, results: ChenResults) -> dict[str, Any]:
@@ -209,6 +225,7 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
             "library_id": results.library_id,
             "n_rows_total": int(len(results.scores)),
             "ceiling_pearson": results.ceiling_pearson,
+            "ceiling_spearman": results.ceiling_spearman,
         }
         if results.library_id in TWO_REPLICATE_LIBS:
             for s in stats:
@@ -225,12 +242,15 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
 
     def headline(self, results: ChenResults) -> str:
         stats = self._per_column_stats(results)
+        ceiling = f"ceiling r ≤ {results.ceiling_pearson:.2f}"
+        if results.ceiling_spearman is not None:
+            ceiling += f", ρ ≤ {results.ceiling_spearman:.2f}"
         if len(stats) == 1:
             s = stats[0]
             return (
                 f"{results.library_id}: Pearson r = {s['pearson']:.4f}  "
                 f"Spearman ρ = {s['spearman']:.4f}  "
-                f"(n = {s['n']}, ceiling r ≤ {results.ceiling_pearson:.2f})"
+                f"(n = {s['n']}, {ceiling})"
             )
         parts = []
         for s in stats:
@@ -239,7 +259,7 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         return (
             f"{results.library_id}: "
             + "  ".join(parts)
-            + f"  (n = {stats[0]['n']}, ceiling r ≤ {results.ceiling_pearson:.2f})"
+            + f"  (n = {stats[0]['n']}, {ceiling})"
         )
 
     def headline_metric_labels(self) -> dict[str, str]:

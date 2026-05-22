@@ -400,6 +400,7 @@ def _build_chen(
     gtf_path: str | Path,
     library_loci_path: str | Path,
     replicate_ceiling_pearson: float,
+    replicate_ceiling_spearman: float | None = None,
 ) -> Benchmark:
     return ChenSynonymousBenchmark(
         library=library,
@@ -408,6 +409,10 @@ def _build_chen(
         gtf_path=Path(gtf_path),
         library_loci_path=Path(library_loci_path),
         replicate_ceiling_pearson=float(replicate_ceiling_pearson),
+        replicate_ceiling_spearman=(
+            None if replicate_ceiling_spearman is None
+            else float(replicate_ceiling_spearman)
+        ),
         info=BenchmarkInfo(
             name=f"chen_{library}",
             version="v1",

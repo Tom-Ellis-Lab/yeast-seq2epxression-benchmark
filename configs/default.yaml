@@ -45,6 +45,7 @@ tasks_config:
     gtf_path: data/tasks/chen_synonymous/construct_gfp.gtf
     library_loci_path: data/tasks/chen_synonymous/library_loci.json
     replicate_ceiling_pearson: 0.83
+    replicate_ceiling_spearman: 0.71
   chen_gfp_r2:
     library: gfp_r2
     data_path: data/tasks/chen_synonymous/gfp_r2.tsv
@@ -52,6 +53,7 @@ tasks_config:
     gtf_path: data/tasks/chen_synonymous/construct_gfp.gtf
     library_loci_path: data/tasks/chen_synonymous/library_loci.json
     replicate_ceiling_pearson: 0.73
+    replicate_ceiling_spearman: 0.71
   chen_tdh3:
     library: tdh3
     data_path: data/tasks/chen_synonymous/tdh3.tsv
@@ -59,6 +61,9 @@ tasks_config:
     gtf_path: data/tasks/chen_synonymous/construct_tdh3.gtf
     library_loci_path: data/tasks/chen_synonymous/library_loci.json
     replicate_ceiling_pearson: 0.72
+    # No Spearman ceiling for TDH3 — Chen ships only one merged log2(mRNA)
+    # column in supp Table S9, so we can't compute one from the data and
+    # the paper doesn't report it. Plots will show only the Pearson band.
 
 runs:
   - model: shorkie

@@ -39,7 +39,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Directory names are written as `<model>__<task>` by cli.py:_run_pair.
-_DIR_RE = re.compile(r"^(?P<model>[^_]+)__(?P<task>.+)$")
+# The model group is non-greedy so model names with single underscores
+# (e.g. `codon_transformer`) survive the split; `__` (double underscore)
+# is the canonical separator, and neither model nor task names contain
+# `__` in the registry.
+_DIR_RE = re.compile(r"^(?P<model>.+?)__(?P<task>.+)$")
 
 
 @dataclass(frozen=True)

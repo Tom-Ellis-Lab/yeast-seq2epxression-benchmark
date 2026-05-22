@@ -1,0 +1,224 @@
+{
+  "hosts": [
+    {
+      "gene_id": "YDR484W",
+      "gene_name": "VPS52",
+      "tier": "low",
+      "dee2_tpm": 19.48,
+      "chrom": "IV",
+      "strand": "+",
+      "cds_start": 1422763,
+      "cds_end": 1424685,
+      "cds_len": 1923
+    },
+    {
+      "gene_id": "YER067W",
+      "gene_name": "RGI1",
+      "tier": "low",
+      "dee2_tpm": 32.87,
+      "chrom": "V",
+      "strand": "+",
+      "cds_start": 292066,
+      "cds_end": 292548,
+      "cds_len": 483
+    },
+    {
+      "gene_id": "YBL105C",
+      "gene_name": "PKC1",
+      "tier": "low",
+      "dee2_tpm": 40.62,
+      "chrom": "II",
+      "strand": "-",
+      "cds_start": 14244,
+      "cds_end": 17696,
+      "cds_len": 3453
+    },
+    {
+      "gene_id": "YOL056W",
+      "gene_name": "GPM3",
+      "tier": "low",
+      "dee2_tpm": 41.47,
+      "chrom": "XV",
+      "strand": "+",
+      "cds_start": 223268,
+      "cds_end": 224176,
+      "cds_len": 909
+    },
+    {
+      "gene_id": "YNL219C",
+      "gene_name": "ALG9",
+      "tier": "medium",
+      "dee2_tpm": 71.62,
+      "chrom": "XIV",
+      "strand": "-",
+      "cds_start": 235999,
+      "cds_end": 237663,
+      "cds_len": 1665
+    },
+    {
+      "gene_id": "YHR094C",
+      "gene_name": "HXT1",
+      "tier": "medium",
+      "dee2_tpm": 120.7,
+      "chrom": "VIII",
+      "strand": "-",
+      "cds_start": 290916,
+      "cds_end": 292625,
+      "cds_len": 1710
+    },
+    {
+      "gene_id": "YJL121C",
+      "gene_name": "RPE1",
+      "tier": "medium",
+      "dee2_tpm": 155.59,
+      "chrom": "X",
+      "strand": "-",
+      "cds_start": 190377,
+      "cds_end": 191090,
+      "cds_len": 714
+    },
+    {
+      "gene_id": "YML085C",
+      "gene_name": "TUB1",
+      "tier": "medium",
+      "dee2_tpm": 201.96,
+      "chrom": "XIII",
+      "strand": "-",
+      "cds_start": 97944,
+      "cds_end": 99400,
+      "cds_len": 1457
+    },
+    {
+      "gene_id": "YLR378C",
+      "gene_name": "SEC61",
+      "tier": "medium",
+      "dee2_tpm": 215.78,
+      "chrom": "XII",
+      "strand": "-",
+      "cds_start": 875739,
+      "cds_end": 877178,
+      "cds_len": 1440
+    },
+    {
+      "gene_id": "YPR183W",
+      "gene_name": "DPM1",
+      "tier": "medium_high",
+      "dee2_tpm": 235.6,
+      "chrom": "XVI",
+      "strand": "+",
+      "cds_start": 900755,
+      "cds_end": 901555,
+      "cds_len": 801
+    },
+    {
+      "gene_id": "YDR345C",
+      "gene_name": "HXT3",
+      "tier": "medium_high",
+      "dee2_tpm": 401.67,
+      "chrom": "IV",
+      "strand": "-",
+      "cds_start": 1162960,
+      "cds_end": 1164660,
+      "cds_len": 1701
+    },
+    {
+      "gene_id": "YLR286C",
+      "gene_name": "CTS1",
+      "tier": "medium_high",
+      "dee2_tpm": 429.4,
+      "chrom": "XII",
+      "strand": "-",
+      "cds_start": 708451,
+      "cds_end": 710136,
+      "cds_len": 1686
+    },
+    {
+      "gene_id": "YPR102C",
+      "gene_name": "RPL11A",
+      "tier": "medium_high",
+      "dee2_tpm": 688.74,
+      "chrom": "XVI",
+      "strand": "-",
+      "cds_start": 731227,
+      "cds_end": 731748,
+      "cds_len": 522
+    },
+    {
+      "gene_id": "YBR011C",
+      "gene_name": "IPP1",
+      "tier": "medium_high",
+      "dee2_tpm": 890.02,
+      "chrom": "II",
+      "strand": "-",
+      "cds_start": 257115,
+      "cds_end": 257975,
+      "cds_len": 861
+    },
+    {
+      "gene_id": "YFL039C",
+      "gene_name": "ACT1",
+      "tier": "high",
+      "dee2_tpm": 1375.54,
+      "chrom": "VI",
+      "strand": "-",
+      "cds_start": 53263,
+      "cds_end": 54696,
+      "cds_len": 1434
+    },
+    {
+      "gene_id": "YOL127W",
+      "gene_name": "RPL25",
+      "tier": "high",
+      "dee2_tpm": 1882.37,
+      "chrom": "XV",
+      "strand": "+",
+      "cds_start": 80348,
+      "cds_end": 81187,
+      "cds_len": 840
+    },
+    {
+      "gene_id": "YCR012W",
+      "gene_name": "PGK1",
+      "tier": "high",
+      "dee2_tpm": 2392.15,
+      "chrom": "III",
+      "strand": "+",
+      "cds_start": 137746,
+      "cds_end": 138993,
+      "cds_len": 1248
+    },
+    {
+      "gene_id": "YHR174W",
+      "gene_name": "ENO2",
+      "tier": "high",
+      "dee2_tpm": 4380.95,
+      "chrom": "VIII",
+      "strand": "+",
+      "cds_start": 451327,
+      "cds_end": 452637,
+      "cds_len": 1311
+    },
+    {
+      "gene_id": "YKL060C",
+      "gene_name": "FBA1",
+      "tier": "high",
+      "dee2_tpm": 6675.42,
+      "chrom": "XI",
+      "strand": "-",
+      "cds_start": 326411,
+      "cds_end": 327487,
+      "cds_len": 1077
+    },
+    {
+      "gene_id": "YGR192C",
+      "gene_name": "TDH3",
+      "tier": "high",
+      "dee2_tpm": 11621.9,
+      "chrom": "VII",
+      "strand": "-",
+      "cds_start": 882815,
+      "cds_end": 883810,
+      "cds_len": 996
+    }
+  ]
+}

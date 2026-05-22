@@ -514,3 +514,140 @@ re-runs naturally on the corrected scale; expect:
 
 *Empty by design — anything that doesn't make the v1 cut goes here so
 the v1 scope stays bounded. Move items in once v1 is locked.*
+
+### Condition coherence — does the model respect promoter-driven OFF states?
+
+Probe whether genomic models (Shorkie / Yorzoi / etc.) correctly
+predict near-zero coverage at promoters that *should* be tightly
+repressed in the conditions covered by their training tracks. A
+direct test of whether the model has learned promoter-driven
+condition logic, or is reading expression as a CDS-intrinsic
+property.
+
+**Motivation (concrete result, 2026-05-22).** While investigating
+why Shorkie and Yorzoi predict variant-effect signal at the Chen
+2017 PGAL1 construct — a promoter that's Mig1-repressed in every
+condition either model saw during training — we found:
+
+- Both models correctly predict near-zero coverage at the
+  **unmodified native GAL1** in glucose (Shorkie's predicted
+  GAL1/TDH3 CDS-sum ratio = 0.005, biologically correct).
+- Replacing GAL1's CDS with a yeast-codon-optimized GFP CDS at
+  the **same locus** pushes the predicted CDS-sum up by 29× for
+  Shorkie and 11× for Yorzoi. Same promoter, same flanking
+  chrII, same chromosome — only the CDS sequence changed.
+
+So the variant-effect ranking is correct (CDS-codon signal flows
+through) but the absolute prediction is wrong: the model treats
+"yeast-codon-optimized CDS at this locus" as a strong positive
+signal *independent of whether the promoter is firing*. This is
+the inverse of the "promoter-CDS-terminator combinatorial logic"
+biology says yeast actually implements — and worth a benchmark.
+
+**Test set (sketch).** Tightly-repressed-in-glucose
+promoter-CDS-terminator units paired with constitutively expressed
+positive controls. Candidates:
+
+| Class | Genes | Why "tight off" in standard RM-glucose log phase |
+| --- | --- | --- |
+| Galactose induced | GAL1, GAL2, GAL7, GAL10 | Mig1 / Gal80 — canonical tight repression, ~100–1000× |
+| Phosphate starvation | PHO5, PHO84 | Pho4 nuclear export under high-Pi |
+| Sulfur / methionine | MET3, MET17 (=MET15) | Met4-controlled, repressed by methionine in medium |
+| Maltose | MAL11, MAL12 | Mig1; absent maltose |
+| Anaerobic | ANB1, CYC7 | Rox1 repression in aerobic conditions |
+| Heat-shock | HSP12, HSP26, HSP104 | Off in 30 °C log phase, Msn2/4 dependent |
+| Mating | STE3, MFA1, MFα1 | Cell-type / mating-specific — off in MATa/α heterozygotes |
+| Positive controls | TDH3, PGK1, ACT1, ENO2, ALG9 | Constitutive housekeeping |
+
+Per pair, score predicted CDS-bin sum on the unmodified locus
+(R64-1-1.fa coordinates, cross-track mean over the model's
+"standard glucose log-phase RM" track subset).
+
+**Primary metric.** Pairwise AUROC: for every (off-gene,
+on-gene) pair across the matrix, does the model assign the on-gene
+a higher predicted CDS-sum than the off-gene? A well-calibrated
+model gets ≈ 1.0; a model that reads only CDS-intrinsic codon
+signal would get ≈ 0.5 (the off-genes' native CDSs are not
+systematically less optimal-codon than the on-genes'). The
+Chen-investigation data point predicts Shorkie scores **near-1.0**
+on PGAL1 specifically (native GAL1 CDS isn't codon-optimised, so
+the model gets it right). The interesting question is whether that
+holds across the broader off-set or only for GAL.
+
+**Secondary metric.** Per off-gene, predicted CDS-sum normalised
+to the on-set median — "what fraction of housekeeping-level signal
+does the model think this repressed gene is producing?". Lets you
+plot per-gene-class violins to see which repression mechanisms the
+model has and hasn't learned.
+
+**Adapter protocol.** New `LocusExpressionPredictor` — given a
+list of `(gene_id, condition_subset)` pairs returns one scalar per
+pair. Almost trivially implementable on top of the existing
+Shorkie / Yorzoi adapters (window placement + CDS-bin sum). No new
+distribution-build step beyond a curated gene list.
+
+**What this benchmark answers that the others don't.** The eQTL /
+MPRA / Chen benchmarks all probe *variant-effect ranking* — they
+care about relative scores within a library, not absolute level.
+This is the first benchmark in the suite that probes **absolute
+calibration of expression prediction** against a binary biological
+ground truth. Failure here recontextualises everything else:
+"Shorkie's r = 0.6 on Chen GFP r2" reads very differently
+depending on whether Shorkie also passes condition coherence
+(then the result is "real signal at a mis-located locus") or
+fails it (then "the model is variant-ranking via codon usage,
+unrelated to where in the genome the variant sits").
+
+**Spec file:** `benchmarks/condition_coherence.md` (TODO).
+
+
+## Pre-release cleanup (delete before v1 ships)
+
+Files / directories that exist *only* to support investigation and
+debugging of model behaviour during development, and should be removed
+before the first public release of the benchmark. The benchmark's
+public surface is the spec files (`benchmarks/`), the registered
+adapters (`src/yeastbench/adapters/{shorkie,yorzoi,...}_{task}.py`),
+and the build scripts that turn raw upstream data into the committed
+distribution. Nothing under "investigation" qualifies — these are
+research artefacts we use to *understand why* the models behave the
+way they do, not part of the benchmark itself.
+
+**Scripts that build investigation artefacts:**
+
+- `scripts/chen/build_investigation_notebooks.py` — generates the
+  Shorkie / Yorzoi PGAL1-investigation ipynbs and their per-host
+  prediction caches. Has no role in scoring any benchmark.
+
+**Notebooks under `notebooks/` (already gitignored; remove from local
+checkouts too):**
+
+- `notebooks/chen_shorkie_investigation.ipynb` and
+  `notebooks/chen_yorzoi_investigation.ipynb` — diagnostic plots of
+  Shorkie / Yorzoi predictions at PGAL1 (motivated the marginalisation
+  decision; no longer needed once that decision is in v1).
+- `notebooks/brooks_yorzoi_coverage.ipynb` — diagnostic plots of
+  Yorzoi's predicted vs true RNA-seq coverage on Brooks SCRaMBLE
+  constructs (motivated the LFC sign / track-selection choices in
+  the Brooks adapter; the benchmark itself doesn't need the
+  notebook).
+- `notebooks/wu_yorzoi_predictions.ipynb` — same shape, for the Wu
+  RFP-insertions benchmark.
+- `notebooks/_*cache*.pkl` — per-notebook prediction caches.
+- `notebooks/investigation_plots/` — extracted PNGs.
+
+The `notebooks/` directory itself can stay (gitignored anyway) for
+future investigation work; just make sure no investigation artefact
+is referenced from the benchmark code paths or specs.
+
+**Sweep procedure at release time:**
+
+1. `git ls-files | xargs grep -l "investigation" -- scripts/ src/` —
+   should return nothing (or only references in this Roadmap entry).
+2. Confirm `tests/` doesn't import from any of the files above.
+3. `git rm scripts/chen/build_investigation_notebooks.py` and any
+   other helpers added since this list was written.
+4. `rm -rf notebooks/` (or just the files above) — locally only.
+5. Make sure `benchmarks/chen_synonymous.md` (and any other spec
+   file) doesn't reference the investigation notebooks except as
+   historical context.

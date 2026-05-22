@@ -50,8 +50,8 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         library: str,
         data_path: Path,
         fasta_path: Path,
-        gtf_path: Path,
-        library_loci_path: Path,
+        hosts_path: Path,
+        data_dir: Path,
         replicate_ceiling_pearson: float,
         info: BenchmarkInfo,
         replicate_ceiling_spearman: float | None = None,
@@ -61,8 +61,8 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         self.library = library
         self.data_path = Path(data_path)
         self._fasta_path = Path(fasta_path)
-        self._gtf_path = Path(gtf_path)
-        self._library_loci_path = Path(library_loci_path)
+        self._hosts_path = Path(hosts_path)
+        self._data_dir = Path(data_dir)
         self.ceiling_pearson = float(replicate_ceiling_pearson)
         self.ceiling_spearman = (
             float(replicate_ceiling_spearman)
@@ -90,12 +90,12 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         return self._fasta_path
 
     @property
-    def gtf_path(self) -> Path:
-        return self._gtf_path
+    def hosts_path(self) -> Path:
+        return self._hosts_path
 
     @property
-    def library_loci_path(self) -> Path:
-        return self._library_loci_path
+    def data_dir(self) -> Path:
+        return self._data_dir
 
     # We intentionally do *not* override ``compare_task_name``: each Chen
     # library is its own compare group (chen_gfp_r1 / chen_gfp_r2 /

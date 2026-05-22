@@ -125,30 +125,30 @@ def _shorkie_wu_adapter(device, fasta_path, gtf_path, **cfg):
 
 
 def _shorkie_chen_adapter(
-    device, fasta_path, gtf_path, library, library_loci_path, **cfg,
+    device, fasta_path, library, hosts_path, data_dir, **cfg,
 ):
-    from yeastbench.adapters.shorkie_chen import ShorkieChenPredictor
+    from yeastbench.adapters.shorkie_chen_marginalized import ShorkieChenPredictor
 
     return ShorkieChenPredictor.from_checkpoints(
         fasta_path=fasta_path,
-        gtf_path=gtf_path,
         library=library,
-        library_loci_path=library_loci_path,
+        hosts_path=hosts_path,
+        data_dir=data_dir,
         device=device,
         **cfg,
     )
 
 
 def _yorzoi_chen_adapter(
-    device, fasta_path, gtf_path, library, library_loci_path, **cfg,
+    device, fasta_path, library, hosts_path, data_dir, **cfg,
 ):
-    from yeastbench.adapters.yorzoi_chen import YorzoiChenPredictor
+    from yeastbench.adapters.yorzoi_chen_marginalized import YorzoiChenPredictor
 
     return YorzoiChenPredictor.from_pretrained(
         fasta_path=fasta_path,
-        gtf_path=gtf_path,
         library=library,
-        library_loci_path=library_loci_path,
+        hosts_path=hosts_path,
+        data_dir=data_dir,
         device=device,
         **cfg,
     )
@@ -182,7 +182,7 @@ def _shorkie_brooks_adapter(device, **cfg):
 # as a keyword argument.
 REFS_FIELDS: tuple[str, ...] = ("fasta_path", "gtf_path")
 CHEN_FIELDS: tuple[str, ...] = (
-    "fasta_path", "gtf_path", "library", "library_loci_path",
+    "fasta_path", "library", "hosts_path", "data_dir",
 )
 
 SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
@@ -397,8 +397,8 @@ def _build_chen(
     library: str,
     data_path: str | Path,
     fasta_path: str | Path,
-    gtf_path: str | Path,
-    library_loci_path: str | Path,
+    hosts_path: str | Path,
+    data_dir: str | Path,
     replicate_ceiling_pearson: float,
     replicate_ceiling_spearman: float | None = None,
 ) -> Benchmark:
@@ -406,8 +406,8 @@ def _build_chen(
         library=library,
         data_path=Path(data_path),
         fasta_path=Path(fasta_path),
-        gtf_path=Path(gtf_path),
-        library_loci_path=Path(library_loci_path),
+        hosts_path=Path(hosts_path),
+        data_dir=Path(data_dir),
         replicate_ceiling_pearson=float(replicate_ceiling_pearson),
         replicate_ceiling_spearman=(
             None if replicate_ceiling_spearman is None

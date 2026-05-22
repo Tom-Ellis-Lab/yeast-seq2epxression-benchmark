@@ -28,34 +28,45 @@ Chen 2017 gives us a controlled probe of that signal:
 3. **Reproducibility ceiling published.** Replicate-replicate Pearson is reported per library, so we have a hard upper bound for what any predictor can achieve.
 4. **Hard for our models.** The two regions of GFP cover 36 nt out of a ~720 nt CDS, embedded inside an entirely synthetic locus. Shorkie/Yorzoi may resolve nothing here — that's an informative negative result that the benchmark can publish.
 
-## The construct (shared across all three libraries)
+## The construct, in the original experiment vs in v1 scoring
 
-The Chen libraries do not live at any native locus. The strain BY4742 is modified to replace two chrII CDSs:
+Chen 2017's strain integrates the variant gene cassette at the chrII GAL1 locus:
 
 ```
                             chrII (S. cerevisiae R64-1-1)
        ...GAL7 promoter ──┬─ dTomato ─┬── GAL1 promoter ─┬── {GFP | TDH3} variant CDS ──┬── ADH1 term. ── LEU2 marker ── GAL1 term. ── (downstream native chrII)
-                          |           |                  |                              |
-   YBR018C (GAL7) CDS replaced       (between the two)  YBR020W (GAL1) CDS replaced     ...the cassette extends ~3.0 kb past the original GAL1 stop codon
 ```
 
-Both `PGAL1` and `PGAL7` are kept intact and natively GAL4-induced. `dTomato` provides cell-by-cell normalization for galactose induction; only the variant gene's mRNA / protein is the readout.
+Galactose is required to induce the variant gene from PGAL1; in glucose conditions PGAL1 is Mig1-repressed to near-zero transcription.
 
-**Implication for genomic-model adapters:** the input window cannot be cut from the unmodified R64-1-1 FASTA. The benchmark ships a **synthetic chrII FASTA + GTF** with the integration spliced in (see *Files*), and the adapter loads that instead of `R64-1-1.fa`. The synthetic FASTA is identical to R64-1-1 outside the chrII GAL1–GAL7 interval (≈275,000–283,000 bp); inside, it carries the construct.
+**Why v1 does *not* score at this locus.** Both Shorkie and Yorzoi were trained exclusively on glucose / standard-condition RNA-seq tracks (verified: zero galactose RNA-seq tracks in either model's target sheet). Scoring at the construct's actual chrII locus asks the model to predict variant effects at a promoter it knows is silent, which adds locus-specific calibration noise: see the investigation notebooks (`notebooks/chen_{shorkie,yorzoi}_investigation.ipynb`) — both models correctly predict native unmodified GAL1 in glucose as near-zero coverage but predict the same locus with the GFP CDS spliced in as 11-29× higher. The variant-effect signal that *does* survive the model's confusion at this locus is **CDS-intrinsic codon usage**: changing the 36 nt variable block modulates predicted coverage similarly across nearly all of the model's tracks, regardless of whether the host promoter is firing.
 
-### Variable-region site for each library
+**What v1 scores instead — marginalisation over 20 active YPD hosts.** For each variant, splice the variant gene's CDS + TADH1 into 20 native R64-1-1 host gene loci (replacing each host's CDS, keeping the host's promoter and downstream context), score each (variant, host) pair, and average. The codon-effect signal is locus-independent, so it transfers cleanly; the locus-specific calibration noise averages out. The marginalised prediction does **not** correspond to "what Chen would have measured if the experiment were done in this gene's locus"; it corresponds to "the model's codon-effect signal averaged across active-in-YPD chromatin contexts" — which is the quantity the model can actually compute.
 
-After splicing, the construct has one well-defined locus per library:
+### Host-gene panel (20 hosts)
 
-| Library | Gene in construct | Codon range (0-based protein positions) | nt offset of variable block (0-based, from CDS start) | Block length |
+Curated for YPD-log-phase activity (so logSED has signal-to-noise) and span weak / medium / high promoter strengths (so per-locus prediction noise integrates out):
+
+| Tier (DEE2 median TPM) | Hosts |
+| --- | --- |
+| Low (10-50)            | VPS52, RGI1, GPM3, PKC1 |
+| Medium (50-250)        | ALG9, HXT1, RPE1, TUB1, SEC61 |
+| Medium-high (250-1000) | DPM1, HXT3, CTS1, RPL11A, IPP1 |
+| High (1000+)           | ACT1, RPL25, PGK1, ENO2, FBA1, TDH3 |
+
+Functional mix: glycolysis (5), ribosomal / translation (2), transport (2 HXT), cytoskeleton (2), ER/Golgi/biosynthesis (4), cell-cycle / division (1), signalling (2), PPP (1), housekeeping (4). 14 of 16 chromosomes represented. Stress-induced / condition-specific genes (HSP family, MSN4, GAL family) deliberately excluded — they look "expressed" in pooled DEE2 averages only because the DEE2 mix includes stress samples; in pure YPD log phase they're near-silent. Pinned in `data/tasks/chen_synonymous/marginalized_hosts.json`.
+
+### Per-library variant-block position in the cassette
+
+| Library | Variant gene CDS | 0-based protein positions of the variable block | nt offset of variable block from CDS start | Block length |
 | --- | --- | --- | ---: | ---: |
-| GFP r1 | GFP   | 41–52   | 123 | 36 nt |
-| GFP r2 | GFP   | 156–167 | 468 | 36 nt |
-| TDH3   | TDH3  | 56–67   | 168 | 36 nt |
+| GFP r1 | yeast-codon-optimised GFP (synthesised), 717 nt | 41–52   | 123 | 36 nt |
+| GFP r2 | same GFP CDS as above (one cassette per gene)     | 156–167 | 468 | 36 nt |
+| TDH3   | native R64-1-1 TDH3 CDS (YGR192C), 996 nt          | 56–67   | 168 | 36 nt |
 
 (0-based protein positions count from the start Methionine. Chen's prose says "GFP codons 41–52" but his peptide identity `LTLKFICTTGKL` puts the variable block at 0-based residues 41–52 — i.e., 3 × 41 = 123 nt past the start codon. We use the peptide identity, not the prose codon numbers, as the source of truth.)
 
-The 36 nt is substituted in directly — no flanking insert / scaffold. Everything upstream and downstream is fixed.
+The 12-codon variable block is substituted in directly — no flanking insert / scaffold. For each (variant, host) pair, only this 36 nt region differs between REF and ALT; everything upstream (host promoter, 5' UTR) and downstream (TADH1, host 3' context) is fixed. For − strand hosts the cassette is reverse-complemented before splicing into the genomic + strand at the host's CDS span.
 
 ## Adapter protocol
 
@@ -195,20 +206,19 @@ v1 keeps each library as its own compare group (`chen_gfp_r1` / `chen_gfp_r2` / 
 
 | File | Content |
 | --- | --- |
-| `data/tasks/chen_synonymous/construct_chrII.fa` | Modified chromosome II with the GAL7→dTomato + GAL1→cassette integration spliced in. All other chromosomes are byte-identical to `R64-1-1.fa`. Adapter passes this in place of the canonical fasta for Chen tasks. |
-| `data/tasks/chen_synonymous/construct.gtf` | GTF entries for `dTomato`, `GFP_variant`, and `TDH3_variant` at the new coordinates (start, end, strand, CDS). Strand is +. Used by adapters to locate the variable region and define the CDS-binning window. |
-| `data/tasks/chen_synonymous/library_loci.json` | `{library_id: {gene_id, cds_start_in_construct, var_start, var_end, ref_codons}}` — the per-library locus metadata an adapter needs to splice the 36 nt block into the construct. Committed once at distribution build time. |
+| `data/tasks/chen_synonymous/marginalized_hosts.json` | List of 20 curated YPD-active host genes (`gene_id`, `gene_name`, `chrom`, `strand`, `cds_start`, `cds_end`, `tier`, `dee2_tpm`). The adapter splices the variant gene's CDS + TADH1 into each host's CDS span at run time; no construct FASTA is built ahead of time. |
 | `data/tasks/chen_synonymous/gfp_r1.tsv` | 1,124 rows. Cols: `variant_id, variable_seq (36nt), CAI, tAI, MFE, GC3, log2mRNA_rep1, log2mRNA_rep2, log2protein_rep1, log2protein_rep2, degradation_rate`. CAI/tAI/MFE/GC3 are carried through from Chen's supp Table S7 verbatim. |
 | `data/tasks/chen_synonymous/gfp_r2.tsv` | 2,432 rows. Cols: `variant_id, variable_seq, CAI, tAI, MFE, GC3, log2mRNA_rep1, log2mRNA_rep2, log2protein_rep1, log2protein_rep2` (no degradation column). |
 | `data/tasks/chen_synonymous/tdh3.tsv` | 523 rows. Cols: `variant_id, variable_seq, CAI, MFE, GC3, log2mRNA` (single normalized column as published by Chen in supp Table S9; no tAI/protein/degradation). |
-| `data/tasks/chen_synonymous/replicate_ceilings.json` | `{library_id: pearson_r_between_replicates}` from the paper (GFP r1: 0.83, GFP r2: 0.73, TDH3: 0.72). Used to plot the reproducibility ceiling band. |
+| `data/tasks/chen_synonymous/replicate_ceilings.json` | Per-library replicate-replicate Pearson and Spearman ceilings (Pearson from Chen 2017, Spearman empirical from rep1/rep2 columns; TDH3 ships a merged column so Spearman is `null`). Used to plot the reproducibility ceiling band. |
+
+The model adapter reads `R64-1-1.fa` and `marginalized_hosts.json` at init, builds the cassette internally (variant gene CDS + TADH1), and splices into each host's CDS span on the fly. There is no pre-built construct FASTA.
 
 ### Build script (one-off, lives in `scripts/chen/`)
 
-- `scripts/chen/build_construct_reference.py` — fetches the dTomato + GFP + TDH3 + ADH1term + LEU2 + GAL1term sequences (commit one-off in the repo: dTomato and GFP are vendored from common plasmid sources, ADH1term and GAL1term are pulled from R64-1-1, LEU2 is YCL018W in R64-1-1), splices them into a modified chrII, writes `construct_chrII.fa` + `construct.gtf` + `library_loci.json`.
-- `scripts/chen/build_distribution_tsvs.py` — parses MBE supp tables S7–S9, normalizes `log2(R/D)` per library, writes the three TSVs and `replicate_ceilings.json`.
+- `scripts/chen/build_distribution_tsvs.py` — parses MBE supp tables S7–S9, normalizes `log2(R/D)` per library, writes the three TSVs and `replicate_ceilings.json` (with Pearson and Spearman ceilings).
 
-Neither script is invoked by the benchmark at run time — they're one-off pipeline steps whose outputs are committed under `data/tasks/chen_synonymous/`.
+The hosts JSON (`marginalized_hosts.json`) was hand-curated against DEE2 median TPM — see the `## The construct, in the original experiment vs in v1 scoring` section for the selection criteria. Not produced by an auto-run script.
 
 ### Sequence-format sanity checks (must pass at distribution build time)
 
@@ -226,10 +236,11 @@ tasks_config:
   chen_gfp_r1:
     library: gfp_r1
     data_path: data/tasks/chen_synonymous/gfp_r1.tsv
-    fasta_path: data/tasks/chen_synonymous/construct_chrII.fa
-    gtf_path: data/tasks/chen_synonymous/construct.gtf
-    library_loci_path: data/tasks/chen_synonymous/library_loci.json
+    fasta_path: data/tasks/R64-1-1.fa
+    hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
+    data_dir: data/tasks/chen_synonymous
     replicate_ceiling_pearson: 0.83
+    replicate_ceiling_spearman: 0.71
   chen_gfp_r2:
     library: gfp_r2
     ...

@@ -599,3 +599,55 @@ fails it (then "the model is variant-ranking via codon usage,
 unrelated to where in the genome the variant sits").
 
 **Spec file:** `benchmarks/condition_coherence.md` (TODO).
+
+
+## Pre-release cleanup (delete before v1 ships)
+
+Files / directories that exist *only* to support investigation and
+debugging of model behaviour during development, and should be removed
+before the first public release of the benchmark. The benchmark's
+public surface is the spec files (`benchmarks/`), the registered
+adapters (`src/yeastbench/adapters/{shorkie,yorzoi,...}_{task}.py`),
+and the build scripts that turn raw upstream data into the committed
+distribution. Nothing under "investigation" qualifies — these are
+research artefacts we use to *understand why* the models behave the
+way they do, not part of the benchmark itself.
+
+**Scripts that build investigation artefacts:**
+
+- `scripts/chen/build_investigation_notebooks.py` — generates the
+  Shorkie / Yorzoi PGAL1-investigation ipynbs and their per-host
+  prediction caches. Has no role in scoring any benchmark.
+
+**Notebooks under `notebooks/` (already gitignored; remove from local
+checkouts too):**
+
+- `notebooks/chen_shorkie_investigation.ipynb` and
+  `notebooks/chen_yorzoi_investigation.ipynb` — diagnostic plots of
+  Shorkie / Yorzoi predictions at PGAL1 (motivated the marginalisation
+  decision; no longer needed once that decision is in v1).
+- `notebooks/brooks_yorzoi_coverage.ipynb` — diagnostic plots of
+  Yorzoi's predicted vs true RNA-seq coverage on Brooks SCRaMBLE
+  constructs (motivated the LFC sign / track-selection choices in
+  the Brooks adapter; the benchmark itself doesn't need the
+  notebook).
+- `notebooks/wu_yorzoi_predictions.ipynb` — same shape, for the Wu
+  RFP-insertions benchmark.
+- `notebooks/_*cache*.pkl` — per-notebook prediction caches.
+- `notebooks/investigation_plots/` — extracted PNGs.
+
+The `notebooks/` directory itself can stay (gitignored anyway) for
+future investigation work; just make sure no investigation artefact
+is referenced from the benchmark code paths or specs.
+
+**Sweep procedure at release time:**
+
+1. `git ls-files | xargs grep -l "investigation" -- scripts/ src/` —
+   should return nothing (or only references in this Roadmap entry).
+2. Confirm `tests/` doesn't import from any of the files above.
+3. `git rm scripts/chen/build_investigation_notebooks.py` and any
+   other helpers added since this list was written.
+4. `rm -rf notebooks/` (or just the files above) — locally only.
+5. Make sure `benchmarks/chen_synonymous.md` (and any other spec
+   file) doesn't reference the investigation notebooks except as
+   historical context.

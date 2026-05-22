@@ -71,6 +71,18 @@ TDH3_END = 883810
 TDH3_CDS_LEN = TDH3_END - TDH3_START + 1   # 996 nt incl. stop
 TDH3_STRAND = "-"
 
+# TADH1: the ADH1 (YOL086C, chrXV −strand 159548–160594) 3' terminator
+# region, in mRNA-sense orientation = revcomp of chrXV genomic region
+# immediately downstream of ADH1's stop codon. The genomic interval
+# 159446–159548 sits between the upstream gene MHF1's stop (chrXV 159445,
+# + strand) and ADH1's stop (159548) — 103 nt of clean intergenic that
+# contains the poly-A signal and the termination structure. Going past
+# 159446 starts overlapping MHF1's CDS, so we cap at this boundary.
+TADH1_CHROM = "XV"
+TADH1_START = 159446
+TADH1_END = 159548
+TADH1_STRAND = "-"
+
 # WT A. victoria GFP protein (Prasher 1992; UniProt P42212), 238 aa.
 GFP_PROTEIN = (
     "MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGV"
@@ -157,10 +169,19 @@ def pull_native_cds(
 def build_modified_chrii(
     fasta: Fasta,
     variant_cds: str,
+    tadh1: str,
 ) -> str:
+    """Splice {variant_cds, TADH1} into chrII in place of GAL1's CDS.
+
+    The variant gene's CDS occupies chrII positions
+    ``[GAL1_START, GAL1_START + len(variant_cds) - 1]``; TADH1 follows
+    immediately to give the predicted transcript a clean termination
+    signal before the model's output crop reads into the downstream
+    chrII genes (FUR4 starts only 836 nt past GAL1's original stop)."""
     chrii = str(fasta[GAL1_CHROM][:].seq).upper()
-    new_chrii = chrii[: GAL1_START - 1] + variant_cds + chrii[GAL1_END:]
-    expected = len(chrii) - GAL1_CDS_LEN + len(variant_cds)
+    insert = variant_cds + tadh1
+    new_chrii = chrii[: GAL1_START - 1] + insert + chrii[GAL1_END:]
+    expected = len(chrii) - GAL1_CDS_LEN + len(insert)
     if len(new_chrii) != expected:
         raise ValueError(f"new chrII length {len(new_chrii)} != expected {expected}")
     return new_chrii
@@ -235,6 +256,11 @@ def main(argv: list[str] | None = None) -> None:
         fasta, TDH3_CHROM, TDH3_START, TDH3_END, TDH3_STRAND,
     )
     log.info("TDH3 CDS pulled from R64-1-1; len=%d", len(tdh3_cds))
+
+    tadh1 = pull_native_cds(
+        fasta, TADH1_CHROM, TADH1_START, TADH1_END, TADH1_STRAND,
+    )
+    log.info("TADH1 pulled from R64-1-1; len=%d", len(tadh1))
     if translate(tdh3_cds).rstrip("*") != (
         "MVRVAINGFGRIGRLVMRIALSRPNVEVVALNDPFITNDYAAYMFKYDSTHGRYAGEVSHDDKHIIVD"
         "GKKIATYQERDPANLPWGSSNVDIAIDSTGVFKELDTAQKHIDAGAKKVVITAPSSTAPMFVMGVNEE"
@@ -245,7 +271,7 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError("pulled TDH3 CDS does not translate to expected protein")
 
     # ── Write the GFP construct ──
-    gfp_chrii = build_modified_chrii(fasta, gfp_cds)
+    gfp_chrii = build_modified_chrii(fasta, gfp_cds, tadh1)
     gfp_cds_start = GAL1_START                       # 1-based
     gfp_cds_end = GAL1_START + len(gfp_cds) - 1      # 1-based inclusive
     write_fasta(
@@ -260,7 +286,7 @@ def main(argv: list[str] | None = None) -> None:
     log.info("wrote construct_chrII_gfp.fa (%d nt) + construct_gfp.gtf", len(gfp_chrii))
 
     # ── Write the TDH3 construct ──
-    tdh3_chrii = build_modified_chrii(fasta, tdh3_cds)
+    tdh3_chrii = build_modified_chrii(fasta, tdh3_cds, tadh1)
     tdh3_cds_start = GAL1_START
     tdh3_cds_end = GAL1_START + len(tdh3_cds) - 1
     write_fasta(

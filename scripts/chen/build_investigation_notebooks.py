@@ -81,6 +81,7 @@ if CACHE.exists():
     ref_pred = c["ref_pred"]           # (162, OUTPUT_BINS)
     variant_preds = c["variant_preds"] # (N, 162, OUTPUT_BINS)
     native_tdh3_pred = c["native_tdh3_pred"]  # (162, OUTPUT_BINS)
+    native_gal1_pred = c["native_gal1_pred"]  # (162, OUTPUT_BINS) — unmodified chrII
     window_start = c["window_start"]
     var_start_in_window = c["var_start_in_window"]
     cds_start_in_window = c["cds_start_in_window"]
@@ -88,6 +89,9 @@ if CACHE.exists():
     tdh3_window_start = c["tdh3_window_start"]
     tdh3_cds_start_in_window = c["tdh3_cds_start_in_window"]
     tdh3_cds_end_in_window = c["tdh3_cds_end_in_window"]
+    gal1_window_start = c["gal1_window_start"]
+    gal1_cds_start_in_window = c["gal1_cds_start_in_window"]
+    gal1_cds_end_in_window = c["gal1_cds_end_in_window"]
     print("loaded cache:", CACHE.name)
 else:
     model = Yorzoi.from_pretrained("tom-ellis-lab/yorzoi", device="cuda", use_rc=True, autocast=True)
@@ -134,11 +138,29 @@ else:
     tdh3_oh = torch.from_numpy(one_hot_encode_channels_first(tdh3_seq).T).to(model.device)
     native_tdh3_pred = predict_one(tdh3_oh)
 
+    # Native GAL1 locus from unmodified R64-1-1 chrII (NOT the construct).
+    # Same window placement logic as the construct, but on the original
+    # GAL1 (YBR020W, 279021-280607 + strand). Tells us what the model
+    # thinks the *unmodified* GAL1 should be doing in its training conditions.
+    GAL1_START_NAT, GAL1_END_NAT = 279021, 280607
+    gal1_center_nat = (GAL1_START_NAT + GAL1_END_NAT) // 2
+    chrii_len_native = nfa.get_reference_length("II")
+    gal1_window_start = place_window(
+        var_pos=gal1_center_nat, gene_center=gal1_center_nat,
+        chrom_length=chrii_len_native, seq_len=SEQ_LEN, crop_bp_each_side=CROP_BP_EACH_SIDE,
+    )
+    gal1_cds_start_in_window = GAL1_START_NAT - 1 - gal1_window_start
+    gal1_cds_end_in_window   = GAL1_END_NAT - 1 - gal1_window_start
+    gal1_seq = nfa.fetch("II", gal1_window_start, gal1_window_start + SEQ_LEN).upper()
+    gal1_oh = torch.from_numpy(one_hot_encode_channels_first(gal1_seq).T).to(model.device)
+    native_gal1_pred = predict_one(gal1_oh)
+
     with open(CACHE, "wb") as fh:
         pickle.dump({
             "ref_pred": ref_pred,
             "variant_preds": variant_preds,
             "native_tdh3_pred": native_tdh3_pred,
+            "native_gal1_pred": native_gal1_pred,
             "window_start": window_start,
             "var_start_in_window": var_start_in_window,
             "cds_start_in_window": cds_start_in_window,
@@ -146,6 +168,9 @@ else:
             "tdh3_window_start": tdh3_window_start,
             "tdh3_cds_start_in_window": tdh3_cds_start_in_window,
             "tdh3_cds_end_in_window": tdh3_cds_end_in_window,
+            "gal1_window_start": gal1_window_start,
+            "gal1_cds_start_in_window": gal1_cds_start_in_window,
+            "gal1_cds_end_in_window": gal1_cds_end_in_window,
         }, fh)
 
 print("ref_pred:", ref_pred.shape, "(162 tracks × OUTPUT_BINS)")
@@ -180,6 +205,7 @@ if CACHE.exists():
     ref_pred = c["ref_pred"]
     variant_preds = c["variant_preds"]
     native_tdh3_pred = c["native_tdh3_pred"]
+    native_gal1_pred = c["native_gal1_pred"]
     track_ids = c["track_ids"]
     window_start = c["window_start"]
     var_start_in_window = c["var_start_in_window"]
@@ -188,6 +214,9 @@ if CACHE.exists():
     tdh3_window_start = c["tdh3_window_start"]
     tdh3_cds_start_in_window = c["tdh3_cds_start_in_window"]
     tdh3_cds_end_in_window = c["tdh3_cds_end_in_window"]
+    gal1_window_start = c["gal1_window_start"]
+    gal1_cds_start_in_window = c["gal1_cds_start_in_window"]
+    gal1_cds_end_in_window = c["gal1_cds_end_in_window"]
     print("loaded cache:", CACHE.name)
 else:
     model = Shorkie.from_checkpoints(
@@ -241,11 +270,26 @@ else:
     tdh3_oh = torch.from_numpy(one_hot_encode_channels_first(tdh3_seq)).to(model.device)
     native_tdh3_pred = predict_one(tdh3_oh)
 
+    # Native GAL1 from unmodified R64-1-1 chrII.
+    GAL1_START_NAT, GAL1_END_NAT = 279021, 280607
+    gal1_center_nat = (GAL1_START_NAT + GAL1_END_NAT) // 2
+    chrii_len_native = nfa.get_reference_length("II")
+    gal1_window_start = place_window(
+        var_pos=gal1_center_nat, gene_center=gal1_center_nat,
+        chrom_length=chrii_len_native, seq_len=SEQ_LEN, crop_bp_each_side=CROP_BP_EACH_SIDE,
+    )
+    gal1_cds_start_in_window = GAL1_START_NAT - 1 - gal1_window_start
+    gal1_cds_end_in_window   = GAL1_END_NAT - 1 - gal1_window_start
+    gal1_seq = nfa.fetch("II", gal1_window_start, gal1_window_start + SEQ_LEN).upper()
+    gal1_oh = torch.from_numpy(one_hot_encode_channels_first(gal1_seq)).to(model.device)
+    native_gal1_pred = predict_one(gal1_oh)
+
     with open(CACHE, "wb") as fh:
         pickle.dump({
             "ref_pred": ref_pred,
             "variant_preds": variant_preds,
             "native_tdh3_pred": native_tdh3_pred,
+            "native_gal1_pred": native_gal1_pred,
             "track_ids": track_ids,
             "window_start": window_start,
             "var_start_in_window": var_start_in_window,
@@ -254,12 +298,16 @@ else:
             "tdh3_window_start": tdh3_window_start,
             "tdh3_cds_start_in_window": tdh3_cds_start_in_window,
             "tdh3_cds_end_in_window": tdh3_cds_end_in_window,
+            "gal1_window_start": gal1_window_start,
+            "gal1_cds_start_in_window": gal1_cds_start_in_window,
+            "gal1_cds_end_in_window": gal1_cds_end_in_window,
         }, fh)
 
 # Transpose so the per-track axis comes first, matching Yorzoi notebook
 ref_pred = ref_pred.T                                 # (n_tracks, OUTPUT_BINS)
 variant_preds = variant_preds.transpose(0, 2, 1)      # (N, n_tracks, OUTPUT_BINS)
 native_tdh3_pred = native_tdh3_pred.T                 # (n_tracks, OUTPUT_BINS)
+native_gal1_pred = native_gal1_pred.T                 # (n_tracks, OUTPUT_BINS)
 
 print("ref_pred:", ref_pred.shape, f"({len(track_ids)} T0 RNA-seq tracks × {OUTPUT_BINS} bins)")
 print("variant_preds:", variant_preds.shape)
@@ -520,7 +568,132 @@ print(f"ratio (TDH3 / construct): "
 '''
 
 
-PLOTS = [
+PLOT8_MD = '''\
+## Plot 8 — unmodified native GAL1: what does the model predict at the *real* GAL1 locus?
+
+This is the key sanity check. We predict on **R64-1-1's unmodified chrII
+centered on the native GAL1 (YBR020W, 279021–280607)** — the gene as
+the model saw it during training. PGAL1 is glucose-repressed; in every
+training condition Shorkie / Yorzoi observed, the native GAL1 should be
+essentially silent. If the model is well-behaved, this profile should
+sit near zero across the CDS.
+
+Plotted alongside: (i) our construct REF (GFP CDS spliced in place of
+GAL1's CDS) — same locus, modified sequence; (ii) native TDH3 — a
+constitutively highly-expressed control.
+'''
+
+PLOT8_CODE = '''\
+fig, ax = plt.subplots(figsize=(11, 4.4))
+x = np.arange(ref_pred.shape[1])
+
+cons_profile = ref_pred[PLUS].mean(axis=0)
+tdh3_profile = native_tdh3_pred[PLUS].mean(axis=0)
+gal1_native_profile = native_gal1_pred[PLUS].mean(axis=0)
+
+ax.plot(x, gal1_native_profile, color="firebrick", lw=1.1,
+        label="native GAL1 (R64-1-1, unmodified)")
+ax.plot(x, cons_profile, color="steelblue", lw=1.0,
+        label="construct REF (GFP spliced in)")
+ax.plot(x, tdh3_profile, color="darkorange", lw=1.0,
+        label="native TDH3 (highly expressed)")
+
+gal1_native_cds_lo = max(0, gal1_cds_start_in_window // BIN_BP - CROP_BP_EACH_SIDE // BIN_BP)
+gal1_native_cds_hi = max(0, gal1_cds_end_in_window // BIN_BP - CROP_BP_EACH_SIDE // BIN_BP)
+ax.axvspan(gal1_native_cds_lo, gal1_native_cds_hi, color="firebrick", alpha=0.06,
+           label="native GAL1 CDS region")
+ax.set_xlabel("output bin index")
+ax.set_ylabel("predicted coverage (cross-track mean over forward strand)")
+ax.set_title("What does the model think happens at GAL1 vs construct vs TDH3?")
+ax.legend(loc="upper right", fontsize=8)
+fig.tight_layout()
+
+native_gal1_cds_sum = gal1_native_profile[gal1_native_cds_lo:gal1_native_cds_hi].sum()
+construct_cds_sum = cons_profile[cds_lo:cds_hi].sum()
+tdh3_cds_lo = max(0, tdh3_cds_start_in_window // BIN_BP - CROP_BP_EACH_SIDE // BIN_BP)
+tdh3_cds_hi = max(0, tdh3_cds_end_in_window // BIN_BP - CROP_BP_EACH_SIDE // BIN_BP)
+tdh3_cds_sum = tdh3_profile[tdh3_cds_lo:tdh3_cds_hi].sum()
+print(f"native GAL1 CDS-sum (cross-track mean):   {native_gal1_cds_sum:.2f}")
+print(f"construct REF CDS-sum (cross-track mean): {construct_cds_sum:.2f}")
+print(f"native TDH3 CDS-sum (cross-track mean):   {tdh3_cds_sum:.2f}")
+print(f"native GAL1 / TDH3 ratio: {native_gal1_cds_sum / max(1e-6, tdh3_cds_sum):.3f}  "
+      f"(biological truth: ≪ 1 in glucose)")
+'''
+
+
+PLOT9_MD = '''\
+## Plot 9 — which forward-strand tracks correlate best / worst with the measurement?
+
+Per-track Pearson r between predicted CDS-sum (across our 40 variants)
+and the measured `log2mRNA_rep1`. Top 10 and bottom 10 tracks shown
+with their bigwig filenames pulled from `yorzoi/track_annotation.json`
+(Yorzoi) or the targets sheet's `description` column (Shorkie). Hint:
+if the high-r tracks share a common sample / condition, that's where
+the model is finding the codon signal.
+'''
+
+PLOT9_YORZOI_CODE = '''\
+import json as _json
+tr = _json.load(open(ROOT / "yorzoi" / "track_annotation.json"))
+plus_names = tr["+"]   # 81 entries
+
+order = np.argsort(per_track_r)[::-1]
+print("=== top 10 + strand tracks by Pearson r vs log2mRNA_rep1 ===")
+for k in order[:10]:
+    print(f"  r={per_track_r[k]:+.3f}   idx={k:3d}   {plus_names[k]}")
+print()
+print("=== bottom 10 + strand tracks ===")
+for k in order[-10:]:
+    print(f"  r={per_track_r[k]:+.3f}   idx={k:3d}   {plus_names[k]}")
+
+fig, ax = plt.subplots(figsize=(11, 5.5))
+top_k = list(order[:10]) + list(order[-10:])
+labels = [plus_names[k][:50] for k in top_k]
+vals = [per_track_r[k] for k in top_k]
+colors = ["forestgreen"] * 10 + ["firebrick"] * 10
+ax.barh(range(len(top_k)), vals, color=colors)
+ax.set_yticks(range(len(top_k)))
+ax.set_yticklabels(labels, fontsize=7)
+ax.invert_yaxis()
+ax.axvline(0, color="black", lw=0.5)
+ax.set_xlabel("Pearson r vs measured log2mRNA_rep1")
+ax.set_title("Yorzoi top-10 (green) and bottom-10 (red) forward-strand tracks")
+fig.tight_layout()
+'''
+
+PLOT9_SHORKIE_CODE = '''\
+# Shorkie targets.txt: index, identifier, file, sum_stat, clip_soft, description, group
+targets_df = pd.read_csv(ROOT / "data" / "models" / "shorkie" / "targets.txt", sep="\\t")
+desc_by_idx = dict(zip(targets_df["index"], targets_df["identifier"]))
+
+order = np.argsort(per_track_r)[::-1]
+print("=== top 10 T0 RNA-seq tracks by Pearson r vs log2mRNA_rep1 ===")
+for k in order[:10]:
+    gid = track_ids[k]
+    print(f"  r={per_track_r[k]:+.3f}   shorkie_idx={gid:5d}   {desc_by_idx.get(gid, '?')}")
+print()
+print("=== bottom 10 T0 RNA-seq tracks ===")
+for k in order[-10:]:
+    gid = track_ids[k]
+    print(f"  r={per_track_r[k]:+.3f}   shorkie_idx={gid:5d}   {desc_by_idx.get(gid, '?')}")
+
+fig, ax = plt.subplots(figsize=(11, 5.5))
+top_k = list(order[:10]) + list(order[-10:])
+labels = [desc_by_idx.get(track_ids[k], str(track_ids[k]))[:50] for k in top_k]
+vals = [per_track_r[k] for k in top_k]
+colors = ["forestgreen"] * 10 + ["firebrick"] * 10
+ax.barh(range(len(top_k)), vals, color=colors)
+ax.set_yticks(range(len(top_k)))
+ax.set_yticklabels(labels, fontsize=7)
+ax.invert_yaxis()
+ax.axvline(0, color="black", lw=0.5)
+ax.set_xlabel("Pearson r vs measured log2mRNA_rep1")
+ax.set_title("Shorkie top-10 (green) and bottom-10 (red) T0 RNA-seq tracks")
+fig.tight_layout()
+'''
+
+
+PLOTS_SHARED = [
     ("plot1", PLOT1_MD, PLOT1_CODE),
     ("plot2", PLOT2_MD, PLOT2_CODE),
     ("plot3", PLOT3_MD, PLOT3_CODE),
@@ -528,6 +701,7 @@ PLOTS = [
     ("plot5", PLOT5_MD, PLOT5_CODE),
     ("plot6", PLOT6_MD, PLOT6_CODE),
     ("plot7", PLOT7_MD, PLOT7_CODE),
+    ("plot8", PLOT8_MD, PLOT8_CODE),
 ]
 
 
@@ -538,9 +712,14 @@ def build_notebook(model_name: str, model_setup_code: str, intro_md: str) -> nbf
         nbf.v4.new_code_cell(SETUP_COMMON),
         nbf.v4.new_code_cell(model_setup_code),
     ]
-    for _, md, code in PLOTS:
+    for _, md, code in PLOTS_SHARED:
         cells.append(nbf.v4.new_markdown_cell(md))
         cells.append(nbf.v4.new_code_cell(code))
+    # Per-model variant of plot 9 (track-ranking) — Yorzoi reads its
+    # track_annotation.json, Shorkie reads targets.txt.
+    plot9_code = PLOT9_YORZOI_CODE if model_name == "yorzoi" else PLOT9_SHORKIE_CODE
+    cells.append(nbf.v4.new_markdown_cell(PLOT9_MD))
+    cells.append(nbf.v4.new_code_cell(plot9_code))
     nb["cells"] = cells
     nb["metadata"] = {
         "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},

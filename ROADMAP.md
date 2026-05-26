@@ -199,6 +199,143 @@
   Re-uses the `_wu_scaffold.py` insertion machinery; only the model
   wrapper changes. Weights + code from `shorkie-paper/`.
 
+### Hong et al. (mCherry IGR insertion atlas)
+
+Tests whether a model can predict mean fluorescence of a constant
+`TDH3p-mCherry-ADH1t` cassette CRISPR-integrated into 150 distinct
+intergenic regions (IGRs). Structural sibling of the Wu benchmark
+above — same "constant cassette × varying locus" shape — but where
+Wu integrates into a *deleted ORF span* (CDS replacement), Hong
+integrates into a *preserved intergenic region* between two intact
+genes. Cassette is ~1.6 kb (vs Wu's ~3.5 kb payload), giving the
+model more native flank inside its receptive field.
+
+Source: Hong et al. 2026, *Exploring Chromosomal Position Effects for
+Predictable Tuning of Metabolic Pathways in Yeast*, bioRxiv
+([DOI](https://doi.org/10.64898/2026.04.06.716637)). Supplementary
+xlsx vendored at `data/tasks/hong/YeIP_supp_table_R2_20260411.xlsx`;
+supp PDF + paper PDF at `archive/hong/`; YeIP source at
+https://github.com/daftpunksss/YeIP.
+
+**Done.**
+
+- [x] Spec finalized (`benchmarks/hong_igr.md`): 98 IntTrain + 52
+  IntProp = 150 loci, mCherry CDS-sum readout, **two co-primary
+  metrics** — Primary (RNA-seq × cassette CDS, fixed across models)
+  and **Diagnostic B** (best track × region combination selected on
+  IntTrain, evaluated on IntProp; soft supervised feature
+  engineering). Cold-spot tier deferred (per-locus values
+  unavailable in supp tables).
+- [x] **Headline ceiling caveat documented.** Hong's published
+  SPCC = 0.847 is the cross-promoter rank correlation across 30
+  (promoter × IGR) points; the within-TDH3p, varying-IGR ceiling
+  is much lower. Section 7 of `notebooks/
+  hong_predictions_deep_dive.ipynb` shows that with Yorzoi-quoted
+  σ_log₂ ≈ 0.9 magnitude noise + IntProp's σ_log₂ ≈ 0.31 signal,
+  the **noise-limited IntProp ρ ceiling is ≈ +0.32**. YeIP's
+  published 0.556 is likely close to the honest within-promoter
+  ceiling (achieved because YeIP uses hand-engineered chromatin
+  features + supervised training on these IGRs).
+- [x] Reference assembly: **R64-5-1** (`data/tasks/R64-5-1.fa`),
+  matching what the YeIP code repo bundles. Paper Methods cite
+  R64-4-1; sequence-identical for the IGR set Hong picks.
+- [x] Distribution built (`scripts/hong/build_hong_distribution.py`,
+  `data/tasks/hong/hong_igr_v1.tsv`, **150 rows**, all integration
+  coordinates derived from Table S2 gRNAs → R64-5-1 matching).
+  Table S5's `chr`/`int_site` columns are inconsistent with Table
+  S2's gRNAs for 17/52 IntProp loci, so we use gRNAs as ground
+  truth and ignore S5 entirely (documented in spec). 96/98 IntTrain
+  gRNA-verified; 2 fall back to Table S4 `int_site`.
+- [x] Cassette FASTA frozen
+  (`data/tasks/hong/expression_cassette.fasta`, 1595 bp,
+  mCherry CDS at offset 686). Cassette always integrated on +
+  strand (donor PCR-primer-overhang construction forces this).
+- [x] Shared insertion scaffold refactor
+  (`src/yeastbench/adapters/_cassette_scaffold.py`) — used by both
+  Wu (replacing the previous `_wu_scaffold.py` internals) and Hong.
+  Window-anchor strategy parameterized: Wu uses
+  `readout_at_downstream_edge`, Hong uses `center_cassette`.
+- [x] `HongIGRInsertionBenchmark` + `_hong_scaffold.py` + new
+  `IGRInsertionExpressionPredictor` protocol (distinct from Wu's
+  `CassetteExpressionPredictor` since locus shape + window anchor
+  differ even though method signature is identical).
+- [x] **Two-metric benchmark output** (Primary + Diagnostic B).
+  Adapters opt into Diagnostic B by implementing optional
+  `predict_diagnostic_readouts(loci) → dict[name, signed_scores]`
+  including a `'primary'` key. Benchmark does IntTrain selection
+  on the dict's non-primary keys (signed Spearman ρ; biological
+  signs pre-declared per track type: active marks +1, nucleosome
+  density −1). Falls back gracefully to Primary-only for adapters
+  without the optional method.
+- [x] Shorkie adapter `ShorkieHongPredictor` (8-fold ensemble; T0
+  RNA-seq + 6 Chip-MNase histone-mark / nucleosome-density track
+  groups; 36 candidate readouts).
+- [x] Yorzoi adapter `YorzoiHongPredictor` (RNA-seq only, no
+  chromatin tracks; 4 track subgroups × 6 regions = 24 candidates).
+- [x] Tests (`tests/test_hong_igr.py`, 32 tests): scaffold,
+  benchmark, Diagnostic B selection, save/load roundtrip, back-
+  compat with adapters lacking `predict_diagnostic_readouts`.
+  Full suite 185 tests green.
+- [x] **GPU runs (RTX A6000), headline numbers:**
+    * **Shorkie**: Primary IntProp ρ = −0.108 (IntTrain −0.269) |
+      **Diagnostic B [H3 nucleosome × flank both 1 kb] IntProp
+      ρ = +0.202** (IntTrain +0.345, selected from 36 candidates).
+      Direction agrees with YeIP's "nucleosome density lower in
+      high-expression IGRs". Sits within the noise-limited ~+0.32
+      ceiling band.
+    * **Yorzoi**: Primary IntProp ρ = +0.057 (IntTrain −0.070) |
+      Diagnostic B [SCRaMBLE strains × flank L 1 kb] IntProp
+      ρ = −0.030 (IntTrain +0.107, selected from 24 candidates).
+      **Diagnostic B is *worse* than Primary** — Yorzoi's RNA-seq-
+      only track inventory has no chromatin-density signal, so the
+      IntTrain-selected combo doesn't generalize.
+    * Reference: YeIP supervised baseline reports SPCC = 0.556 on
+      IntProp; published 0.847 cross-promoter ceiling is
+      structurally unreachable per noise-limit analysis (see spec).
+- [x] Notebook `notebooks/hong_predictions_deep_dive.ipynb`
+  (gitignored): annotated per-locus samples, noise-ceiling
+  simulation, multi-track readout sweep, IntTrain → IntProp
+  selection + 5-fold CV stability check, upstream-only H3
+  length sweep.
+
+**Open.**
+- [ ] **YeIP supervised reference baseline.** AutoGluon ensemble
+  (XGBoost / CatBoost / LightGBM) over 10 neighborhood / epigenetic /
+  chromatin features (Hong Fig. 2A): intergenic length, ARS distance,
+  neighbor CAGE-TSS expression, neighbor essentiality, H3K4me1,
+  H3K4me2, nucleosome density, chromatin boundary distance, block
+  strength, genome compact score. **Supervised, not zero-shot** —
+  reported separately as a "what a feature-engineered tabular model
+  can do" upper bound, analogous to DREAM-RNN under Rafi. Pretrained
+  weights + feature-extraction code from the YeIP GitHub repo.
+- [ ] External validation pass: same three models scored on Kong et
+  al. 2022's independent IGR-fluorescence panel (Hong used it as
+  YeIP's external held-out, SPCC = 0.430). Cheap addition once the
+  Hong scaffold exists; doubles the held-out evidence.
+- [ ] **Promoter × IGR sub-task** (Hong Fig. 2G–I). 6 promoters
+  (`TDH3p`, `TEF1p`, `ADH1p`, `CYC1p`, `TPI1p`, `GAL1p`) × 6
+  representative IGRs, with both fluorescence and RT-qPCR readouts.
+  Tractable once the core scaffold exists — swap the cassette's
+  promoter region per row, everything else stays the same. Tests
+  whether models capture the constitutive-promoter-preserves-IGR-
+  ranking vs `GAL1p`-deviates pattern (the GAL1p deviation overlaps
+  the condition-coherence v2 idea; if Shorkie / Yorzoi miss the
+  glucose-repression logic at PGAL1, they should mis-rank the
+  GAL1p row here too).
+- [ ] **Carbon-source sub-task** (Hong Supp Fig. S11: dextrose,
+  galactose, raffinose, glycerol — IGR ranking preserved across
+  fermentable sugars, modulated under glycerol). Doable only to the
+  extent Shorkie / Yorzoi's RNA-seq training tracks contain
+  cells grown in the relevant carbon source. Galactose is
+  almost certainly covered (most-studied yeast condition);
+  raffinose and glycerol are sparser. Blocked on a training-track-
+  metadata audit; treat as not-applicable for any condition without
+  matched tracks.
+- [ ] **ExoShorkie adapter** (`IGRInsertionExpressionPredictor`).
+  Foreign `TDH3p-mCherry-ADH1t` cassette at varying native loci is
+  exactly the exogenous-DNA-in-yeast distribution ExoShorkie was
+  trained on; reuse the Hong scaffold, only the model wrapper changes.
+
 ### Cuperus et al. (5′ UTR)
 
 - [x] Spec drafted (`benchmarks/cuperus_mpra_5utr.md`, draft v0;

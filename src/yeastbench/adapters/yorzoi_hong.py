@@ -7,16 +7,17 @@ cut site, mCherry-CDS readout, no REF baseline) but with Yorzoi's
 the chromosome's ``+`` strand (donor PCR-primer orientation), so we
 always use the ``+``-strand track subset (tracks 0–80).
 
-Diagnostic B: exposes ``predict_diagnostic_readouts(loci)`` returning
-per-locus signed scores for multiple (RNA-seq track subset × readout
-region) combinations. Yorzoi has no histone-mark or nucleosome-density
+IntTrain-fitted IntProp ρ: exposes
+``predict_diagnostic_readouts(loci)`` returning per-locus signed
+scores for multiple (RNA-seq track subset × readout region)
+combinations. Yorzoi has no histone-mark or nucleosome-density
 tracks (RNA-seq only), so the selection space is restricted to
 RNA-seq track subsets: all + tracks (baseline), JS94 only (WT yeast
 deep replicates), SCRaMBLE strains only, and the Brooks Nanopore
 yeast block. All RNA-seq groups get biological sign +1.
 
-See ``benchmarks/hong_igr.md`` for the full Primary + Diagnostic B
-design.
+See ``benchmarks/hong_igr.md`` for the full Primary +
+IntTrain-fitted design.
 """
 from __future__ import annotations
 
@@ -61,8 +62,9 @@ def _yorzoi_diagnostic_track_groups(
     track_annotation_path: Path,
 ) -> list[tuple[str, list[int], int]]:
     """Parse Yorzoi's track_annotation.json and build the per-track-group
-    index lists used by Diagnostic B. Index into the + strand only
-    (positions 0..80 within the 162-track output)."""
+    index lists used by the IntTrain-fitted IntProp ρ candidate space.
+    Index into the + strand only (positions 0..80 within the 162-track
+    output)."""
     ann = json.loads(Path(track_annotation_path).read_text())
     plus_tracks = ann["+"]
     assert len(plus_tracks) == 81, (
@@ -186,7 +188,7 @@ class YorzoiHongPredictor(IGRInsertionExpressionPredictor):
 
         return scores
 
-    # ── Diagnostic B readouts ────────────────────────────────────────
+    # ── Diagnostic readouts (IntTrain-fitted candidate space) ────────
 
     def predict_diagnostic_readouts(
         self, loci: Sequence[HongLocus]

@@ -14,13 +14,14 @@ held-out tier:
   all-+ tracks for Yorzoi). Fixed per model; apples-to-apples across
   models; tests the biologically principled causal chain (mRNA →
   fluorescence).
-- **Diagnostic B**: best (track group × readout region) selected on
-  IntTrain, evaluated on IntProp. A soft form of supervised feature
-  engineering — diagnoses the model's *upper bound* given its track
-  inventory and any biologically-meaningful signal at the immediate
-  native flank. Adapters opt in by implementing
-  ``predict_diagnostic_readouts(loci) → dict``; adapters without it
-  get only Primary reported.
+- **IntTrain-fitted IntProp ρ**: same evaluation tier (IntProp) as
+  Primary, but the (track group × readout region) is the one that
+  maximises signed Spearman ρ on the IntTrain set. A soft form of
+  supervised feature engineering — diagnoses the model's *upper
+  bound* given its track inventory and any biologically-meaningful
+  signal at the immediate native flank. Adapters opt in by
+  implementing ``predict_diagnostic_readouts(loci) → dict``;
+  adapters without it get only Primary reported.
 
 See ``benchmarks/hong_igr.md`` for the full design + caveats about
 the 0.847 cross-promoter ceiling vs noise-limited within-promoter
@@ -63,10 +64,10 @@ MRNA_FLUO_CEILING_SPCC_PUBLISHED = 0.847
 
 
 @dataclass(frozen=True)
-class DiagnosticB:
-    """The Diagnostic B output: which (track × region) was picked on
-    IntTrain, the corresponding selection ρ, and the evaluation ρ on
-    IntProp + pooled."""
+class IntTrainFitted:
+    """IntTrain-fitted IntProp ρ output: which (track × region) was
+    picked on IntTrain, the corresponding selection ρ, and the
+    evaluation ρ on IntProp + pooled."""
     readout_name: str            # e.g. "H3 (nucleosome density) × flank both 1kb"
     scores: np.ndarray           # (N,) per-locus signed scores, aligned to row order
     intrain_rho: float           # signed ρ on IntTrain (the selection score)
@@ -85,8 +86,8 @@ class HongResults:
     sets: np.ndarray              # (N,) tier label per row
     locus_ids: list[str]          # (N,)
     metrics: dict[str, dict[str, float]]   # tier → {n, pearson_r, spearman_rho, top_k_*}
-    # Optional Diagnostic B
-    diagnostic_b: DiagnosticB | None = None
+    # Optional IntTrain-fitted IntProp ρ
+    inttrain_fitted: IntTrainFitted | None = None
 
 
 def _topk_enrichment(scores: np.ndarray, labels: np.ndarray, k: int) -> float:
@@ -150,19 +151,19 @@ def _safe_pearson(scores: np.ndarray, labels: np.ndarray, mask: np.ndarray) -> f
     return float(pearsonr(scores[sel], labels[sel]).statistic)
 
 
-def _select_diagnostic_b(
+def _select_inttrain_fitted(
     readouts: dict[str, np.ndarray],
     labels: np.ndarray,
     sets: np.ndarray,
-) -> DiagnosticB | None:
+) -> IntTrainFitted | None:
     """IntTrain-based selection over candidate readouts.
 
     Iterates over every key in ``readouts`` except ``'primary'`` and
     keys whose values are byte-identical to the primary. Picks the
     one maximizing signed ρ on IntTrain. Evaluates the picked combo on
     IntProp + pooled. Returns ``None`` if no candidate beats the
-    Primary readout (signed) — Diagnostic B is then "no improvement"
-    and the benchmark reports Primary only.
+    Primary readout (signed) — IntTrain-fitted IntProp ρ is then "no
+    improvement" and the benchmark reports Primary only.
     """
     if not readouts or "primary" not in readouts:
         return None
@@ -189,8 +190,9 @@ def _select_diagnostic_b(
     if best_name is None:
         return None
     # If the IntTrain pick doesn't beat the Primary readout's own
-    # IntTrain ρ, Diagnostic B isn't carrying weight; report it as
-    # "no improvement" by reusing the Primary readout's name.
+    # IntTrain ρ, the IntTrain-fitted selection isn't carrying
+    # weight; report it as "no improvement" by reusing the Primary
+    # readout's name.
     if np.isfinite(primary_intrain_rho) and best_intrain_rho <= primary_intrain_rho:
         # Find which named candidate equals the primary (if any)
         primary_named = next(
@@ -202,7 +204,7 @@ def _select_diagnostic_b(
         best_intrain_rho = primary_intrain_rho
 
     picked_scores = readouts[best_name]
-    return DiagnosticB(
+    return IntTrainFitted(
         readout_name=best_name,
         scores=picked_scores,
         intrain_rho=best_intrain_rho,
@@ -252,7 +254,7 @@ class HongIGRInsertionBenchmark(
         return self._fasta_path
 
     def evaluate(self, adapter: IGRInsertionExpressionPredictor) -> HongResults:
-        # Diagnostic B path: adapters opting in implement
+        # IntTrain-fitted path: adapters opting in implement
         # predict_diagnostic_readouts → dict including 'primary' key.
         if hasattr(adapter, "predict_diagnostic_readouts"):
             readouts = adapter.predict_diagnostic_readouts(self.loci)
@@ -261,12 +263,12 @@ class HongIGRInsertionBenchmark(
                 f"predict_diagnostic_readouts without 'primary' key"
             )
             primary_scores = np.asarray(readouts["primary"], dtype=float)
-            diag_b = _select_diagnostic_b(readouts, self.labels, self.sets)
+            fit = _select_inttrain_fitted(readouts, self.labels, self.sets)
         else:
             primary_scores = np.asarray(
                 adapter.predict_expressions(self.loci), dtype=float
             )
-            diag_b = None
+            fit = None
 
         assert len(primary_scores) == len(self.loci), (
             f"adapter returned {len(primary_scores)} scores for "
@@ -279,7 +281,7 @@ class HongIGRInsertionBenchmark(
             sets=self.sets,
             locus_ids=self.locus_ids,
             metrics=metrics,
-            diagnostic_b=diag_b,
+            inttrain_fitted=fit,
         )
 
     def plot(self, results: HongResults, out_dir: Path) -> None:
@@ -358,11 +360,11 @@ class HongIGRInsertionBenchmark(
         fig.savefig(out_dir / "top_k_enrichment.png", dpi=150)
         plt.close(fig)
 
-        # (3) Diagnostic B per-tier scatter, if available
-        if results.diagnostic_b is not None:
-            diag = results.diagnostic_b
-            mask_d = np.isfinite(diag.scores) & np.isfinite(results.labels)
-            d_pred = diag.scores[mask_d]
+        # (3) IntTrain-fitted IntProp ρ per-tier scatter, if available
+        if results.inttrain_fitted is not None:
+            fit = results.inttrain_fitted
+            mask_d = np.isfinite(fit.scores) & np.isfinite(results.labels)
+            d_pred = fit.scores[mask_d]
             d_meas = results.labels[mask_d]
             d_sets = results.sets[mask_d]
             fig, axes = plt.subplots(1, 3, figsize=(16, 5))
@@ -382,14 +384,14 @@ class HongIGRInsertionBenchmark(
                 r = pearsonr(m, p).statistic
                 rho = spearmanr(m, p).statistic
                 ax.set_xlabel("measured (fluorescence / IntTrain92)")
-                ax.set_ylabel(f"diag-B signed score")
+                ax.set_ylabel("IntTrain-fitted signed score")
                 ax.set_title(f"{tier}  n={len(m)}  r={r:.3f}  ρ={rho:.3f}")
-            t = f"Hong Diagnostic B — {diag.readout_name}"
+            t = f"Hong IntTrain-fitted — {fit.readout_name}"
             if title_model:
                 t += f" ({title_model})"
             fig.suptitle(t, fontsize=11)
             fig.tight_layout(rect=(0, 0, 1, 0.95))
-            fig.savefig(out_dir / "scatter_diagnostic_b.png", dpi=150)
+            fig.savefig(out_dir / "scatter_inttrain_fitted.png", dpi=150)
             plt.close(fig)
 
     def save_results(self, results: HongResults, out_dir: Path) -> None:
@@ -401,16 +403,16 @@ class HongIGRInsertionBenchmark(
             "locus_ids": results.locus_ids,
             "sets": results.sets.tolist(),
         }
-        if results.diagnostic_b is not None:
-            np.save(out_dir / "diagnostic_b_scores.npy", results.diagnostic_b.scores)
-            meta["diagnostic_b"] = {
-                "readout_name": results.diagnostic_b.readout_name,
-                "intrain_rho": results.diagnostic_b.intrain_rho,
-                "intprop_rho": results.diagnostic_b.intprop_rho,
-                "pooled_rho": results.diagnostic_b.pooled_rho,
-                "intrain_pearson": results.diagnostic_b.intrain_pearson,
-                "intprop_pearson": results.diagnostic_b.intprop_pearson,
-                "n_candidates": results.diagnostic_b.n_candidates,
+        if results.inttrain_fitted is not None:
+            np.save(out_dir / "inttrain_fitted_scores.npy", results.inttrain_fitted.scores)
+            meta["inttrain_fitted"] = {
+                "readout_name": results.inttrain_fitted.readout_name,
+                "intrain_rho": results.inttrain_fitted.intrain_rho,
+                "intprop_rho": results.inttrain_fitted.intprop_rho,
+                "pooled_rho": results.inttrain_fitted.pooled_rho,
+                "intrain_pearson": results.inttrain_fitted.intrain_pearson,
+                "intprop_pearson": results.inttrain_fitted.intprop_pearson,
+                "n_candidates": results.inttrain_fitted.n_candidates,
             }
         (out_dir / "loci.json").write_text(json.dumps(meta, indent=2))
 
@@ -421,12 +423,12 @@ class HongIGRInsertionBenchmark(
         meta = json.loads((out_dir / "loci.json").read_text())
         sets = np.asarray(meta["sets"])
         metrics = _all_metrics(scores, labels, sets)
-        diag_b = None
-        if "diagnostic_b" in meta and (out_dir / "diagnostic_b_scores.npy").exists():
-            d = meta["diagnostic_b"]
-            diag_b = DiagnosticB(
+        fit = None
+        if "inttrain_fitted" in meta and (out_dir / "inttrain_fitted_scores.npy").exists():
+            d = meta["inttrain_fitted"]
+            fit = IntTrainFitted(
                 readout_name=d["readout_name"],
-                scores=np.load(out_dir / "diagnostic_b_scores.npy"),
+                scores=np.load(out_dir / "inttrain_fitted_scores.npy"),
                 intrain_rho=float(d["intrain_rho"]),
                 intprop_rho=float(d["intprop_rho"]),
                 pooled_rho=float(d["pooled_rho"]),
@@ -440,7 +442,7 @@ class HongIGRInsertionBenchmark(
             sets=sets,
             locus_ids=meta["locus_ids"],
             metrics=metrics,
-            diagnostic_b=diag_b,
+            inttrain_fitted=fit,
         )
 
     def summary_dict(self, results: HongResults) -> dict[str, Any]:
@@ -451,15 +453,15 @@ class HongIGRInsertionBenchmark(
         for tier, m in results.metrics.items():
             for key, val in m.items():
                 out[f"{tier}_{key}"] = val
-        if results.diagnostic_b is not None:
-            d = results.diagnostic_b
-            out["diag_b_readout_name"] = d.readout_name
-            out["diag_b_intrain_spearman_rho"] = d.intrain_rho
-            out["diag_b_intprop_spearman_rho"] = d.intprop_rho
-            out["diag_b_pooled_spearman_rho"] = d.pooled_rho
-            out["diag_b_intrain_pearson_r"] = d.intrain_pearson
-            out["diag_b_intprop_pearson_r"] = d.intprop_pearson
-            out["diag_b_n_candidates"] = d.n_candidates
+        if results.inttrain_fitted is not None:
+            d = results.inttrain_fitted
+            out["inttrain_fitted_readout_name"] = d.readout_name
+            out["inttrain_fitted_intrain_spearman_rho"] = d.intrain_rho
+            out["inttrain_fitted_intprop_spearman_rho"] = d.intprop_rho
+            out["inttrain_fitted_pooled_spearman_rho"] = d.pooled_rho
+            out["inttrain_fitted_intrain_pearson_r"] = d.intrain_pearson
+            out["inttrain_fitted_intprop_pearson_r"] = d.intprop_pearson
+            out["inttrain_fitted_n_candidates"] = d.n_candidates
         return out
 
     def headline(self, results: HongResults) -> str:
@@ -469,22 +471,22 @@ class HongIGRInsertionBenchmark(
             f"Primary: IntProp ρ = {ip['spearman_rho']:.4f} "
             f"(IntTrain ρ = {it['spearman_rho']:.4f}, n = {ip['n']})"
         )
-        if results.diagnostic_b is not None:
-            d = results.diagnostic_b
+        if results.inttrain_fitted is not None:
+            d = results.inttrain_fitted
             line += (
-                f" | Diag B [{d.readout_name}]: "
+                f" | IntTrain-fitted [{d.readout_name}]: "
                 f"IntProp ρ = {d.intprop_rho:.4f} "
                 f"(IntTrain ρ = {d.intrain_rho:.4f}, "
                 f"selected from {d.n_candidates} candidates)"
             )
         else:
-            line += " | Diag B: not available (adapter doesn't expose readouts)"
+            line += " | IntTrain-fitted: not available (adapter doesn't expose readouts)"
         return line
 
     def headline_metric_labels(self) -> dict[str, str]:
         return {
             "IntProp_spearman_rho":        "Primary IntProp ρ",
-            "diag_b_intprop_spearman_rho": "Diag B IntProp ρ",
+            "inttrain_fitted_intprop_spearman_rho": "IntTrain-fitted IntProp ρ",
             "IntTrain_spearman_rho":       "Primary IntTrain ρ",
             "pooled_spearman_rho":         "Primary pooled ρ",
             "IntProp_pearson_r":           "Primary IntProp r",

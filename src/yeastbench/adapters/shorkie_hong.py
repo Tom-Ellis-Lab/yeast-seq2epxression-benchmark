@@ -8,17 +8,18 @@ tracks, and sum over the mCherry-CDS output bins. Absolute readout
 (no REF baseline; the signal of interest is the absolute mCherry level
 as a function of intergenic position).
 
-Diagnostic B: additionally exposes ``predict_diagnostic_readouts(loci)``
-returning per-locus signed scores for **all** (track group × readout
-region) combinations the adapter supports. The Hong benchmark uses
-this to select the best combination on IntTrain and evaluate on
-IntProp. Track groups include T0 RNA-seq plus several Chip-MNase
-histone-mark tracks; readout regions span the cassette and immediate
-native flanks. Biological signs are applied: active marks and RNA-seq
-get sign +1; nucleosome density (H3) gets sign −1.
+IntTrain-fitted IntProp ρ: additionally exposes
+``predict_diagnostic_readouts(loci)`` returning per-locus signed
+scores for **all** (track group × readout region) combinations the
+adapter supports. The Hong benchmark uses this to select the best
+combination on IntTrain and evaluate on IntProp. Track groups include
+T0 RNA-seq plus several Chip-MNase histone-mark tracks; readout
+regions span the cassette and immediate native flanks. Biological
+signs are applied: active marks and RNA-seq get sign +1; nucleosome
+density (H3) gets sign −1.
 
-See ``benchmarks/hong_igr.md`` for the full Primary + Diagnostic B
-design.
+See ``benchmarks/hong_igr.md`` for the full Primary +
+IntTrain-fitted design.
 """
 from __future__ import annotations
 
@@ -55,19 +56,19 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# Diagnostic-B track groups: each entry is (group_name, track_indices,
-# biological_sign). Sign is applied to the signed score so that
-# higher signed score is biologically expected to correlate with
-# higher fluorescence (positive ρ). Active marks and RNA-seq use +1;
-# nucleosome density (H3 total) uses −1 (more nucleosomes → less
-# expression).
+# IntTrain-fitted track groups: each entry is (group_name,
+# track_indices, biological_sign). Sign is applied to the signed
+# score so that higher signed score is biologically expected to
+# correlate with higher fluorescence (positive ρ). Active marks and
+# RNA-seq use +1; nucleosome density (H3 total) uses −1 (more
+# nucleosomes → less expression).
 def _shorkie_diagnostic_track_groups(
     targets_path: Path,
 ) -> list[tuple[str, list[int], int]]:
     """Load Shorkie's targets.txt and build the per-track-group index
-    lists used by Diagnostic B. Called once at adapter construction
-    so the index lookups happen on the CPU side, not in the inference
-    loop."""
+    lists used by the IntTrain-fitted IntProp ρ candidate space.
+    Called once at adapter construction so the index lookups happen
+    on the CPU side, not in the inference loop."""
     df = pd.read_csv(targets_path, sep="\t")
 
     def _ids(prefix: str, group: str) -> list[int]:
@@ -115,7 +116,7 @@ class ShorkieHongPredictor(IGRInsertionExpressionPredictor):
         self._track_idx_t = _torch.tensor(
             self.track_subset, device=self.model.device, dtype=_torch.long
         )
-        # Resolve targets.txt path for Diagnostic B groups
+        # Resolve targets.txt path for IntTrain-fitted track groups
         if targets_path is None:
             targets_path = (
                 Path(__file__).resolve().parents[3]
@@ -196,7 +197,7 @@ class ShorkieHongPredictor(IGRInsertionExpressionPredictor):
 
         return scores
 
-    # ── Diagnostic B readouts (all track groups × all regions) ────────
+    # ── Diagnostic readouts (all track groups × all regions) ──────────
 
     def predict_diagnostic_readouts(
         self, loci: Sequence[HongLocus]

@@ -1,7 +1,7 @@
 # Hong et al. — Chromosomal-position effects on IGR-integrated mCherry
 
 > **Status:** **implemented & tested** (`tests/test_hong_igr.py`,
-> 32 tests; full suite green). `HongIGRInsertionBenchmark` +
+> 30 tests; full suite 190 green). `HongIGRInsertionBenchmark` +
 > `_hong_scaffold.py` + `_cassette_scaffold.py` +
 > `ShorkieHongPredictor` / `YorzoiHongPredictor` wired into the
 > registry/config (`hong_igr`). Distribution committed at
@@ -30,89 +30,46 @@ YeIP source at https://github.com/daftpunksss/YeIP.
 | **Expression label** | `fluorescence_norm_intrain92`: scalar per locus, mCherry mean fluorescence ÷ `IntTrain92` fluorescence. Dynamic range across IntProp 90/10 percentile ≈ **1.73×** (~0.7–1.2); IntTrain wider, ~2.3× 90/10. Distribution roughly unimodal centred near 1.0 for IntProp, near 0.75 for IntTrain. |
 | **Test set size** | **150 unique measured loci (98 IntTrain + 52 IntProp), 0 drops.** No training set on our side — the model is zero-shot. *YeIP* was trained on the 98 IntTrain and validated on the 52 IntProp; we mirror that split for tiered reporting. |
 | **Primary metric** | **Spearman ρ** on IntProp (n = 52), using RNA-seq × mCherry-CDS readout. Fixed per model, apples-to-apples across models. Tests the principled causal chain: mRNA → fluorescence. |
-| **Diagnostic B (secondary)** | **Spearman ρ** on IntProp using the **best (track group × readout region) combination selected on IntTrain** (signed scores; biological signs applied). A soft form of supervised feature engineering. Diagnoses each model's *upper bound* given its track inventory. Adapters opt in by implementing `predict_diagnostic_readouts(loci)`. |
-| **Adapter protocol** | `IGRInsertionExpressionPredictor` — distinct from Wu's `CassetteExpressionPredictor` since the cassettes, locus shapes, and window-anchor conventions differ. Optional extension: `predict_diagnostic_readouts(loci) → dict[name, scores]` for Diagnostic B. |
+| **IntTrain-fitted IntProp ρ (secondary)** | **Spearman ρ** on IntProp using the **best (track group × readout region) combination selected on IntTrain** (signed scores; biological signs applied). A soft form of supervised feature engineering. Diagnoses each model's *upper bound* given its track inventory. Adapters opt in by implementing `predict_diagnostic_readouts(loci)`. |
+| **Adapter protocol** | `IGRInsertionExpressionPredictor` — distinct from Wu's `CassetteExpressionPredictor` since the cassettes, locus shapes, and window-anchor conventions differ. Optional extension: `predict_diagnostic_readouts(loci) → dict[name, scores]` for IntTrain-fitted selection. |
 
-## Headline ceiling: 0.847 is misleading; the real ceiling is ~0.3
+## Headline ceiling
 
 Hong reports **SPCC = 0.847** between RT-qPCR mCherry mRNA and
-fluorescence intensity across 30 (promoter × IGR) combinations
-(Fig. 2I). **That number is structurally inflated for our task and
-should not be treated as an achievable ceiling.** Reasons:
-
-1. **The 30 points span 6 promoters × ≈ 6 IGRs**, where the
-   cross-promoter dynamic range (TDH3p strongest, CYC1p ~ 2.6× weaker;
-   GAL1p induced ~ 2× stronger than TDH3p) far exceeds the
-   within-promoter (IGR-driven) dynamic range (~ 1.5× per promoter
-   row). Most of the rank correlation in the 30-point set is carried
-   by cross-promoter ordering ("strong promoters → more mRNA AND more
-   protein"), which is roughly tautological.
-2. **Hong does not report the within-TDH3p (fixed-promoter, varying-
-   IGR) rank correlation** — the directly relevant number for our
-   fixed-TDH3p, 150-IGR benchmark. From the heatmap (Fig. S9A), the
-   within-promoter rank correlation across 6 IGRs is severely
-   underpowered (n = 6 per row) and likely much lower than 0.847.
-3. **Noise-limited ceiling.** Yorzoi's published per-locus magnitude
-   error is σ_log₂ ≈ 0.9 (≈ −56 % to +74 % of true magnitude). The
-   IntProp label's log₂ standard deviation across 52 loci is only
-   ≈ 0.31 — signal-to-noise ratio < 0.4. Simulation (perfect-on-
-   average + σ_log₂ = 0.9 Gaussian noise, 5000 trials) gives
-   **achievable IntProp ρ ≈ 0.32, 90% CI [+0.11, +0.52]**. Repeated
-   in section 7 of the deep-dive notebook (`notebooks/
-   hong_predictions_deep_dive.ipynb`). **No model with Yorzoi-quoted
-   magnitude noise can hit 0.847.**
-
-What this means for the benchmark:
-- **The 0.556 ceiling YeIP reports on IntProp is likely close to the
-  honest within-promoter ceiling**, achievable because YeIP uses a
-  tabular AutoGluon model on hand-engineered chromatin features (and
-  was trained directly on these IGRs). YeIP's effective σ_log₂ ≈ 0.4
-  vs Yorzoi's ≈ 0.9.
-- **For zero-shot Shorkie / Yorzoi the relevant ceiling is ~0.3**,
-  set by the model's per-locus magnitude noise + the narrow IntProp
-  dynamic range. The benchmark's job is to make the gap to this
-  ceiling visible.
-
-The benchmark `summary.json` records the published 0.847 as
-`mrna_fluo_ceiling_spcc_published` for transparency, but headline
-results should be read against the ~0.3 noise-limited ceiling and
-YeIP's 0.556, not against 0.847.
+mCherry fluorescence across 30 (promoter × IGR) combinations
+(Fig. 2H/I). The benchmark records this in `summary.json` as
+`mrna_fluo_ceiling_spcc_published`. Caveats about
+selection-biased / model-specific noise ceilings live in
+[`benchmarks/findings.md`](findings.md), not here.
 
 ## Results
 
-| Model | Primary IntProp ρ | Primary IntTrain ρ | Diagnostic B readout | Diag B IntProp ρ | Diag B IntTrain ρ | Candidates considered |
+| Model | Primary IntProp ρ | Primary IntTrain ρ | IntTrain-fitted readout | IntTrain-fitted IntProp ρ | IntTrain selection ρ | Candidates considered |
 | --- | ---: | ---: | --- | ---: | ---: | ---: |
 | **Shorkie** | −0.148 | −0.269 | **H3 (nucleosome density) × flank both 1 kb** | **+0.185** | +0.345 | 36 |
 | **Yorzoi**  | +0.057 | −0.070 | SCRaMBLE strains × flank L 1 kb | −0.030 | +0.107 | 24 |
 | *Reference: YeIP (supervised, published)* | — | — | tabular features on 10 hand-engineered features | **+0.556** | — | — |
-| *Reference: noise-limited ceiling (σ_log₂=0.9)* | — | — | — | **≈ +0.32** | — | — |
 
 (See `results/default/{shorkie,yorzoi}__hong_igr/summary.json` for
 the full per-tier breakdown.)
 
 ### What the numbers say
 
-- **Shorkie's Diagnostic B is a clean, biologically interpretable
-  positive result.** The picked combo — predicted H3 nucleosome
-  density at the immediate native flank, sign-flipped — gives
-  IntProp ρ = +0.185, a ~0.33 absolute improvement over its Primary.
-  Direction agrees with YeIP's "nucleosome density lower in
-  high-expression IGRs". The combo sits within the noise-limited
-  ceiling band (≈ +0.32 ± noise), so this is effectively the most
-  the model can extract.
-- **Yorzoi's Diagnostic B is *worse* than its Primary** (−0.030 vs
-  +0.057). Selection on IntTrain picks a combo that doesn't
-  generalize, because Yorzoi's RNA-seq-only track inventory has no
-  chromatin-density tracks. The asymmetry is itself the finding:
-  models with richer track inventories pick up more of the position-
-  effect signal.
+- **Shorkie's IntTrain-fitted IntProp ρ is a clean, biologically
+  interpretable positive result.** The picked combo — predicted H3
+  nucleosome density at the immediate native flank, sign-flipped —
+  gives IntProp ρ = +0.185, a ~0.33 absolute improvement over its
+  Primary. Direction agrees with YeIP's "nucleosome density lower
+  in high-expression IGRs."
+- **Yorzoi's IntTrain-fitted IntProp ρ is *worse* than its Primary**
+  (−0.030 vs +0.057). Selection on IntTrain picks a combo that
+  doesn't generalize, because Yorzoi's RNA-seq-only track inventory
+  has no chromatin-density tracks. The asymmetry is itself the
+  finding: models with richer track inventories pick up more of the
+  position-effect signal.
 - **Apples-to-apples (Primary), Yorzoi > Shorkie** (+0.057 vs
-  −0.108). On the same readout strategy, Yorzoi is mildly better.
+  −0.148). On the same readout strategy, Yorzoi is mildly better.
   Both are far below the YeIP supervised baseline.
-- **Both are within the noise-limited band** (|ρ| < 0.3 on
-  IntProp). No deep failure mode here — zero-shot genomic models
-  just don't beat their characterised magnitude noise on a target
-  this dynamic-range-compressed.
 
 ## Dataset construction
 
@@ -191,7 +148,7 @@ class IGRInsertionExpressionPredictor(Protocol):
         """Primary scoring (RNA-seq × mCherry-CDS readout)."""
         ...
 
-    # Optional Diagnostic B extension (hasattr-based duck typing)
+    # Optional IntTrain-fitted extension (hasattr-based duck typing)
     def predict_diagnostic_readouts(self, loci) -> dict[str, np.ndarray]:
         """Multiple candidate readouts with biological signs applied.
         Returns dict {readout_name: signed_scores_per_locus} including
@@ -213,7 +170,7 @@ leaves ~7.4 kb each side. This differs from Wu's
 "readout-at-downstream-edge" anchor and is more appropriate for
 intergenic insertion where signal can come from either flank.
 
-### Diagnostic B selection space
+### IntTrain-fitted candidate selection space
 
 Per the spec design discussion, biological signs are pre-declared
 (not data-fit). Active marks and RNA-seq tracks get sign +1
@@ -252,7 +209,7 @@ coordinates around the centered cassette):
 The Primary readout for Shorkie is `RNA-seq T0 × cassette CDS`;
 for Yorzoi, `All + tracks (baseline) × cassette CDS`. Both are
 included in the diagnostic candidate set, so selection can in
-principle pick them again — in which case Diagnostic B equals
+principle pick them again — in which case the IntTrain-fitted readout equals
 Primary (no improvement, which is itself an informative outcome).
 
 ## Evaluation protocol
@@ -261,15 +218,15 @@ Primary (no improvement, which is itself an informative outcome).
    the benchmark uses that dict; otherwise calls `predict_expressions`.
 2. **Per-tier Primary metrics** for each of `{IntTrain, IntProp, pooled}`:
    - Spearman ρ (primary), Pearson r, top-k enrichment at k ∈ {3, 5, 7, 10}.
-3. **Diagnostic B selection** (if readouts available):
+3. **IntTrain-fitted selection** (if readouts available):
    - For each non-`'primary'` candidate: compute signed ρ on IntTrain.
    - Pick the argmax. If the pick doesn't beat the Primary's IntTrain ρ,
-     report Diagnostic B = Primary (no improvement).
+     report IntTrain-fitted = Primary (no improvement).
    - Compute the picked readout's signed ρ on IntProp + pooled.
 4. **Headline**: per-model line containing both Primary IntProp ρ and
-   Diagnostic B IntProp ρ (+ the readout name picked).
+   IntTrain-fitted IntProp ρ (+ the readout name picked).
 5. **Plots**: per-tier Primary scatter, top-k enrichment, per-tier
-   Diagnostic B scatter (if available).
+   IntTrain-fitted scatter (if available).
 
 ### What we're *not* doing in v1
 
@@ -279,9 +236,9 @@ Primary (no improvement, which is itself an informative outcome).
 - **Kong et al. 2022 external validation set** (roadmap item).
 - **Promoter × IGR and carbon-source sub-tasks** (roadmap items).
 - **5-fold CV selection-stability** as a scored output. The deep-
-  dive notebook does the CV check; if Diagnostic B promotion to
-  the headline becomes load-bearing, we can add a `diag_b_cv_stable`
-  flag to `summary.json` in v2.
+  dive notebook does the CV check; if IntTrain-fitted promotion to
+  the headline becomes load-bearing, we can add an
+  `inttrain_fitted_cv_stable` flag to `summary.json` in v2.
 - **Bootstrap CIs** (standard v2 deferral).
 
 ## Files
@@ -314,11 +271,12 @@ Primary (no improvement, which is itself an informative outcome).
 - `src/yeastbench/adapters/_hong_scaffold.py` — thin Hong layer +
   diagnostic readout-region helpers.
 - `src/yeastbench/adapters/{shorkie,yorzoi}_hong.py` — adapters with
-  Primary + Diagnostic B.
+  Primary + IntTrain-fitted IntProp ρ.
 - `src/yeastbench/benchmarks/hong_igr.py` — benchmark class.
 - `src/yeastbench/adapters/protocols.py` — `IGRInsertionExpressionPredictor`.
-- `tests/test_hong_igr.py` — 32 tests covering scaffold, benchmark,
-  Diagnostic B selection, save/load roundtrip, back-compat.
+- `tests/test_hong_igr.py` — 30 tests covering scaffold, benchmark,
+  per-locus readout-bin aggregation, IntTrain-fitted selection,
+  save/load roundtrip, back-compat.
 
 ### Diagnostic notebook (gitignored)
 - `notebooks/hong_predictions_deep_dive.ipynb` — annotated per-locus
@@ -329,11 +287,11 @@ Primary (no improvement, which is itself an informative outcome).
 
 ## Open questions / future work
 
-- **Diagnostic B CV stability is borderline.** 5-fold CV on
+- **IntTrain-fitted CV stability is borderline.** 5-fold CV on
   IntTrain in the notebook shows Shorkie picks 2 different combos
   across folds (both H3 nucleosome at flank, different region
   widths). Selection is "stable in track type, unstable in exact
-  region." For v2 we could (a) report `diag_b_cv_stable: bool` in
+  region." For v2 we could (a) report `inttrain_fitted_cv_stable: bool` in
   summary.json with a warning, or (b) pick a more conservative
   selection rule (e.g., majority pick across folds).
 - **The Shorkie chromatin advantage might not generalize across
@@ -345,6 +303,6 @@ Primary (no improvement, which is itself an informative outcome).
 - **The upstream-only H3 length sweep** (notebook Section 12)
   suggests the best upstream window is 750 bp on IntProp (ρ ≈
   +0.28) but 3 kb on IntTrain (ρ ≈ +0.19). Not promoted into
-  Diagnostic B's selection space — the "flank L 1 kb" and "flank
+  the IntTrain-fitted selection space — the "flank L 1 kb" and "flank
   both 1 kb" regions roughly capture the same signal — but worth
   exploring further if the chromatin readout becomes load-bearing.

@@ -24,11 +24,11 @@ from yeastbench.adapters._hong_scaffold import (
 from yeastbench.adapters.protocols import IGRInsertionExpressionPredictor
 from yeastbench.benchmarks.base import BenchmarkInfo
 from yeastbench.benchmarks.hong_igr import (
-    DiagnosticB,
+    IntTrainFitted,
     HongIGRInsertionBenchmark,
     MRNA_FLUO_CEILING_SPCC_PUBLISHED,
     _topk_enrichment,
-    _select_diagnostic_b,
+    _select_inttrain_fitted,
 )
 from yeastbench.registry import TASKS
 
@@ -353,7 +353,7 @@ class _DiagAdapter:
     """Adapter that exposes multiple readouts. ``primary`` is anti-
     correlated with the label (ρ = −1); the ``"chromatin × flank"``
     readout is the perfect predictor (ρ = +1). The benchmark should
-    pick the chromatin one as Diagnostic B."""
+    pick the chromatin one as IntTrain-fitted."""
 
     def __init__(self, locus_to_label: dict[str, float], seed: int = 0):
         self.l2l = locus_to_label
@@ -438,14 +438,14 @@ class TestHongIGRInsertionBenchmark:
 
         h = b.headline(res)
         assert "Primary" in h and "IntProp ρ" in h and "IntTrain ρ" in h
-        # Without diagnostic readouts, headline notes Diag B unavailable
-        assert "Diag B" in h
+        # Without diagnostic readouts, headline notes IntTrain-fitted unavailable
+        assert "IntTrain-fitted" in h
 
 
-# ── Diagnostic B ─────────────────────────────────────────────
+# ── IntTrain-fitted IntProp ρ ────────────────────────────────
 
 
-class TestDiagnosticB:
+class TestIntTrainFitted:
     def _bench(self, hong_data):
         return HongIGRInsertionBenchmark(
             labels_path=hong_data,
@@ -454,8 +454,8 @@ class TestDiagnosticB:
             info=INFO,
         )
 
-    def test_select_diagnostic_b_picks_best_intrain(self):
-        """_select_diagnostic_b should pick the candidate that maximises
+    def test_select_inttrain_fitted_picks_best_intrain(self):
+        """_select_inttrain_fitted should pick the candidate that maximises
         signed Spearman ρ on IntTrain rows."""
         labels = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         sets = np.array(['IntTrain', 'IntTrain', 'IntTrain', 'IntProp', 'IntProp', 'IntProp'])
@@ -464,17 +464,17 @@ class TestDiagnosticB:
             "perfect_train": labels.copy(),                       # ρ=1 on IntTrain, ρ=1 on IntProp
             "noise":         np.array([0.7, 0.1, 0.9, 0.4, 0.3, 0.2]),
         }
-        diag = _select_diagnostic_b(readouts, labels, sets)
-        assert diag is not None
-        assert diag.readout_name == "perfect_train"
-        assert diag.intrain_rho == pytest.approx(1.0)
-        assert diag.intprop_rho == pytest.approx(1.0)
-        assert diag.n_candidates == 2  # "perfect_train" + "noise"
+        fit = _select_inttrain_fitted(readouts, labels, sets)
+        assert fit is not None
+        assert fit.readout_name == "perfect_train"
+        assert fit.intrain_rho == pytest.approx(1.0)
+        assert fit.intprop_rho == pytest.approx(1.0)
+        assert fit.n_candidates == 2  # "perfect_train" + "noise"
 
     def test_select_returns_none_if_no_candidates(self):
         labels = np.array([1.0, 2.0, 3.0])
         sets = np.array(['IntTrain'] * 3)
-        assert _select_diagnostic_b({"primary": labels}, labels, sets) is None
+        assert _select_inttrain_fitted({"primary": labels}, labels, sets) is None
 
     def test_evaluate_with_diagnostic_adapter(self, hong_data):
         b = self._bench(hong_data)
@@ -482,54 +482,54 @@ class TestDiagnosticB:
         res = b.evaluate(_DiagAdapter(l2l))
         # Primary is anti-correlated → ρ = -1
         assert res.metrics["IntProp"]["spearman_rho"] == pytest.approx(-1.0)
-        # Diagnostic B picks the perfect chromatin × flank readout
-        assert res.diagnostic_b is not None
-        assert res.diagnostic_b.readout_name == "chromatin × flank"
-        assert res.diagnostic_b.intrain_rho == pytest.approx(1.0)
-        assert res.diagnostic_b.intprop_rho == pytest.approx(1.0)
+        # IntTrain-fitted picks the perfect chromatin × flank readout
+        assert res.inttrain_fitted is not None
+        assert res.inttrain_fitted.readout_name == "chromatin × flank"
+        assert res.inttrain_fitted.intrain_rho == pytest.approx(1.0)
+        assert res.inttrain_fitted.intprop_rho == pytest.approx(1.0)
 
     def test_evaluate_without_diagnostic_adapter(self, hong_data):
         """Adapters that don't implement predict_diagnostic_readouts
-        still work — Diag B is None."""
+        still work — IntTrain-fitted is None."""
         b = self._bench(hong_data)
         l2l = {lc.locus_id: b.labels[i] for i, lc in enumerate(b.loci)}
         res = b.evaluate(_MockAdapter(l2l))
-        assert res.diagnostic_b is None
+        assert res.inttrain_fitted is None
 
-    def test_save_load_with_diagnostic_b(self, hong_data, tmp_path):
+    def test_save_load_with_inttrain_fitted(self, hong_data, tmp_path):
         b = self._bench(hong_data)
         l2l = {lc.locus_id: b.labels[i] for i, lc in enumerate(b.loci)}
         res = b.evaluate(_DiagAdapter(l2l))
-        assert res.diagnostic_b is not None
+        assert res.inttrain_fitted is not None
         out = tmp_path / "out"
         b.save_results(res, out)
         # Files written
-        assert (out / "diagnostic_b_scores.npy").exists()
+        assert (out / "inttrain_fitted_scores.npy").exists()
         loaded = b.load_results(out)
-        assert loaded.diagnostic_b is not None
-        assert loaded.diagnostic_b.readout_name == res.diagnostic_b.readout_name
-        assert loaded.diagnostic_b.intrain_rho == pytest.approx(res.diagnostic_b.intrain_rho)
-        assert loaded.diagnostic_b.intprop_rho == pytest.approx(res.diagnostic_b.intprop_rho)
+        assert loaded.inttrain_fitted is not None
+        assert loaded.inttrain_fitted.readout_name == res.inttrain_fitted.readout_name
+        assert loaded.inttrain_fitted.intrain_rho == pytest.approx(res.inttrain_fitted.intrain_rho)
+        assert loaded.inttrain_fitted.intprop_rho == pytest.approx(res.inttrain_fitted.intprop_rho)
         np.testing.assert_array_almost_equal(
-            loaded.diagnostic_b.scores, res.diagnostic_b.scores
+            loaded.inttrain_fitted.scores, res.inttrain_fitted.scores
         )
 
-    def test_summary_and_headline_include_diag_b(self, hong_data, tmp_path):
+    def test_summary_and_headline_include_inttrain_fitted(self, hong_data, tmp_path):
         b = self._bench(hong_data)
         l2l = {lc.locus_id: b.labels[i] for i, lc in enumerate(b.loci)}
         res = b.evaluate(_DiagAdapter(l2l))
         s = b.summary_dict(res)
-        assert s["diag_b_readout_name"] == "chromatin × flank"
-        assert s["diag_b_intprop_spearman_rho"] == pytest.approx(1.0)
+        assert s["inttrain_fitted_readout_name"] == "chromatin × flank"
+        assert s["inttrain_fitted_intprop_spearman_rho"] == pytest.approx(1.0)
         h = b.headline(res)
-        assert "Diag B [chromatin × flank]" in h
+        assert "IntTrain-fitted [chromatin × flank]" in h
 
-    def test_plot_includes_diag_b_panel(self, hong_data, tmp_path):
+    def test_plot_includes_inttrain_fitted_panel(self, hong_data, tmp_path):
         b = self._bench(hong_data)
         l2l = {lc.locus_id: b.labels[i] for i, lc in enumerate(b.loci)}
         res = b.evaluate(_DiagAdapter(l2l))
         b.plot(res, tmp_path / "p")
-        assert (tmp_path / "p" / "scatter_diagnostic_b.png").exists()
+        assert (tmp_path / "p" / "scatter_inttrain_fitted.png").exists()
 
 
 # ── Registry ──────────────────────────────────────────────────

@@ -222,20 +222,16 @@ https://github.com/daftpunksss/YeIP.
 - [x] Spec finalized (`benchmarks/hong_igr.md`): 98 IntTrain + 52
   IntProp = 150 loci, mCherry CDS-sum readout, **two co-primary
   metrics** — Primary (RNA-seq × cassette CDS, fixed across models)
-  and **Diagnostic B** (best track × region combination selected on
-  IntTrain, evaluated on IntProp; soft supervised feature
-  engineering). Cold-spot tier deferred (per-locus values
+  and **IntTrain-fitted IntProp ρ** (best track × region combination
+  selected on IntTrain, evaluated on IntProp; soft supervised
+  feature engineering). Cold-spot tier deferred (per-locus values
   unavailable in supp tables).
-- [x] **Headline ceiling caveat documented.** Hong's published
-  SPCC = 0.847 is the cross-promoter rank correlation across 30
-  (promoter × IGR) points; the within-TDH3p, varying-IGR ceiling
-  is much lower. Section 7 of `notebooks/
-  hong_predictions_deep_dive.ipynb` shows that with Yorzoi-quoted
-  σ_log₂ ≈ 0.9 magnitude noise + IntProp's σ_log₂ ≈ 0.31 signal,
-  the **noise-limited IntProp ρ ceiling is ≈ +0.32**. YeIP's
-  published 0.556 is likely close to the honest within-promoter
-  ceiling (achieved because YeIP uses hand-engineered chromatin
-  features + supervised training on these IGRs).
+- [x] **Headline ceiling.** Hong's published SPCC = 0.847
+  (cross-promoter rank correlation across 30 promoter × IGR points)
+  surfaced in `summary.json`. Selection-bias caveats and the Yorzoi
+  σ_log₂ ≈ 0.9 → ρ ≈ +0.32 derivation moved to
+  [`benchmarks/findings.md`](benchmarks/findings.md) so the spec
+  stays a clean contract.
 - [x] Reference assembly: **R64-5-1** (`data/tasks/R64-5-1.fa`),
   matching what the YeIP code repo bundles. Paper Methods cite
   R64-4-1; sequence-identical for the IGR set Hong picks.
@@ -259,40 +255,39 @@ https://github.com/daftpunksss/YeIP.
   `IGRInsertionExpressionPredictor` protocol (distinct from Wu's
   `CassetteExpressionPredictor` since locus shape + window anchor
   differ even though method signature is identical).
-- [x] **Two-metric benchmark output** (Primary + Diagnostic B).
-  Adapters opt into Diagnostic B by implementing optional
-  `predict_diagnostic_readouts(loci) → dict[name, signed_scores]`
-  including a `'primary'` key. Benchmark does IntTrain selection
-  on the dict's non-primary keys (signed Spearman ρ; biological
-  signs pre-declared per track type: active marks +1, nucleosome
-  density −1). Falls back gracefully to Primary-only for adapters
-  without the optional method.
+- [x] **Two-metric benchmark output** (Primary +
+  IntTrain-fitted IntProp ρ). Adapters opt in by implementing
+  optional `predict_diagnostic_readouts(loci) → dict[name,
+  signed_scores]` including a `'primary'` key. Benchmark does
+  IntTrain selection on the dict's non-primary keys (signed Spearman
+  ρ; biological signs pre-declared per track type: active marks +1,
+  nucleosome density −1). Falls back gracefully to Primary-only for
+  adapters without the optional method.
 - [x] Shorkie adapter `ShorkieHongPredictor` (8-fold ensemble; T0
   RNA-seq + 6 Chip-MNase histone-mark / nucleosome-density track
   groups; 36 candidate readouts).
 - [x] Yorzoi adapter `YorzoiHongPredictor` (RNA-seq only, no
   chromatin tracks; 4 track subgroups × 6 regions = 24 candidates).
-- [x] Tests (`tests/test_hong_igr.py`, 35 tests): scaffold,
-  benchmark, Diagnostic B selection, save/load roundtrip, back-
-  compat with adapters lacking `predict_diagnostic_readouts`,
+- [x] Tests (`tests/test_hong_igr.py`, 30 tests): scaffold,
+  benchmark, IntTrain-fitted selection, save/load roundtrip,
+  back-compat with adapters lacking `predict_diagnostic_readouts`,
   per-locus readout-bin aggregation (clamped-window regression).
   Full suite 190 tests green.
 - [x] **GPU runs (RTX A6000), headline numbers:**
     * **Shorkie**: Primary IntProp ρ = −0.148 (IntTrain −0.269) |
-      **Diagnostic B [H3 nucleosome × flank both 1 kb] IntProp
+      **IntTrain-fitted [H3 nucleosome × flank both 1 kb] IntProp
       ρ = +0.185** (IntTrain +0.345, selected from 36 candidates).
       Direction agrees with YeIP's "nucleosome density lower in
-      high-expression IGRs". Sits within the noise-limited ~+0.32
-      ceiling band.
+      high-expression IGRs."
     * **Yorzoi**: Primary IntProp ρ = +0.057 (IntTrain −0.070) |
-      Diagnostic B [SCRaMBLE strains × flank L 1 kb] IntProp
+      IntTrain-fitted [SCRaMBLE strains × flank L 1 kb] IntProp
       ρ = −0.030 (IntTrain +0.107, selected from 24 candidates).
-      **Diagnostic B is *worse* than Primary** — Yorzoi's RNA-seq-
+      **IntTrain-fitted is *worse* than Primary** — Yorzoi's RNA-seq-
       only track inventory has no chromatin-density signal, so the
       IntTrain-selected combo doesn't generalize.
     * Reference: YeIP supervised baseline reports SPCC = 0.556 on
-      IntProp; published 0.847 cross-promoter ceiling is
-      structurally unreachable per noise-limit analysis (see spec).
+      IntProp; published 0.847 cross-promoter ceiling discussion in
+      [`benchmarks/findings.md`](benchmarks/findings.md).
 - [x] Notebook `notebooks/hong_predictions_deep_dive.ipynb`
   (gitignored): annotated per-locus samples, noise-ceiling
   simulation, multi-track readout sweep, IntTrain → IntProp

@@ -45,14 +45,17 @@ class IGRInsertionExpressionPredictor(Protocol):
     model — the cassettes, locus shapes, and window-anchor conventions
     differ even though the surface method signature is identical.
 
-    **Optional extension for Diagnostic B.** Adapters may *additionally*
-    implement ``predict_diagnostic_readouts(loci) → dict[str, np.ndarray]``
-    to expose multiple candidate readouts (different track groups ×
-    readout regions, with biological signs applied) for the
-    Hong benchmark's IntTrain-selection Diagnostic B metric. The
-    returned dict must include a ``'primary'`` key holding the same
-    array that ``predict_expressions`` returns. All other keys are
-    candidates for selection on IntTrain. The benchmark uses
+    **Optional extension for IntTrain-fitted IntProp ρ.** Adapters may
+    *additionally* implement
+    ``predict_diagnostic_readouts(loci) → dict[str, np.ndarray]`` to
+    expose multiple candidate readouts (different track groups ×
+    readout regions, with biological signs applied). The Hong benchmark
+    selects the (track group × region) combination that maximises
+    signed Spearman ρ on IntTrain and reports its ρ on IntProp as the
+    IntTrain-fitted IntProp ρ metric. The returned dict must include a
+    ``'primary'`` key holding the same array that
+    ``predict_expressions`` returns. All other keys are candidates for
+    IntTrain selection. The benchmark uses
     ``hasattr(adapter, 'predict_diagnostic_readouts')`` to detect
     support; adapters without it get only Primary reported."""
 

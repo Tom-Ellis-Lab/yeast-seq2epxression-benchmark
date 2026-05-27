@@ -145,10 +145,11 @@ def build_insertion_context(
 # ── Diagnostic-B readout regions ──────────────────────────────
 
 
-# Names of the candidate readout regions used by Diagnostic B. The
-# benchmark's IntTrain selection iterates over all (track_group ×
-# region) combinations the adapter exposes; this list of regions is
-# fixed across adapters so cross-model results are comparable.
+# Names of the candidate readout regions used by the IntTrain-fitted
+# IntProp ρ candidate space. The benchmark's IntTrain selection
+# iterates over all (track_group × region) combinations the adapter
+# exposes; this list of regions is fixed across adapters so cross-
+# model results are comparable.
 DIAGNOSTIC_REGION_NAMES: tuple[str, ...] = (
     "cassette CDS",
     "cassette full",

@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 import numpy as np
 
@@ -205,6 +205,43 @@ def readout_region_bins(
     }
 
 
+def aggregate_diagnostic_readouts(
+    group_cov: dict[str, np.ndarray],
+    contexts: Sequence[tuple[int, "HongInsertionContext"]],
+    track_groups: Iterable[tuple[str, object, int]],
+    n: int,
+    crop_bp_each_side: int,
+    bin_width: int,
+    output_bins: int,
+) -> dict[str, np.ndarray]:
+    """Sum per-locus coverage over each named readout region, per track
+    group, with biological sign applied. Region bins are computed from
+    *each locus's own context* — required for correctness when a locus's
+    window is clamped against a chromosome end (the cassette is no
+    longer at the window midpoint, so a shared bin set would land on
+    native sequence instead of the cassette).
+    """
+    readouts: dict[str, np.ndarray] = {
+        f"{group_name} × {region_name}": np.full(n, np.nan, dtype=np.float64)
+        for group_name in group_cov
+        for region_name in DIAGNOSTIC_REGION_NAMES
+    }
+    for row_idx, ctx in contexts:
+        region_bins = readout_region_bins(
+            ctx, crop_bp_each_side, bin_width, output_bins,
+        )
+        for group_name, _idx, sign in track_groups:
+            if group_name not in group_cov:
+                continue
+            cov_row = group_cov[group_name][row_idx]
+            for region_name, bins in region_bins.items():
+                if len(bins) > 0:
+                    readouts[f"{group_name} × {region_name}"][row_idx] = float(
+                        sign * cov_row[bins].sum()
+                    )
+    return readouts
+
+
 __all__ = [
     "DEFAULT_CASSETTE_FASTA",
     "DEFAULT_FASTA",
@@ -215,6 +252,7 @@ __all__ = [
     "DIAGNOSTIC_REGION_NAMES",
     "load_cassette_payload",
     "readout_region_bins",
+    "aggregate_diagnostic_readouts",
     "HongLocus",
     "HongInsertionContext",
     "build_insertion_context",

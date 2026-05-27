@@ -33,12 +33,11 @@ from tqdm import tqdm
 from yeastbench.adapters._genome import one_hot_encode_channels_first
 from yeastbench.adapters._hong_scaffold import (
     DEFAULT_CASSETTE_FASTA,
-    DIAGNOSTIC_REGION_NAMES,
     HongInsertionContext,
     HongLocus,
+    aggregate_diagnostic_readouts,
     build_insertion_context,
     load_cassette_payload,
-    readout_region_bins,
 )
 from yeastbench.adapters.protocols import IGRInsertionExpressionPredictor
 from yeastbench.adapters._shorkie_constants import (
@@ -245,29 +244,11 @@ class ShorkieHongPredictor(IGRInsertionExpressionPredictor):
                 for j, (row_idx, _ctx) in enumerate(batch):
                     cov_per_group[group_name][row_idx] = arr[j]
 
-        # Sum coverage over each readout region (regions are uniform
-        # across loci because the cassette is centered identically).
-        # Use any valid context to compute the bin sets.
-        if not contexts:
-            # No valid contexts at all
-            return {"primary": np.full(n, np.nan, dtype=np.float64)}
-        region_bins = readout_region_bins(
-            contexts[0][1], CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+        readouts = aggregate_diagnostic_readouts(
+            cov_per_group, contexts, self._diagnostic_track_groups,
+            n, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
         )
-
-        readouts: dict[str, np.ndarray] = {}
-        for group_name, _track_ids, sign in self._diagnostic_track_groups:
-            cov = cov_per_group[group_name]
-            for region_name, bins in region_bins.items():
-                if len(bins) == 0:
-                    scores = np.full(n, np.nan, dtype=np.float64)
-                else:
-                    scores = sign * cov[:, bins].sum(axis=1)
-                # Loci whose context was invalid keep NaN
-                invalid = np.setdiff1d(np.arange(n), valid_idx, assume_unique=False)
-                scores[invalid] = np.nan
-                readouts[f"{group_name} × {region_name}"] = scores
-
-        # Primary alias
+        # Primary alias: shares the same per-locus bins as
+        # predict_expressions by construction.
         readouts["primary"] = readouts[PRIMARY_READOUT_NAME]
         return readouts

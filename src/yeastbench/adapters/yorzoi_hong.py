@@ -34,9 +34,9 @@ from yeastbench.adapters._hong_scaffold import (
     DEFAULT_CASSETTE_FASTA,
     HongInsertionContext,
     HongLocus,
+    aggregate_diagnostic_readouts,
     build_insertion_context,
     load_cassette_payload,
-    readout_region_bins,
 )
 from yeastbench.adapters.protocols import IGRInsertionExpressionPredictor
 from yeastbench.adapters._yorzoi_constants import (
@@ -222,26 +222,14 @@ class YorzoiHongPredictor(IGRInsertionExpressionPredictor):
             for j, (row_idx, _ctx) in enumerate(batch):
                 full_cov[row_idx] = plus_only[j]
 
-        # Region bins (uniform across loci since cassette is centered).
-        if not contexts:
-            return {"primary": np.full(n, np.nan, dtype=np.float64)}
-        region_bins = readout_region_bins(
-            contexts[0][1], CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
-        )
-
-        readouts: dict[str, np.ndarray] = {}
-        for group_name, idx, sign in self._diagnostic_track_groups:
+        group_cov: dict[str, np.ndarray] = {}
+        for group_name, idx, _sign in self._diagnostic_track_groups:
             if not idx:
                 continue
-            cov = full_cov[:, :, idx].mean(axis=2)  # (n, OUTPUT_BINS)
-            for region_name, bins in region_bins.items():
-                if len(bins) == 0:
-                    scores = np.full(n, np.nan, dtype=np.float64)
-                else:
-                    scores = (sign * cov[:, bins].sum(axis=1)).astype(np.float64)
-                invalid = np.setdiff1d(np.arange(n), valid_idx, assume_unique=False)
-                scores[invalid] = np.nan
-                readouts[f"{group_name} × {region_name}"] = scores
-
+            group_cov[group_name] = full_cov[:, :, idx].mean(axis=2)
+        readouts = aggregate_diagnostic_readouts(
+            group_cov, contexts, self._diagnostic_track_groups,
+            n, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+        )
         readouts["primary"] = readouts[PRIMARY_READOUT_NAME]
         return readouts

@@ -82,7 +82,7 @@ YeIP's 0.556, not against 0.847.
 
 | Model | Primary IntProp ρ | Primary IntTrain ρ | Diagnostic B readout | Diag B IntProp ρ | Diag B IntTrain ρ | Candidates considered |
 | --- | ---: | ---: | --- | ---: | ---: | ---: |
-| **Shorkie** | −0.108 | −0.269 | **H3 (nucleosome density) × flank both 1 kb** | **+0.202** | +0.345 | 36 |
+| **Shorkie** | −0.148 | −0.269 | **H3 (nucleosome density) × flank both 1 kb** | **+0.185** | +0.345 | 36 |
 | **Yorzoi**  | +0.057 | −0.070 | SCRaMBLE strains × flank L 1 kb | −0.030 | +0.107 | 24 |
 | *Reference: YeIP (supervised, published)* | — | — | tabular features on 10 hand-engineered features | **+0.556** | — | — |
 | *Reference: noise-limited ceiling (σ_log₂=0.9)* | — | — | — | **≈ +0.32** | — | — |
@@ -95,7 +95,7 @@ the full per-tier breakdown.)
 - **Shorkie's Diagnostic B is a clean, biologically interpretable
   positive result.** The picked combo — predicted H3 nucleosome
   density at the immediate native flank, sign-flipped — gives
-  IntProp ρ = +0.202, a ~0.3 absolute improvement over its Primary.
+  IntProp ρ = +0.185, a ~0.33 absolute improvement over its Primary.
   Direction agrees with YeIP's "nucleosome density lower in
   high-expression IGRs". The combo sits within the noise-limited
   ceiling band (≈ +0.32 ± noise), so this is effectively the most

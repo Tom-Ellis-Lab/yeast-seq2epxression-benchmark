@@ -10,12 +10,16 @@ import pysam
 import pytest
 
 from yeastbench.adapters._hong_scaffold import (
+    DIAGNOSTIC_REGION_NAMES,
     MCHERRY_CDS_LEN,
     MCHERRY_CDS_START_IN_PAYLOAD,
     PAYLOAD_LEN,
+    HongInsertionContext,
     HongLocus,
+    aggregate_diagnostic_readouts,
     build_insertion_context,
     load_cassette_payload,
+    readout_region_bins,
 )
 from yeastbench.adapters.protocols import IGRInsertionExpressionPredictor
 from yeastbench.benchmarks.base import BenchmarkInfo
@@ -132,6 +136,159 @@ class TestBuildInsertionContext:
         locus = HongLocus("short1", "IntTrain", "I", 2_000)
         ctx = build_insertion_context(locus, payload, g, **self.PARAMS)
         assert ctx is None
+
+    def test_near_chromosome_end_shifts_cassette_off_center(self, mini_genome):
+        """When a locus is too close to a chromosome end to centre the
+        cassette, `_cassette_scaffold.build_insertion_context` clamps
+        ``window_start``. The cassette is then no longer at the window
+        midpoint, and ``mcherry_bins`` shifts accordingly. Adapters that
+        derive readout-region bins must do so per-locus, not once from
+        an arbitrary context (regression for the IntProp5 bug).
+        """
+        payload = load_cassette_payload(REAL_CASSETTE)
+        chrom_len = mini_genome.get_reference_length("I")
+        sl = self.PARAMS["seq_len"]
+        centered = build_insertion_context(
+            HongLocus("centered", "IntTrain", "I", 30_000),
+            payload, mini_genome, **self.PARAMS,
+        )
+        # mini_genome is 60 kb; with seq_len=16384 any cut closer than
+        # seq_len/2 to the right end forces the clamp.
+        near_end = build_insertion_context(
+            HongLocus("nearend", "IntProp", "I", chrom_len - 4_000),
+            payload, mini_genome, **self.PARAMS,
+        )
+        assert centered is not None
+        assert near_end is not None
+        centered_mid = centered.payload_start_in_window + PAYLOAD_LEN // 2
+        near_end_mid = near_end.payload_start_in_window + PAYLOAD_LEN // 2
+        assert abs(centered_mid - sl // 2) <= 1
+        # Window clamped against the chromosome's right edge → window
+        # starts later in spliced coords, so the cassette ends up
+        # *further along* (larger index) inside the window.
+        assert near_end_mid > centered_mid
+        # Therefore the readout bins land on different output positions.
+        assert not np.array_equal(near_end.mcherry_bins, centered.mcherry_bins)
+        rb_c = readout_region_bins(
+            centered,
+            self.PARAMS["crop_bp_each_side"],
+            self.PARAMS["bin_width"],
+            self.PARAMS["output_bins"],
+        )
+        rb_e = readout_region_bins(
+            near_end,
+            self.PARAMS["crop_bp_each_side"],
+            self.PARAMS["bin_width"],
+            self.PARAMS["output_bins"],
+        )
+        assert not np.array_equal(rb_c["cassette CDS"], rb_e["cassette CDS"])
+
+
+# ── Per-locus diagnostic-readout aggregation ──────────────────
+
+
+class TestAggregateDiagnosticReadouts:
+    """The aggregator must compute readout-region bins per-locus. If it
+    naively used one bin set across all loci, near-end (clamped) loci
+    would score against the wrong window positions (the IntProp5 bug)."""
+
+    PARAMS = dict(
+        seq_len=16384, crop_bp_each_side=1024, bin_width=16, output_bins=896
+    )
+
+    def _two_contexts(self, mini_genome):
+        payload = load_cassette_payload(REAL_CASSETTE)
+        chrom_len = mini_genome.get_reference_length("I")
+        centered = build_insertion_context(
+            HongLocus("c", "IntTrain", "I", 30_000),
+            payload, mini_genome, **self.PARAMS,
+        )
+        near_end = build_insertion_context(
+            HongLocus("e", "IntProp", "I", chrom_len - 4_000),
+            payload, mini_genome, **self.PARAMS,
+        )
+        assert centered is not None and near_end is not None
+        return centered, near_end
+
+    def test_picks_per_locus_bins_not_shared(self, mini_genome):
+        centered, near_end = self._two_contexts(mini_genome)
+        # Sanity: clamping really did move the cassette.
+        assert not np.array_equal(centered.mcherry_bins, near_end.mcherry_bins)
+
+        n = 2
+        out_bins = self.PARAMS["output_bins"]
+        # Per-locus coverage: row 0 has a peak at *centered*'s cassette
+        # CDS bins; row 1 has a peak at *near_end*'s cassette CDS bins.
+        # If the aggregator reused row 0's bins for row 1, row 1's
+        # "cassette CDS" sum would be 0 (no signal at those positions).
+        cov = np.zeros((n, out_bins), dtype=np.float64)
+        cov[0, centered.mcherry_bins] = 1.0
+        cov[1, near_end.mcherry_bins] = 1.0
+        group_cov = {"G": cov}
+        contexts = [(0, centered), (1, near_end)]
+        track_groups = [("G", [0], +1)]
+
+        readouts = aggregate_diagnostic_readouts(
+            group_cov, contexts, track_groups,
+            n,
+            self.PARAMS["crop_bp_each_side"],
+            self.PARAMS["bin_width"],
+            self.PARAMS["output_bins"],
+        )
+
+        # Both loci should see their full per-locus peak — same value.
+        cds = readouts["G × cassette CDS"]
+        assert cds[0] == pytest.approx(float(centered.mcherry_bins.size))
+        assert cds[1] == pytest.approx(float(near_end.mcherry_bins.size))
+        # Cross-check the bug: if we summed row 1 at row 0's bins,
+        # the result would be 0 (centered's bins fall outside near_end's
+        # cassette region). Confirm the bins really do disagree:
+        misapplied = float(cov[1, centered.mcherry_bins].sum())
+        assert misapplied == 0.0
+
+    def test_invalid_loci_stay_nan(self, mini_genome):
+        centered, _ = self._two_contexts(mini_genome)
+        n = 3  # 3 loci total, only one valid context (row 1)
+        cov = np.zeros((n, self.PARAMS["output_bins"]), dtype=np.float64)
+        cov[1, centered.mcherry_bins] = 1.0
+        readouts = aggregate_diagnostic_readouts(
+            {"G": cov}, [(1, centered)], [("G", [0], +1)],
+            n,
+            self.PARAMS["crop_bp_each_side"],
+            self.PARAMS["bin_width"],
+            self.PARAMS["output_bins"],
+        )
+        cds = readouts["G × cassette CDS"]
+        assert np.isnan(cds[0]) and np.isnan(cds[2])
+        assert cds[1] == pytest.approx(float(centered.mcherry_bins.size))
+
+    def test_applies_sign(self, mini_genome):
+        centered, _ = self._two_contexts(mini_genome)
+        cov = np.zeros((1, self.PARAMS["output_bins"]), dtype=np.float64)
+        cov[0, centered.mcherry_bins] = 1.0
+        readouts = aggregate_diagnostic_readouts(
+            {"H3": cov}, [(0, centered)], [("H3", [0], -1)],
+            1,
+            self.PARAMS["crop_bp_each_side"],
+            self.PARAMS["bin_width"],
+            self.PARAMS["output_bins"],
+        )
+        assert readouts["H3 × cassette CDS"][0] == pytest.approx(
+            -float(centered.mcherry_bins.size)
+        )
+
+    def test_keys_match_region_names(self, mini_genome):
+        centered, _ = self._two_contexts(mini_genome)
+        cov = np.zeros((1, self.PARAMS["output_bins"]), dtype=np.float64)
+        readouts = aggregate_diagnostic_readouts(
+            {"G": cov}, [(0, centered)], [("G", [0], +1)],
+            1,
+            self.PARAMS["crop_bp_each_side"],
+            self.PARAMS["bin_width"],
+            self.PARAMS["output_bins"],
+        )
+        for region_name in DIAGNOSTIC_REGION_NAMES:
+            assert f"G × {region_name}" in readouts
 
 
 # ── Top-k enrichment helper ───────────────────────────────────

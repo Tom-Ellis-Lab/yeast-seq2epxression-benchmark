@@ -272,14 +272,15 @@ https://github.com/daftpunksss/YeIP.
   groups; 36 candidate readouts).
 - [x] Yorzoi adapter `YorzoiHongPredictor` (RNA-seq only, no
   chromatin tracks; 4 track subgroups × 6 regions = 24 candidates).
-- [x] Tests (`tests/test_hong_igr.py`, 32 tests): scaffold,
+- [x] Tests (`tests/test_hong_igr.py`, 35 tests): scaffold,
   benchmark, Diagnostic B selection, save/load roundtrip, back-
-  compat with adapters lacking `predict_diagnostic_readouts`.
-  Full suite 185 tests green.
+  compat with adapters lacking `predict_diagnostic_readouts`,
+  per-locus readout-bin aggregation (clamped-window regression).
+  Full suite 190 tests green.
 - [x] **GPU runs (RTX A6000), headline numbers:**
-    * **Shorkie**: Primary IntProp ρ = −0.108 (IntTrain −0.269) |
+    * **Shorkie**: Primary IntProp ρ = −0.148 (IntTrain −0.269) |
       **Diagnostic B [H3 nucleosome × flank both 1 kb] IntProp
-      ρ = +0.202** (IntTrain +0.345, selected from 36 candidates).
+      ρ = +0.185** (IntTrain +0.345, selected from 36 candidates).
       Direction agrees with YeIP's "nucleosome density lower in
       high-expression IGRs". Sits within the noise-limited ~+0.32
       ceiling band.

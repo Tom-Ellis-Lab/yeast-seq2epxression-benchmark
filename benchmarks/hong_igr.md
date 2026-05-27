@@ -40,7 +40,7 @@ mCherry fluorescence across 30 (promoter × IGR) combinations
 (Fig. 2H/I). The benchmark records this in `summary.json` as
 `mrna_fluo_ceiling_spcc_published`. Caveats about
 selection-biased / model-specific noise ceilings live in
-[`benchmarks/findings.md`](findings.md), not here.
+[`benchmarks/model_failures.md`](model_failures.md), not here.
 
 ## Results
 

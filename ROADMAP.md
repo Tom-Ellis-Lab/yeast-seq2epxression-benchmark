@@ -230,7 +230,7 @@ https://github.com/daftpunksss/YeIP.
   (cross-promoter rank correlation across 30 promoter × IGR points)
   surfaced in `summary.json`. Selection-bias caveats and the Yorzoi
   σ_log₂ ≈ 0.9 → ρ ≈ +0.32 derivation moved to
-  [`benchmarks/findings.md`](benchmarks/findings.md) so the spec
+  [`benchmarks/model_failures.md`](benchmarks/model_failures.md) so the spec
   stays a clean contract.
 - [x] Reference assembly: **R64-5-1** (`data/tasks/R64-5-1.fa`),
   matching what the YeIP code repo bundles. Paper Methods cite
@@ -287,7 +287,7 @@ https://github.com/daftpunksss/YeIP.
       IntTrain-selected combo doesn't generalize.
     * Reference: YeIP supervised baseline reports SPCC = 0.556 on
       IntProp; published 0.847 cross-promoter ceiling discussion in
-      [`benchmarks/findings.md`](benchmarks/findings.md).
+      [`benchmarks/model_failures.md`](benchmarks/model_failures.md).
 - [x] Notebook `notebooks/hong_predictions_deep_dive.ipynb`
   (gitignored): annotated per-locus samples, noise-ceiling
   simulation, multi-track readout sweep, IntTrain → IntProp

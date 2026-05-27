@@ -23,9 +23,41 @@ class VariantEffectScorer(Protocol):
 @runtime_checkable
 class CassetteExpressionPredictor(Protocol):
     """Predict expression of a reporter in one constant cassette that is
-    integrated at varying genomic loci (Wu et al. position-effect task).
+    integrated at varying genomic loci by **CDS replacement** (Wu et al.
+    position-effect task: the cassette replaces a deleted ORF span).
     ``loci`` is a sequence of resolved ``WuLocus`` records; returns one
     scalar per locus, aligned to input order."""
+
+    def predict_expressions(self, loci: Sequence) -> np.ndarray: ...
+
+
+@runtime_checkable
+class IGRInsertionExpressionPredictor(Protocol):
+    """Predict expression of a reporter in one constant cassette that is
+    integrated at varying genomic loci by **intergenic-region insertion**
+    (Hong et al. position-effect task: the cassette inserts between two
+    intact native genes at the gRNA-defined cut site, no deletion).
+    ``loci`` is a sequence of resolved ``HongLocus`` records; returns
+    one scalar per locus, aligned to input order.
+
+    Kept as a separate protocol from ``CassetteExpressionPredictor`` so
+    the registry can dispatch the two assays to different adapters per
+    model — the cassettes, locus shapes, and window-anchor conventions
+    differ even though the surface method signature is identical.
+
+    **Optional extension for IntTrain-fitted IntProp ρ.** Adapters may
+    *additionally* implement
+    ``predict_diagnostic_readouts(loci) → dict[str, np.ndarray]`` to
+    expose multiple candidate readouts (different track groups ×
+    readout regions, with biological signs applied). The Hong benchmark
+    selects the (track group × region) combination that maximises
+    signed Spearman ρ on IntTrain and reports its ρ on IntProp as the
+    IntTrain-fitted IntProp ρ metric. The returned dict must include a
+    ``'primary'`` key holding the same array that
+    ``predict_expressions`` returns. All other keys are candidates for
+    IntTrain selection. The benchmark uses
+    ``hasattr(adapter, 'predict_diagnostic_readouts')`` to detect
+    support; adapters without it get only Primary reported."""
 
     def predict_expressions(self, loci: Sequence) -> np.ndarray: ...
 

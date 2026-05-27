@@ -38,6 +38,10 @@ tasks_config:
     labels_path: data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv
     fasta_path: data/tasks/R64-1-1.fa
     gtf_path: data/tasks/R64-1-1.115.gtf
+  hong_igr:
+    labels_path: data/tasks/hong/hong_igr_v1.tsv
+    cassette_seq: data/tasks/hong/expression_cassette.fasta
+    fasta_path: data/tasks/R64-5-1.fa
   chen_gfp_r1:
     library: gfp_r1
     data_path: data/tasks/chen_synonymous/gfp_r1.tsv
@@ -74,6 +78,7 @@ runs:
         rafi_mpra_marginalized,
         shalem_mpra_marginalized,
         wu_rfpins,
+        hong_igr,
         chen_gfp_r1,
         chen_gfp_r2,
         chen_tdh3,
@@ -100,6 +105,7 @@ runs:
         rafi_mpra_marginalized,
         shalem_mpra_marginalized,
         wu_rfpins,
+        hong_igr,
         chen_gfp_r1,
         chen_gfp_r2,
         chen_tdh3,

@@ -17,6 +17,7 @@ from typing import Any, Callable
 from yeastbench.adapters.protocols import (
     CassetteExpressionPredictor,
     CoverageTrackPredictor,
+    IGRInsertionExpressionPredictor,
     LocalCodingVariantPredictor,
     MarginalizedSequenceExpressionPredictor,
     TerminatorMarginalizedExpressionPredictor,
@@ -25,6 +26,7 @@ from yeastbench.adapters.protocols import (
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 from yeastbench.benchmarks.chen import ChenSynonymousBenchmark
 from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
+from yeastbench.benchmarks.hong_igr import HongIGRInsertionBenchmark
 from yeastbench.benchmarks.mpra import MPRAMarginalizedBenchmark
 from yeastbench.benchmarks.shalem import ShalemMPRAMarginalizedBenchmark
 from yeastbench.benchmarks.rfpins import RFPInsertionBenchmark
@@ -165,6 +167,26 @@ def _yorzoi_wu_adapter(device, fasta_path, gtf_path, **cfg):
     )
 
 
+def _shorkie_hong_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.shorkie_hong import ShorkieHongPredictor
+
+    return ShorkieHongPredictor.from_checkpoints(
+        fasta_path=fasta_path,
+        device=device,
+        **cfg,
+    )
+
+
+def _yorzoi_hong_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.yorzoi_hong import YorzoiHongPredictor
+
+    return YorzoiHongPredictor.from_pretrained(
+        fasta_path=fasta_path,
+        device=device,
+        **cfg,
+    )
+
+
 def _yorzoi_brooks_adapter(device, **cfg):
     from yeastbench.adapters.yorzoi_brooks import YorzoiBrooksPredictor
 
@@ -181,6 +203,7 @@ def _shorkie_brooks_adapter(device, **cfg):
 # from the constructed task object via getattr and forwarded to build_fn
 # as a keyword argument.
 REFS_FIELDS: tuple[str, ...] = ("fasta_path", "gtf_path")
+FASTA_ONLY: tuple[str, ...] = ("fasta_path",)
 CHEN_FIELDS: tuple[str, ...] = (
     "fasta_path", "library", "hosts_path", "data_dir",
 )
@@ -190,6 +213,7 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     MarginalizedSequenceExpressionPredictor: (_shorkie_mpra_marginalized_adapter, REFS_FIELDS),
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_shorkie_wu_adapter, REFS_FIELDS),
+    IGRInsertionExpressionPredictor: (_shorkie_hong_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_shorkie_brooks_adapter, ()),
     LocalCodingVariantPredictor: (_shorkie_chen_adapter, CHEN_FIELDS),
 }
@@ -199,6 +223,7 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     MarginalizedSequenceExpressionPredictor: (_yorzoi_mpra_marginalized_adapter, REFS_FIELDS),
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_yorzoi_wu_adapter, REFS_FIELDS),
+    IGRInsertionExpressionPredictor: (_yorzoi_hong_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_yorzoi_brooks_adapter, ()),
     LocalCodingVariantPredictor: (_yorzoi_chen_adapter, CHEN_FIELDS),
 }
@@ -361,6 +386,24 @@ def _build_wu_rfpins(
     )
 
 
+def _build_hong_igr(
+    labels_path: str | Path,
+    cassette_seq: str | Path,
+    fasta_path: str | Path,
+) -> Benchmark:
+    return HongIGRInsertionBenchmark(
+        labels_path=Path(labels_path),
+        cassette_seq=Path(cassette_seq),
+        fasta_path=Path(fasta_path),
+        info=BenchmarkInfo(
+            name="hong_igr",
+            version="v1",
+            description="Hong et al. chromosomal-position effects on IGR-integrated mCherry",
+            distribution_uri="",
+        ),
+    )
+
+
 def _build_brooks_scramble(data_path: str | Path) -> Benchmark:
     from yeastbench.benchmarks.brooks import BrooksScrambleBenchmark
 
@@ -428,6 +471,7 @@ TASKS: dict[str, TaskFactory] = {
     "rafi_mpra_marginalized": _build_rafi_mpra_marginalized,
     "shalem_mpra_marginalized": _build_shalem_mpra_marginalized,
     "wu_rfpins": _build_wu_rfpins,
+    "hong_igr": _build_hong_igr,
     "brooks_scramble": _build_brooks_scramble,
     "brooks_scramble_shorkie": _build_brooks_scramble_shorkie,
     "chen_gfp_r1": _build_chen,

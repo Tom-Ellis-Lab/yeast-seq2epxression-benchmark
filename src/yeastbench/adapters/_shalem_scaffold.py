@@ -26,7 +26,15 @@ from yeastbench.adapters._genome import (
     Gene,
     gene_exon_bins,
     one_hot_encode_channels_first,
+    parse_gene_annotations,
     place_window,
+)
+from yeastbench.adapters._marginalized_logsed import (
+    MarginalizedLogSED,
+    ModelCoverage,
+)
+from yeastbench.adapters.protocols import (
+    TerminatorMarginalizedExpressionPredictor,
 )
 
 if TYPE_CHECKING:
@@ -255,6 +263,95 @@ def splice_into_one_hot(
     return alt
 
 
+# ── Shared marginalized-logSED predictor base ─────────────────
+
+
+class ShalemMarginalizedBase(MarginalizedLogSED, TerminatorMarginalizedExpressionPredictor):
+    """Model-agnostic Shalem terminator adapter.
+
+    Concrete Shorkie/Yorzoi subclasses set ``self._cov`` (a
+    :class:`ModelCoverage`) then call :meth:`_setup` with their model's
+    input geometry; context construction, filler build, the REF/ALT
+    logSED pipeline and the predict loop are all inherited.
+    """
+
+    def _setup(
+        self,
+        model,
+        cov: ModelCoverage,
+        fasta_path,
+        gtf_path,
+        host_genes_json,
+        seq_len: int,
+        crop_bp_each_side: int,
+        bin_width: int,
+        output_bins: int,
+        batch_size: int,
+        n_sample: int | None,
+        seed: int,
+        desc: str,
+    ) -> None:
+        import pysam
+
+        self.model = model
+        self._cov = cov
+        self.fasta = pysam.FastaFile(str(fasta_path))
+        self._seq_len = seq_len
+        self.batch_size = batch_size
+        self.n_sample = n_sample
+        self.seed = seed
+        self._predict_desc = desc
+
+        self.genes = parse_gene_annotations(gtf_path)
+        host_genes = load_host_genes(
+            Path(host_genes_json) if host_genes_json is not None
+            else DEFAULT_HOST_GENES_JSON
+        )
+        self._contexts: list[ShalemInsertionContext] = compute_insertion_contexts(
+            host_genes, self.genes, self.fasta,
+            seq_len=seq_len,
+            crop_bp_each_side=crop_bp_each_side,
+            bin_width=bin_width,
+            output_bins=output_bins,
+        )
+        log.info("Shalem marginalized (%s): %d host-gene contexts", desc, len(self._contexts))
+
+        self.filler: str = build_filler(self.fasta, self.genes)
+        assert len(self.filler) == FILLER_LEN
+
+        self._init_baselines(desc=f"{desc} REF baseline")
+
+    # ── per-context hooks ─────────────────────────────────────
+
+    def _ref_window_seq(self, ctx: ShalemInsertionContext) -> str:
+        gene = self.genes[ctx.gene_id]
+        return self.fasta.fetch(
+            gene.chrom_roman, ctx.window_start, ctx.window_start + self._seq_len,
+        ).upper()
+
+    def _ctx_strand(self, ctx: ShalemInsertionContext) -> str:
+        return ctx.gene_strand
+
+    def _ctx_splice_start(self, ctx: ShalemInsertionContext) -> int:
+        return ctx.replace_start_in_window
+
+    def _ctx_bins(self, ctx: ShalemInsertionContext) -> np.ndarray:
+        return ctx.exon_bins
+
+    def _encode_candidate(self, oligo_150bp: str) -> tuple[str, str, int]:
+        return (
+            assemble_replacement(oligo_150bp, self.filler, "+"),
+            assemble_replacement(oligo_150bp, self.filler, "-"),
+            REPLACE_LEN,
+        )
+
+    def _aggregate(self, logsed_per_ctx) -> float:
+        return float(logsed_per_ctx.mean().item())
+
+    def predict_terminator_marginalized(self, seqs) -> np.ndarray:
+        return self._predict(seqs, self._predict_desc)
+
+
 __all__ = [
     "INSERT_LEN",
     "FILLER_LEN",
@@ -262,6 +359,7 @@ __all__ = [
     "CYC1_GENE_ID",
     "HostGeneSpec",
     "ShalemInsertionContext",
+    "ShalemMarginalizedBase",
     "load_host_genes",
     "build_filler",
     "compute_insertion_contexts",

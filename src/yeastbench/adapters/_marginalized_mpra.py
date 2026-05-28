@@ -15,6 +15,7 @@ upstream.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,9 +28,18 @@ from yeastbench.adapters._genome import (
     parse_gene_annotations,
     place_window,
 )
+from yeastbench.adapters._marginalized_logsed import (
+    MarginalizedLogSED,
+    ModelCoverage,
+)
+from yeastbench.adapters.protocols import (
+    MarginalizedSequenceExpressionPredictor,
+)
 
 if TYPE_CHECKING:
     import pysam
+
+log = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────
 
@@ -211,3 +221,92 @@ def build_alt_one_hot(
     else:
         alt[s : s + L_insert, :] = insert_oh.T
     return alt
+
+
+# ── Shared marginalized-logSED predictor base ─────────────────
+
+
+class MPRAMarginalizedBase(MarginalizedLogSED, MarginalizedSequenceExpressionPredictor):
+    """Model-agnostic native-position MPRA marginalized adapter.
+
+    Concrete Shorkie/Yorzoi subclasses set ``self._cov`` then call
+    :meth:`_setup`. Aggregation is two-level: mean across a gene's offset
+    contexts, then mean across host genes.
+    """
+
+    def _setup(
+        self,
+        model,
+        cov: ModelCoverage,
+        gtf_path,
+        fasta_path,
+        seq_len: int,
+        crop_bp_each_side: int,
+        bin_width: int,
+        output_bins: int,
+        batch_size: int,
+        n_sample: int | None,
+        seed: int,
+        desc: str,
+    ) -> None:
+        import pysam
+
+        self.model = model
+        self._cov = cov
+        self.fasta = pysam.FastaFile(str(fasta_path))
+        self._seq_len = seq_len
+        self.batch_size = batch_size
+        self.n_sample = n_sample
+        self.seed = seed
+        self._predict_desc = desc
+
+        self.genes = parse_gene_annotations(gtf_path)
+        self._contexts: list[InsertionContext] = compute_insertion_contexts(
+            gtf_path, self.fasta,
+            seq_len=seq_len,
+            crop_bp_each_side=crop_bp_each_side,
+            bin_width=bin_width,
+            output_bins=output_bins,
+        )
+        log.info(
+            "Marginalized MPRA (%s): %d contexts across %d genes",
+            desc, len(self._contexts), len({c.gene_id for c in self._contexts}),
+        )
+
+        self._gene_ids = sorted({c.gene_id for c in self._contexts})
+        self._gene_contexts: dict[str, list[int]] = {g: [] for g in self._gene_ids}
+        for i, c in enumerate(self._contexts):
+            self._gene_contexts[c.gene_id].append(i)
+
+        self._init_baselines(desc=f"{desc} REF baseline")
+
+    # ── per-context hooks ─────────────────────────────────────
+
+    def _ref_window_seq(self, ctx: InsertionContext) -> str:
+        gene = self.genes[ctx.gene_id]
+        return self.fasta.fetch(
+            gene.chrom_roman, ctx.window_start, ctx.window_start + self._seq_len,
+        ).upper()
+
+    def _ctx_strand(self, ctx: InsertionContext) -> str:
+        return ctx.gene_strand
+
+    def _ctx_splice_start(self, ctx: InsertionContext) -> int:
+        return ctx.insert_start_in_window
+
+    def _ctx_bins(self, ctx: InsertionContext) -> np.ndarray:
+        return ctx.exon_bins
+
+    def _encode_candidate(self, seq_110bp: str) -> tuple[str, str, int]:
+        insert = extract_insert(seq_110bp)
+        return (insert.upper(), reverse_complement(insert).upper(), INSERT_LEN)
+
+    def _aggregate(self, logsed_per_ctx) -> float:
+        gene_means: list[float] = []
+        for gene_id in self._gene_ids:
+            idx = self._gene_contexts[gene_id]
+            gene_means.append(float(logsed_per_ctx[idx].mean()))
+        return float(np.mean(gene_means))
+
+    def predict_marginalized_expressions(self, seqs) -> np.ndarray:
+        return self._predict(seqs, self._predict_desc)

@@ -42,20 +42,6 @@ N_PLUS_TRACKS = 81  # minus-track index = plus-track index + N_PLUS_TRACKS
 TrackMode = Literal["all", "nanopore_all", "matched"]
 
 
-def _borzoi_inv_transform(y: np.ndarray) -> np.ndarray:
-    """Numpy port of yorzoi.utils._borzoi_transform_inv (per-bin)."""
-    expd = np.where(y <= 384.0, y, 384.0 + (y - 384.0) ** 2)
-    return np.power(np.clip(expd, 0.0, None), 1.0 / 0.75)
-
-
-def _unbin_per_base(binned: np.ndarray, bin_width: int) -> np.ndarray:
-    """Spread per-bin totals back to per-base values (each bin's total ÷
-    bin_width, repeated bin_width times). Sum across the bin's bases
-    recovers the original bin total — what we want for downstream sums
-    over CDS intervals."""
-    return np.repeat(binned, bin_width) / float(bin_width)
-
-
 class YorzoiBrooksPredictor(CoverageTrackPredictor):
     # Geometry exposed to the benchmark
     seq_len: ClassVar[int] = SEQ_LEN
@@ -153,11 +139,14 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
         )
         x = _torch.from_numpy(arrs).to(self.model.device)
         with _torch.no_grad():
-            pred = self.model.forward_tracks_binned(x).float()  # (B, 162, OUTPUT_BINS)
+            # Per-base raw counts per track. The inverse Borzoi transform is
+            # applied per (track, bin) BEFORE RC-averaging inside the wrapper,
+            # so the track-subset mean below happens on raw counts.
+            perbase = self.model.forward_tracks_perbase(x)  # (B, 162, 3000)
 
-        # Per-sample track-subset averaging happens post-forward — the model
-        # always emits all 162 tracks; ``strain`` and ``strand`` only pick
-        # which tracks to mean across for each sample.
+        # Per-sample track-subset averaging happens post-forward on the raw
+        # per-base predictions — the model always emits all 162 tracks;
+        # ``strain`` and ``strand`` only pick which tracks to mean across.
         out = np.empty((B, OUTPUT_BINS * BIN_WIDTH), dtype=np.float64)
         for i in range(B):
             plus_axis = self._plus_axis_indices(strains[i])
@@ -166,8 +155,6 @@ class YorzoiBrooksPredictor(CoverageTrackPredictor):
                 if strands[i] == "+"
                 else [c + N_PLUS_TRACKS for c in plus_axis]
             )
-            idx = _torch.tensor(channels, device=pred.device, dtype=_torch.long)
-            binned = pred[i].index_select(0, idx).mean(dim=0).cpu().numpy()
-            raw_binned = _borzoi_inv_transform(binned)
-            out[i] = _unbin_per_base(raw_binned, BIN_WIDTH)
+            idx = _torch.tensor(channels, device=perbase.device, dtype=_torch.long)
+            out[i] = perbase[i].index_select(0, idx).mean(dim=0).cpu().numpy()
         return out

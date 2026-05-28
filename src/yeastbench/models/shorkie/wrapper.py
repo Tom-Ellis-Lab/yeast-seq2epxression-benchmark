@@ -37,6 +37,13 @@ BIN_WIDTH: int = 16
 CROP_BP_EACH_SIDE: int = 1024
 
 
+def _unbin_per_base(binned: "torch.Tensor", bin_width: int) -> "torch.Tensor":
+    """Spread each bin total over its ``bin_width`` bases (÷ width, repeat)
+    along the last axis. No inverse transform needed — Shorkie's
+    Poisson/softplus head already outputs raw counts."""
+    return binned.repeat_interleave(bin_width, dim=-1) / float(bin_width)
+
+
 class Shorkie:
     """8-fold Shorkie ensemble wrapper."""
 
@@ -137,3 +144,16 @@ class Shorkie:
             acc.add_(out.mean(dim=2))
         acc.div_(len(self.folds))
         return acc
+
+    def forward_track_mean_perbase(
+        self,
+        x: "torch.Tensor",
+        track_subset: "torch.Tensor",
+    ) -> "torch.Tensor":
+        """Per-base raw predicted counts, track-meaned:
+        ``(B, OUTPUT_BINS * BIN_WIDTH)``. Just
+        ``forward_track_mean_binned`` followed by a 16 bp → per-base unbin
+        — no inverse transform (softplus head is already in raw counts)."""
+        return _unbin_per_base(
+            self.forward_track_mean_binned(x, track_subset), BIN_WIDTH
+        )

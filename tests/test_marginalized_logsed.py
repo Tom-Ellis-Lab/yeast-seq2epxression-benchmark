@@ -26,7 +26,8 @@ class StubModel:
     vs ALT difference is exercised without real weights or a GPU.
     """
 
-    def __init__(self, seq_len, crop, bin_width, output_bins, n_tracks, layout):
+    def __init__(self, seq_len, crop, bin_width, output_bins, n_tracks, layout,
+                 global_weight=0.0):
         self.device = torch.device("cpu")
         self._sl = seq_len
         self._crop = crop
@@ -34,6 +35,10 @@ class StubModel:
         self._ob = output_bins
         self._nt = n_tracks
         self._layout = layout  # "cf" (B,4,L) or "cl" (B,L,4)
+        # A nonzero global_weight makes every output bin depend on the whole
+        # window (crude receptive field), so an insert outside the readout
+        # bins still moves the output — needed to exercise the MPRA path.
+        self._gw = global_weight
 
     def _signal(self, x: "torch.Tensor") -> "torch.Tensor":
         w = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=x.dtype, device=x.device)
@@ -42,7 +47,10 @@ class StubModel:
         else:
             sig = (x * w[None, None, :]).sum(-1)  # (B, L)
         cropped = sig[:, self._crop : self._crop + self._ob * self._bw]
-        return cropped.reshape(sig.shape[0], self._ob, self._bw).mean(-1)  # (B, OB)
+        binned = cropped.reshape(sig.shape[0], self._ob, self._bw).mean(-1)  # (B, OB)
+        if self._gw:
+            binned = binned + self._gw * sig.mean(dim=1, keepdim=True)
+        return binned
 
     def forward_track_mean_binned(self, x, track_subset):
         return self._signal(x)  # (B, OB)
@@ -94,9 +102,11 @@ def build_synthetic_shalem_genome(out_dir: Path) -> tuple[Path, Path, Path]:
 
     gtf = out_dir / "genes.gtf"
     gtf.write_text(
-        rows("YJR048W", 2001, 2400, "+")   # CYC1
-        + rows("YAL001W", 5000, 6000, "+")  # host +
-        + rows("YBR001C", 10000, 11000, "-")  # host -
+        rows("YJR048W", 2001, 2400, "+")   # CYC1 (filler donor)
+        + rows("YAL001W", 5000, 6000, "+")  # Shalem host +
+        + rows("YBR001C", 10000, 11000, "-")  # Shalem host -
+        + rows("YOL056W", 8000, 8500, "+")  # MPRA host + (in HOST_GENES)
+        + rows("YLR218C", 15000, 15500, "-")  # MPRA host - (in HOST_GENES)
     )
 
     host_json = out_dir / "host_genes.json"
@@ -165,6 +175,63 @@ class TestShalemCharacterization:
             print("RECORD yorzoi:", repr(out.tolist()))
             pytest.skip("recording golden")
         np.testing.assert_array_equal(out, np.array(EXPECTED["yorzoi"]))
+
+
+# ── MPRA-marginalized characterization ────────────────────────
+
+MPRA_SEQS = [
+    "T" * 17 + "ACGT" * 20 + "A" * 13,
+    "T" * 17 + "TTGGCCAA" * 10 + "A" * 13,
+]
+assert all(len(s) == 110 for s in MPRA_SEQS)
+
+
+def _build_shorkie_mpra(stub, fa, gt):
+    from yeastbench.adapters.shorkie_mpra_marginalized import (
+        ShorkieMPRAMarginalizedPredictor,
+    )
+
+    return ShorkieMPRAMarginalizedPredictor(
+        stub, fasta_path=fa, gtf_path=gt, track_subset=[0, 1, 2, 3], batch_size=8,
+    )
+
+
+def _build_yorzoi_mpra(stub, fa, gt):
+    from yeastbench.adapters.yorzoi_mpra_marginalized import (
+        YorzoiMPRAMarginalizedPredictor,
+    )
+
+    return YorzoiMPRAMarginalizedPredictor(
+        stub, fasta_path=fa, gtf_path=gt, batch_size=8,
+    )
+
+
+EXPECTED_MPRA = {
+    "shorkie": [5.7220458984375e-06, 5.7220458984375e-06],
+    "yorzoi": [1.6689300537109375e-05, 1.6689300537109375e-05],
+}
+
+
+class TestMPRACharacterization:
+    def test_shorkie_mpra_matches_golden(self, shalem_genome):
+        fa, gt, _ = shalem_genome
+        stub = StubModel(16384, 1024, 16, 896, n_tracks=4, layout="cf", global_weight=0.5)
+        adapter = _build_shorkie_mpra(stub, fa, gt)
+        out = adapter.predict_marginalized_expressions(MPRA_SEQS)
+        if EXPECTED_MPRA["shorkie"] is None:
+            print("RECORD mpra shorkie:", repr(out.tolist()))
+            pytest.skip("recording golden")
+        np.testing.assert_array_equal(out, np.array(EXPECTED_MPRA["shorkie"]))
+
+    def test_yorzoi_mpra_matches_golden(self, shalem_genome):
+        fa, gt, _ = shalem_genome
+        stub = StubModel(4992, 996, 10, 300, n_tracks=162, layout="cl", global_weight=0.5)
+        adapter = _build_yorzoi_mpra(stub, fa, gt)
+        out = adapter.predict_marginalized_expressions(MPRA_SEQS)
+        if EXPECTED_MPRA["yorzoi"] is None:
+            print("RECORD mpra yorzoi:", repr(out.tolist()))
+            pytest.skip("recording golden")
+        np.testing.assert_array_equal(out, np.array(EXPECTED_MPRA["yorzoi"]))
 
 
 # ── Unit tests for the model-coverage strategies ──────────────

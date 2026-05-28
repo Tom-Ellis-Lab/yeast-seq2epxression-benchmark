@@ -18,6 +18,14 @@ docstrings for why the orderings are kept distinct.
 
 ``MarginalizedLogSED`` owns the orchestration; a task subclass supplies
 the per-context accessors, the candidate encoder, and the aggregation.
+
+The Shalem-terminator and MPRA-marginalized pairs (4 adapters) are built
+on this engine. The Chen-synonymous pair is intentionally **not**: it
+batches variants × hosts in a single forward (throughput), precomputes the
+REF log in float64 numpy (≠ the engine's float32 ``torch.log2`` by ~1 ULP),
+and uses a per-host reverse-complement flag plus a contiguous CDS-bin-slice
+readout. Forcing it onto the engine would either shift its published
+scores or require Chen-only hooks that defeat the de-duplication.
 """
 from __future__ import annotations
 

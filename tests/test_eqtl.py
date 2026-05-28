@@ -151,19 +151,34 @@ class TestPlottingHelpers:
 
 class TestEQTLClassificationBenchmark:
     def test_init_loads_iteration_files(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         assert len(bench.iteration_files) == 3
         for f in bench.iteration_files:
             assert f.name.startswith("negset_")
             assert f.suffix == ".tsv"
 
     def test_fasta_gtf_paths(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         assert bench.fasta_path == synthetic_distribution / "reference" / "R64-1-1.fa"
         assert bench.gtf_path == synthetic_distribution / "reference" / "R64-1-1.115.gtf"
 
     def test_evaluate_returns_correct_structure(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         scorer = DeterministicScorer()
         results = bench.evaluate(scorer)
 
@@ -180,13 +195,23 @@ class TestEQTLClassificationBenchmark:
             np.testing.assert_array_equal(r.labels, np.tile([1, 0], 50))
 
     def test_evaluate_scores_are_finite(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         for r in results.per_iter:
             assert np.all(np.isfinite(r.scores))
 
     def test_evaluate_metrics_in_range(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         for r in results.per_iter:
             assert 0.0 <= r.auroc_abs <= 1.0
@@ -195,13 +220,23 @@ class TestEQTLClassificationBenchmark:
             assert 0.0 <= r.auprc_signed <= 1.0
 
     def test_perfect_scorer_auroc_one(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(PerfectScorer())
         for r in results.per_iter:
             assert r.auroc_abs == pytest.approx(1.0)
 
     def test_evaluate_pairs_metadata(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         for r in results.per_iter:
             assert "pair_id" in r.pairs.columns
@@ -210,7 +245,12 @@ class TestEQTLClassificationBenchmark:
             assert len(r.pairs) == 50
 
     def test_plot_runs_without_error(self, synthetic_distribution, tmp_path):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         plot_dir = tmp_path / "plots"
         bench.plot(results, plot_dir)
@@ -225,7 +265,12 @@ class TestEQTLClassificationBenchmark:
 
 class TestEQTLPersistence:
     def test_save_load_roundtrip(self, synthetic_distribution, tmp_path):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
 
         out = tmp_path / "save_test"
@@ -243,7 +288,12 @@ class TestEQTLPersistence:
             assert back.auprc_abs == pytest.approx(orig.auprc_abs)
 
     def test_save_creates_expected_files(self, synthetic_distribution, tmp_path):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         out = tmp_path / "files_test"
         bench.save_results(results, out)
@@ -254,7 +304,12 @@ class TestEQTLPersistence:
             assert (out / f"{r.name}_pairs.tsv").exists()
 
     def test_summary_dict_schema(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         summary = bench.summary_dict(results)
 
@@ -270,7 +325,12 @@ class TestEQTLPersistence:
             assert "auroc_abs" in it
 
     def test_summary_dict_matches_results(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         summary = bench.summary_dict(results)
 
@@ -278,7 +338,12 @@ class TestEQTLPersistence:
         assert summary["auroc_abs_sem"] == pytest.approx(results.sem_auroc)
 
     def test_headline(self, synthetic_distribution):
-        bench = EQTLClassificationBenchmark(synthetic_distribution, INFO)
+        bench = EQTLClassificationBenchmark(
+            distribution_dir=synthetic_distribution,
+            fasta_path=synthetic_distribution / "reference" / "R64-1-1.fa",
+            gtf_path=synthetic_distribution / "reference" / "R64-1-1.115.gtf",
+            info=INFO,
+        )
         results = bench.evaluate(DeterministicScorer())
         h = bench.headline(results)
         assert "AUROC" in h

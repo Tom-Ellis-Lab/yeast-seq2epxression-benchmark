@@ -38,7 +38,7 @@ MPRA_NAME_MAP = {
     "DREAM_RNN": "DREAM-RNN",
 }
 
-ROOT = "/Users/tds122/Documents/yeast-seq2epxression-benchmark/data/processed"
+ROOT = "shorkie-paper/from_kuanhao/eQTL/inference"
 EXPS = ["caudal_etal", "kita_etal", "Renganaath_etal"]
 
 # Common interpolation grids for ensemble curves

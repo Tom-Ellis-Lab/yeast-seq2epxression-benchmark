@@ -30,7 +30,7 @@ import requests
 log = logging.getLogger(__name__)
 
 DEE2_CGI = "https://dee2.io/cgi-bin/request.sh"
-DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "raw" / "dee2"
+DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "tasks"
 DEFAULT_N_RUNS = 50
 DEFAULT_SEED = 42
 
@@ -89,8 +89,8 @@ def main() -> None:
     p.add_argument("--out", type=Path, default=None)
     args = p.parse_args()
 
-    accessions = args.data_dir / "scerevisiae_accessions.tsv.bz2"
-    out_tsv = args.out or args.data_dir / "scerevisiae_gene_median_tpm.tsv"
+    accessions = args.data_dir / "dee2_accessions.tsv.bz2"
+    out_tsv = args.out or args.data_dir / "dee2_gene_median_tpm.tsv"
 
     pass_runs = _pass_accessions(accessions)
     log.info("PASS runs available: %d", len(pass_runs))

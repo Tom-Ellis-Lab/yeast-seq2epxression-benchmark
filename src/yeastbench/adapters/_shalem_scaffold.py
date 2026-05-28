@@ -8,7 +8,7 @@ logSED over the host's exon bins; the final per-sequence prediction is
 the mean logSED across the 22 genes.
 
 Host-gene list is committed at
-``data/processed/shalem_mpra/host_genes.json``.  Filler construction
+``data/tasks/shalem_mpra_terminator/host_genes.json``.  Filler construction
 happens once at adapter init from CYC1 (YJR048W) fetched from the R64-1-1
 FASTA.
 """
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_HOST_GENES_JSON = REPO_ROOT / "data" / "processed" / "shalem_mpra" / "host_genes.json"
+DEFAULT_HOST_GENES_JSON = REPO_ROOT / "data" / "tasks" / "shalem_mpra_terminator" / "host_genes.json"
 
 # ── Construct lengths ─────────────────────────────────────────
 

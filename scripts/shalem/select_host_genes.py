@@ -12,12 +12,12 @@ Diversification (pick 22):
   - Expression stratified across low / medium / high log-TPM tertiles
 
 Inputs:
-  - GTF:             data/processed/caudal_eqtl_v1/reference/R64-1-1.115.gtf
-  - FASTA index:     data/processed/caudal_eqtl_v1/reference/R64-1-1.fa.fai
-  - DEE2 TPM table:  data/raw/dee2/scerevisiae_gene_median_tpm.tsv
+  - GTF:             data/tasks/R64-1-1.115.gtf
+  - FASTA index:     data/tasks/R64-1-1.fa.fai
+  - DEE2 TPM table:  data/tasks/dee2_gene_median_tpm.tsv
 
 Output:
-  data/processed/shalem_mpra/host_genes.json
+  data/tasks/shalem_mpra_terminator/host_genes.json
 """
 from __future__ import annotations
 

@@ -7,104 +7,141 @@
 
 | | |
 | --- | --- |
-| **Task** | Binary classification: is this variant a cis-eQTL for its target gene, or a distance-matched non-eQTL control? |
+| **Task** | Binary classification: is this `(variant, gene)` pair a cis-eQTL, or a distance-matched non-eQTL control? |
 | **Source** | Caudal et al. (TODO: full citation + DOI). GWAS summary statistics: `GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207.tab`, downloaded from the [1002 Yeast Genome Project](http://1002genomes.u-strasbg.fr/files/RNAseq). |
 | **Reference assembly** | *S. cerevisiae* R64-1-1, Ensembl release 115 (`Saccharomyces_cerevisiae.R64-1-1.115.gtf`) |
-| **Background population** | 1011 yeast isolates panel (`1011Matrix.gvcf`, [1002 Yeast Genome Project](http://1002genomes.u-strasbg.fr/files/)) |
-| **Positives** | ~1,901 *local* (cis) eQTLs: variants where the SNP and the regulated gene's TSS lie on the same chromosome and within 8,000 bp of each other. LD-masked variants (`ld_mask == "masked"`) and any variant absent from the 1011 panel are dropped. |
-| **Negatives** | Non-coding common variants (AF ≥ 0.05) from the same panel, REF/ALT-matched and distance-to-TSS-matched to ±100 bp (fallback ±200 bp), each iteration drawing a fresh independent set. Four negative sets are generated and reported on. |
-| **Primary metric** | AUROC and AUPRC, evaluated **without class balancing** (natural prevalence within each negative set), reported as mean ± SEM across the four negative-set iterations. Stratification by distance-to-TSS bin is reported as a standard secondary view. |
-| **Leakage status** | ⚠️ **Sequence leakage for any model pretrained on the R64-1-1 reference.** This includes Shorkie *and* Yorzoi: both have seen the exact flanking context of every positive variant during pretraining. The DREAM Challenge MPRA models (DREAM-CNN, DREAM-RNN, DREAM-Atten) are *not* affected — they are trained from scratch on MPRA data — and serve as the leakage-free reference point. See [Known cheats #1](#known-cheats). |
+| **Background population for negatives** | 1011 yeast isolates panel (`1011Matrix.gvcf`, [1002 Yeast Genome Project](http://1002genomes.u-strasbg.fr/files/)). |
+| **Positives** | **1,901 single-nucleotide cis-eQTL `(variant, gene)` pairs** spanning **1,656 unique variant positions** — i.e. ~245 variants are independently called as cis-eQTLs for more than one gene. SNVs whose variant position lies on the same chromosome as the regulated gene's annotated body and within 25 kb of it. (Mechanically: rows in the upstream Caudal release with `subtype == 'SNP'`, `ld_mask != 'masked'`, and `type == 'CIS'`, where the `type` column encodes "same chromosome AND within 25 kb of `[Pheno_pos, Pheno_pos_end]`".) **All 1,656 unique variant positions are observed in the 1011 panel** — the gVCF intersection drops 0 of 1,901 pairs. |
+| **Negatives** | Common variants from the 1011 panel that fall **outside any annotated CDS or exon interval** (intronic and intergenic eligible; UTRs that are part of annotated exons are excluded), with AF ≥ 0.05, REF/ALT-matched and distance-to-TSS-matched to ±100 bp (fallback ±200 bp). **The negative variant is drawn genome-wide — it is not required to be on the same chromosome as its paired positive** (see [Cross-chromosome negatives](#cross-chromosome-negatives)). Each iteration draws a fresh independent set; four sets are generated and reported on. Of the 1,901 positives, **55 have no `(ref, alt)`-matched variant anywhere in the 1011 panel** and are dropped from every iteration, leaving **N = 1,846 paired rows per iteration**. |
+| **Primary metric** | AUROC and AUPRC, evaluated **without class balancing**, reported as mean ± SEM across the four negative-set iterations. ROC and PR plots include **random and perfect baselines** so the metric value is read in context. Stratification by distance-to-TSS bin and a **close-only subset** for fair comparison with smaller-receptive-window models are reported as standard secondary views. |
 
 ## Why this benchmark exists
 
 Caudal et al. is the largest publicly available set of statistically called
-yeast cis-eQTLs (~1,901 local hits across ~1,000 isolates), with effect sizes
-and per-gene phenotype annotations. Used as a binary classification task it
-asks: *given a variant and a candidate target gene, can a sequence model rank
-true eQTLs above distance-matched controls drawn from the same population?*
+yeast cis-eQTLs (1,901 single-nucleotide `(variant, gene)` cis hits across
+~1,000 isolates), with effect sizes and per-gene phenotype annotations.
+Used as a binary classification task it asks: *given a variant and a
+candidate target gene, can a sequence model rank true eQTLs above
+distance-matched controls drawn from the same population?*
 
-The benchmark's primary use is **comparing yeast sequence-to-expression models
-against each other and against MPRA-trained baselines**. The leakage caveat
-above is real but does not invalidate the comparison — it changes how the
-numbers should be read:
-
-- **Pretrained-on-yeast models vs each other** (e.g. Yorzoi vs Shorkie): both
-  models have seen the test sequences in pretraining, so neither has a
-  held-out advantage. The comparison is honest in the sense that both are
-  exposed to the same leakage, but it still measures something closer to "how
-  well did each model retain locus-specific signal from pretraining" than
-  "how well does each model generalize to unseen variants".
-- **Pretrained-on-yeast models vs DREAM MPRA models**: DREAM models are
-  trained from scratch on MPRA data with no exposure to R64-1-1. The gap
-  between a pretrained model and a DREAM model is interpretable as the value
-  of pretraining *plus* whatever leakage advantage it confers. Pairing this
-  benchmark with one that has cleaner held-out splits (Kita et al.) is the
-  way to disentangle the two.
-
-We keep Caudal in the suite because (a) it is the largest available cis-eQTL
-set for yeast, (b) all current models in scope can be evaluated on it without
-modification, and (c) the leakage gap *itself* is informative when compared
-across benchmarks.
+The benchmark's primary use is **comparing yeast sequence-to-expression
+models against each other and against MPRA-trained baselines** under a
+shared, simple task framing.
 
 ## Dataset construction
 
 ### Positive set
 1. Start from `GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207.tab`
    (provided by Caudal et al., downloaded from the 1002 Yeast Genome
-   Project). The filename describes the upstream processing: logistic genomic
-   control correction, LD pruning, no Bonferroni cut applied (filtering on
-   `PValue` is left to the user).
-2. Drop rows where `ld_mask == "masked"` (LD-pruned-out variants).
-3. Drop rows with missing or non-positive `PValue`.
-4. Classify each variant as **local (cis)** if the SNP and the regulated
-   gene's TSS are on the same chromosome (`Chr == Pheno_chr`) and within
-   8,000 bp of each other (`|ChrPos − Pheno_pos| ≤ 8000`). The benchmark uses
-   the local set only — non-local (trans) variants are not part of this
-   benchmark. This reproduces the Shorkie paper's `is_local` definition; see
-   `scripts/eqtl/0a_gwas_preprocessing/1_snp_position.py`.
+   Project). Despite the `.tab` extension the file is **comma-separated**;
+   read it as CSV.
+2. Drop rows where `ld_mask == "masked"` (LD-pruned-out variants). 49,670
+   of the 59,140 raw rows are dropped here, leaving 9,470.
+3. Restrict to `subtype == 'SNP'`. Copy-number variants are out of scope
+   for v1 (see [Open questions](#open-questions--todo)).
+4. Restrict to **single-nucleotide cis-eQTLs**: variants on the same
+   chromosome as the regulated gene's body and within 25 kb of it. The
+   bounds are inclusive and use both ends of the gene `[Pheno_pos,
+   Pheno_pos_end]`. Equivalent rule, expressed against the upstream
+   column in the source file: `type == 'CIS'` (verified empirically — the
+   upstream `type` column encodes exactly this rule, perfectly matching
+   1,901 SNV `(variant, gene)` rows). The benchmark uses the cis set
+   only; trans variants are not in scope.
 5. Intersect with the 1011 panel gVCF on `(Chr, ChrPos)` to retain only
-   variants that are observed segregating in the population. Variants in the
-   eQTL set that are absent from the gVCF are dropped.
-6. Each retained row provides a `(chrom, pos, ref, alt, gene)` 5-tuple. The
-   gene is the phenotype the eQTL is called against (`Pheno` column).
+   variants that are observed segregating in the population. Empirically,
+   **all 1,656 unique variant positions in the cis set are observed in
+   the 1011 panel**, so this step drops 0 of 1,901 pairs. (The pipeline
+   still performs the intersection so the same code path applies to
+   future eQTL releases.)
+6. Each retained row provides a `(chrom, pos, ref, alt, gene)` 5-tuple.
+   The gene is the regulated phenotype the eQTL is called against
+   (`Pheno` column). The same `(chrom, pos, ref, alt)` can appear in
+   more than one row if the variant is an eQTL for more than one gene
+   (245 such cases).
 
-After step 5 the local set contains ~1,901 cis-eQTLs. Caudal further
-distinguishes SNP and CNV `subtype` rows; the published Shorkie evaluation
-uses both but the SNP/CNV split is reported separately in supplementary
-figures, and we adopt the same convention.
+After step 4 the cis set contains exactly **1,901 `(variant, gene)`
+pairs over 1,656 unique variant positions**. Step 5 leaves both counts
+unchanged. Of these, **55 positives have no `(ref, alt)`-matched
+variant anywhere in the 1011 panel** (genome-wide, not just same
+chromosome) and cannot be paired with a negative; they are dropped from
+every iteration. The remaining **N = 1,846 pairs** is the size of each
+`negset_{i}.tsv`.
+
+> **Note on biology vs mechanics.** The "within 25 kb of the gene body"
+> framing is the high-level biological criterion; the
+> `type == 'CIS' & subtype == 'SNP'` filter on the upstream file is the
+> mechanical realization of it. Both produce the same 1,901 pairs.
+
+> **Note on the pair vs variant distinction.** Several upstream
+> descriptions of Caudal use "1,901 SNVs", which is ambiguous. The
+> 1,901 number is at the `(variant, gene)` pair level. There are 1,656
+> unique variant positions, of which ~245 each appear in two or more
+> pairs. The benchmark scores at the pair level: every row in the
+> processed file is a `(positive_pair, negative_pair)` matchup, so a
+> variant that is a cis-eQTL for two genes is scored twice (once
+> against a different randomly drawn negative for each target gene).
 
 ### Negative set
-Negatives are generated by `scripts/eqtl/0_data_generation/1_generate_negs.py`.
-For each positive eQTL `(chrom, pos, ref, alt, gene)`:
+Negatives are generated by `scripts/eqtl/0_data_generation/1_generate_negs.py`
+run unmodified against the Caudal positive set. For each positive eQTL
+`(chrom, pos, ref, alt, gene)`:
 
 1. Compute distance from `pos` to the TSS of `gene` (parsed from the GTF).
-2. Restrict candidate negatives to non-coding variants in the 1011 panel
-   gVCF with MAF > 0.05 and **identical (ref, alt)** alleles.
-3. Pick one candidate negative variant whose position lies at the same
-   distance from the TSS of *some randomly chosen gene on the same
-   chromosome*, within ±100 bp tolerance (fallback ±200 bp). The randomly
-   chosen gene becomes the negative variant's "target gene".
-4. Reject candidates that match a known positive `(chrom, pos, ref, alt)` or
-   that have already been used in the current negative-set iteration.
+2. Restrict candidate negatives to gVCF variants that fall **outside any
+   annotated CDS or exon interval** in the Ensembl 115 GTF (intronic and
+   intergenic eligible; UTRs that are part of annotated exons are
+   excluded), with AF ≥ 0.05 and **identical (ref, alt)** alleles. The
+   candidate pool is genome-wide; same chromosome as the positive is
+   **not** a constraint.
+3. Pick one candidate negative variant with matching `(ref, alt)`. Then,
+   on the negative variant's **own** chromosome, pick a random gene
+   whose TSS distance to the negative variant matches the positive's
+   distance-to-TSS within ±100 bp tolerance (fallback ±200 bp). The
+   randomly chosen gene becomes the negative variant's "target gene"
+   (same-chromosome between variant and gene is required only so that
+   distance-to-TSS is well-defined).
+4. Reject candidates that match a known positive `(chrom, pos, ref, alt)`
+   or that have already been used in the current negative-set iteration
+   (de-dup key: `(chrom, pos, target_gene)`, so the same chromosomal
+   position can pair with two different randomly-chosen target genes
+   across pairs but not within one).
 5. Repeat for `--iterations` independent negative sets (CLI default 4).
 
 The output is a TSV per iteration with paired `(positive, negative)` rows
 sharing distance-to-TSS, REF, and ALT.
 
-**Properties of this matching scheme:**
+#### Cross-chromosome negatives
+
+The canonical `1_generate_negs.py` script does **not** require the
+negative variant to live on the same chromosome as its paired positive.
+The candidate pool is "all gVCF variants in the genome with the same
+`(ref, alt)` as the positive"; same-chromosome is enforced only between
+the *negative variant and its randomly chosen target gene* (required so
+that distance-to-TSS is well-defined). In practice, ~7% of generated
+pairs happen to be same-chromosome — consistent with uniform random
+draws across the 16 yeast chromosomes.
+
+**v1 does not add a same-chromosome post-filter.** Rationale:
+
+- The scoring models (Shorkie, Yorzoi) take a DNA window and a target
+  gene as input; chromosome identity is not a model input. A model
+  therefore cannot learn "different chrom → negative" as a shortcut —
+  it has no access to that signal.
+- Matched `(ref, alt)` and matched distance-to-TSS already control for
+  the mechanical features the model sees (which nucleotide change is
+  being evaluated and how close to a TSS). Adding a same-chromosome
+  filter does not block an additional cheat path we can construct.
+- The published Shorkie Caudal numbers were produced by the unmodified
+  script, so enforcing same-chromosome would deviate from the paper's
+  evaluation without improving rigor.
+
+**Properties of the matching scheme:**
 - ✅ REF/ALT distribution is identical between positives and negatives.
 - ✅ Distance-to-TSS distribution is matched within tolerance.
-- ✅ Negatives are MAF > 5%, so the model cannot trivially distinguish
+- ✅ Negatives have AF ≥ 0.05, so the model cannot trivially distinguish
   positives from rare/private variants.
-- ⚠️ The "target gene" assigned to a negative is a *random* gene on the same
-  chromosome at the matched TSS distance — it is not necessarily a gene whose
-  expression is plausibly affected by that variant. This is a deliberate
-  design choice (it gives every negative a well-defined gene context for
-  scoring), but see [Known cheats #4](#known-cheats).
-- ⚠️ Negatives are restricted to non-coding regions; positives are not. If
-  Caudal's positives include any coding variants, this asymmetry is itself a
-  feature a model could learn.
+- ℹ️ Negatives are drawn genome-wide; ~7% land on the same chromosome as
+  their paired positive by chance.
 
 ## Distribution
 
@@ -112,267 +149,480 @@ The benchmark is split into two layers so that adding a new model does not
 require running the upstream pipeline:
 
 - **Raw upstream** — the original GWAS sumstats, the 1011 panel gVCF, and
-  the Ensembl GTF. These live under `data/raw/` and are reproduced from the
-  1002 Yeast Genome Project links above. The pipeline that turns them into
-  benchmark-ready files lives in `scripts/eqtl/`.
-- **Cooked benchmark distribution** — four flat TSV files, one per
-  negative-set iteration, plus a bundled reference FASTA and GTF. Hosted at
-  TBD (GCS bucket vs. HuggingFace Datasets).
+  the Ensembl GTF. The 1011 gVCF and the reference FASTA/GTF live at
+  `data/tasks/` (shared with Kita); Caudal-specific GWAS sumstats and
+  pipeline intermediates live at `data/tasks/caudal_eqtl/`. The pipeline
+  that turns them into benchmark-ready files lives in `scripts/eqtl/`.
+- **Processed benchmark distribution** — four flat TSV files (one per
+  negative-set iteration) at `data/tasks/caudal_eqtl/`. Hosted in a
+  **GCP bucket** (`gs://yeast-seq2expression/caudal_eqtl_v1/`, exact URL
+  pinned in the v1 release notes); reference FASTA + GTF are shared at
+  `data/tasks/R64-1-1.{fa,115.gtf}`.
 
-**Adapters consume the cooked distribution.** The pipeline is provided for
-provenance and reproducibility; it is not on the critical path for adding a
-new model.
+**Adapters consume the processed distribution.** The pipeline is
+provided for provenance and reproducibility; it is not on the critical
+path for adding a new model.
 
-### Cooked file layout
+### Processed file layout
 
 ```
-caudal_eqtl_v1/
-├── README.md          # version, generation date, source commit
-├── reference/
-│   ├── R64-1-1.fa     # bundled reference FASTA, indexed
-│   ├── R64-1-1.fa.fai
-│   └── R64-1-1.115.gtf
-├── negset_1.tsv       # ~3,802 rows: ~1,901 positives + ~1,901 negatives
-├── negset_2.tsv
-├── negset_3.tsv
-└── negset_4.tsv
+data/tasks/
+├── R64-1-1.fa         # shared reference FASTA, indexed
+├── R64-1-1.fa.fai
+├── R64-1-1.115.gtf    # shared annotation
+└── caudal_eqtl/
+    ├── README.md      # version, generation date, source commit
+    ├── negset_1.tsv   # 1,846 rows (one per pos/neg pair)
+    ├── negset_2.tsv
+    ├── negset_3.tsv
+    └── negset_4.tsv
 ```
 
 Each `negset_{i}.tsv` is the complete classification problem for that
-iteration. An adapter scores all four files; the harness computes
-per-iteration AUROC/AUPRC and reports mean ± SEM across iterations.
+iteration (1,846 paired rows). An adapter scores the positive and
+negative half of every row; the harness computes per-iteration
+AUROC/AUPRC over the union of all 3,692 scored variants and reports
+mean ± SEM across iterations.
 
 ### Schema
 
-One row per variant. The same chromosomal position can appear multiple times
-in a single file (once as a positive paired with its real target gene,
-separately as a negative paired with a randomly chosen same-chromosome gene
-at a matched distance), so the unit of identification is
-`(variant, target_gene)`, not `(chrom, pos)` alone.
+**One row per `(positive, negative)` pair.** Each row encodes a positive
+variant and the negative it was matched to in that iteration. The pair is
+the unit of identification — the harness does the per-variant explosion
+internally for AUROC/AUPRC.
 
 | Column | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `variant_id` | str | ✅ | `{chrom}:{pos}:{ref}>{alt}:{gene}`. Primary key within a negset file. Not unique across negsets, since the same negative variant may be re-paired with a different randomly chosen target gene in another iteration. |
-| `chrom` | str | ✅ | Roman-numeral form (`I`, `II`, …, `XVI`), no prefix. Matches the GTF and reference FASTA naming. |
-| `pos` | int | ✅ | 1-based, on R64-1-1. |
-| `ref` | str | ✅ | Reference allele. |
-| `alt` | str | ✅ | Alternate allele. |
-| `gene` | str | ✅ | Ensembl gene ID of the target gene. For positives this is the eQTL's regulated gene; for negatives it is the randomly chosen same-chromosome gene at the matched TSS distance. |
-| `gene_strand` | str | ✅ | `+` or `−`, the target gene's strand from the GTF. Saves the adapter from a GTF lookup. |
-| `is_positive` | bool | ✅ | `True` for positive eQTLs, `False` for matched negatives. The benchmark label. |
-| `distance_to_tss` | int | ✅ | Unsigned bp distance from `pos` to the target gene's TSS. Already produced by `1_generate_negs.py`; consumed by the stratified eval. |
-| `pair_id` | int | ⭕ optional | Within a negset file: links each negative to its source positive (both rows share the same `pair_id`). Reserved for future paired diagnostics; no current eval script uses it. |
+| `pair_id` | int | ✅ | Stable per-row identifier within a `negset_{i}.tsv` file. Not unique across files (the same pair index in negset_2 refers to a different randomly drawn negative). |
+| `pos_chrom` | str | ✅ | Arabic-numeral form (`1`, `2`, …, `16`), no prefix. The pipeline normalizes the Caudal CSV (already integers), the 1011 gVCF (`chromosome{N}` form), and the Ensembl GTF (Roman-numeral form) to this canonical convention. |
+| `pos_pos` | int | ✅ | 1-based, on R64-1-1. |
+| `pos_ref` | str | ✅ | Reference allele. |
+| `pos_alt` | str | ✅ | Alternate allele. |
+| `pos_gene` | str | ✅ | Ensembl gene ID of the regulated target gene from the upstream Caudal release. |
+| `pos_gene_strand` | str | ✅ | `+` or `−`, the target gene's strand from the GTF. Saves the adapter from a GTF lookup. |
+| `pos_distance_to_tss` | int | ✅ | Unsigned bp distance from `pos_pos` to the target gene's TSS. |
+| `neg_chrom` | str | ✅ | Same convention as `pos_chrom`. **May differ from `pos_chrom`** — negatives are drawn genome-wide (see [Cross-chromosome negatives](#cross-chromosome-negatives)). In practice ~7% of pairs are same-chromosome by chance. |
+| `neg_pos` | int | ✅ | 1-based, on R64-1-1. |
+| `neg_ref` | str | ✅ | Identical to `pos_ref` (REF/ALT-matching). |
+| `neg_alt` | str | ✅ | Identical to `pos_alt`. |
+| `neg_gene` | str | ✅ | Ensembl gene ID of the *randomly chosen* gene on **`neg_chrom`** (the negative variant's own chromosome) at the matched TSS distance. Not the negative variant's biological target. |
+| `neg_gene_strand` | str | ✅ | `+` or `−`, from the GTF. |
+| `neg_distance_to_tss` | int | ✅ | Unsigned bp distance from `neg_pos` to `neg_gene`'s TSS. By construction within ±100 bp (fallback ±200 bp) of `pos_distance_to_tss`. |
 
 Conventions locked in for v1:
-- **Chromosome naming**: Roman numerals, no prefix (`I`, `II`, …, `XVI`).
-  This matches the R64-1-1 GTF and FASTA. The pipeline normalizes the
-  Caudal CSV's integer chromosomes and the 1011 gVCF's `chromosome{N}`
-  form to this canonical convention.
+- **Chromosome naming**: Arabic numerals, no prefix (`1`, `2`, …, `16`).
+  The pipeline normalizes the Caudal CSV's integer chromosomes (already
+  in this form), the 1011 gVCF's `chromosome{N}` form, and the Ensembl
+  GTF's Roman-numeral form to this canonical convention.
 - **Coordinates**: 1-based, inclusive (matches the GTF and the source
   CSV's `ChrPos`).
-- **Sort order**: rows sorted by `(chrom, pos, is_positive desc)`.
-- **Booleans**: serialized as `True` / `False` in the TSV.
+- **Sort order**: rows sorted by `(pos_chrom, pos_pos)`.
+- **`gene_strand` columns** are looked up from the Ensembl 115 GTF at
+  processed-file generation time; the underlying negative-generation
+  script does not carry strand.
+
+### Example head
+
+A few illustrative rows of `negset_1.tsv` (tab-separated; values are
+schema-faithful but synthetic, since the actual processed distribution
+is not yet generated):
+
+```
+pair_id  pos_chrom  pos_pos  pos_ref  pos_alt  pos_gene  pos_gene_strand  pos_distance_to_tss  neg_chrom  neg_pos  neg_ref  neg_alt  neg_gene  neg_gene_strand  neg_distance_to_tss
+0        1          33892    A        G        YAL048C   -                1217                 7          412583   A        G        YGR109C   -                1231
+1        1          51077    C        T        YAL038W   +                542                  12         807142   C        T        YLR353W   +                619
+2        1          68018    G        A        YAL026C   -                2944                 1          115203   G        A        YAL012W   +                2871
+3        2          47813    T        C        YBL091C   -                3315                 4          1104882  T        C        YDR201W   +                3298
+```
+
+(Most pairs have `pos_chrom != neg_chrom` by construction of the
+candidate filter — see [Cross-chromosome negatives](#cross-chromosome-negatives).
+The row with `pair_id = 2` happens to be same-chromosome.)
 
 ### Versioning
 
-The cooked distribution is versioned (`caudal_eqtl_v1`, `_v2`, …). A
+The processed distribution is versioned (`caudal_eqtl_v1`, `_v2`, …). A
 version bump is required whenever any of: the source upstream data, the
-cis threshold, the negative-generation parameters, or the schema changes.
-Adapters record which benchmark version they ran against in their reported
-numbers.
+cis criterion, the negative-generation parameters, or the schema
+changes. Adapters record which benchmark version they ran against in
+their reported numbers.
 
 ## Model contract
 
-A model is evaluated on this benchmark by exposing an **adapter** that scores
-variants. The adapter contract is intentionally framework-agnostic — the
-benchmark does not import the model, and the model does not need to be in
-PyTorch.
+A model is evaluated on this benchmark by exposing a Python adapter that
+implements the `VariantEffectScorer` protocol:
 
-**Two adapter forms are supported:**
+```python
+class VariantEffectScorer(Protocol):
+    def score_variant(
+        self,
+        chrom: str,    # '1'..'16'
+        pos: int,      # 1-based, R64-1-1
+        ref: str,
+        alt: str,
+        gene_id: str,  # Ensembl gene ID
+    ) -> float: ...
+```
 
-1. **Python callable** — a function with signature
-   `score_variant(chrom: str, pos: int, ref: str, alt: str, gene_id: str) -> float`
-   that the benchmark imports and calls. Use this if your model is
-   Python-importable (PyTorch, TensorFlow, JAX, ONNX, etc.).
-2. **CLI / TSV form** — a command that reads a TSV of
-   `(chrom, pos, ref, alt, gene_id)` rows from stdin (or a file path) and
-   writes a TSV with an added `score` column to stdout (or a file path). Use
-   this if your model lives behind a different language, a Docker container,
-   a remote endpoint, or a build system the benchmark cannot import directly.
+See [`architecture.md`](architecture.md) for the full Python interface
+sketch (Protocol definitions, base classes, and harness entry point).
+The data flow for a single Caudal run is:
 
-Both forms produce the same artifact downstream: a TSV of scored variants
-that the evaluation step consumes.
+```
+   ┌─────────────────────────────────┐
+   │ EQTLClassificationBenchmark      │
+   │   .evaluate(adapter)             │
+   │   loads negset_{i}.tsv           │
+   └───────────────┬─────────────────┘
+                   │ for each (positive, negative) pair:
+                   │   adapter.score_variant(pos_chrom, pos_pos, …, pos_gene)
+                   │   adapter.score_variant(neg_chrom, neg_pos, …, neg_gene)
+                   ▼
+   ┌─────────────────────────────────┐
+   │ ModelAdapter                    │
+   │   (e.g. ShorkieVariantScorer)   │
+   └───────────────┬─────────────────┘
+                   │ window placement, ref-allele check,
+                   │ ref/alt one-hot, predict, aggregate, log-fold-change
+                   ▼
+   ┌─────────────────────────────────┐
+   │ Model                           │
+   │   (e.g. PyTorch Shorkie)        │
+   └─────────────────────────────────┘
+```
 
-**Per-variant inputs the adapter receives:**
+End-to-end usage from a caller's point of view:
 
-| Field | Required | Notes |
-| --- | --- | --- |
-| `chrom`, `pos`, `ref`, `alt` | yes | 1-based, on the R64-1-1 assembly. |
-| `gene_id` | yes | The annotated target gene; needed by adapters whose scoring depends on a gene-specific output window. The reference is the Ensembl release 115 GTF. |
+```python
+from pathlib import Path
+from yeastbench.benchmarks.base import BenchmarkInfo
+from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
+from yeastbench.adapters.shorkie_eqtl import (
+    ShorkieVariantScorer,
+    SHORKIE_1011_RNA_SEQ_TRACK_IDS,
+)
+from yeastbench.models.shorkie import Shorkie  # pure-PyTorch port
+from yeastbench import harness
 
-**Resources the adapter is given access to once at startup:**
-the R64-1-1 reference FASTA and the Ensembl 115 GTF.
-
-**Output:** a single scalar variant effect score per `(variant, gene_id)`
-pair. The benchmark uses the score as a classifier rank — sign convention is
-adapter-defined, but the score (or `|score|`, for unsigned scoring functions)
-must be monotonic in "how strongly the model thinks this variant affects this
-gene's expression". The adapter must document its sign convention.
+benchmark = EQTLClassificationBenchmark(
+    distribution_dir=Path("data/tasks/caudal_eqtl"),
+    fasta_path=Path("data/tasks/R64-1-1.fa"),
+    gtf_path=Path("data/tasks/R64-1-1.115.gtf"),
+    info=BenchmarkInfo(
+        name="caudal_eqtl",
+        version="v1",
+        description="Caudal et al. yeast cis-eQTL classification",
+        distribution_uri="gs://yeast-seq2expression/caudal_eqtl_v1/",
+    ),
+)
+model = Shorkie.from_tf_checkpoint(config, "data/models/shorkie/f0c0.h5")
+adapter = ShorkieVariantScorer(
+    model,
+    fasta_path="data/tasks/R64-1-1.fa",
+    gtf_path="data/tasks/R64-1-1.115.gtf",
+    track_subset=SHORKIE_1011_RNA_SEQ_TRACK_IDS,
+)
+harness.run(benchmark, adapter, out_dir=Path("results/shorkie/caudal"))
+```
 
 **What the adapter is responsible for:**
 - Choosing the input window length and centering.
-- Strand handling.
-- Verifying the reference allele in the FASTA matches the `ref` field at
-  `pos` and failing loudly if not.
-- Choosing which output track(s) to read variant effect from (relevant for
-  models that expose multiple expression-related tracks; see
-  [open questions](#open-questions--todo)).
+- Strand handling (see model-specific defaults below).
+- Verifying the reference allele in the FASTA matches the `ref` field
+  at `pos` and **failing loudly if not**.
+- Choosing which output track(s) to read variant effect from (relevant
+  for models that expose multiple expression-related tracks; see
+  model-specific defaults below).
 - Computing the ref-vs-alt comparison and reducing it to a scalar.
-- Returning a finite scalar even when the variant is near a chromosome edge.
+- Returning a finite scalar even when the variant is near a chromosome
+  edge.
 
-The benchmark **does not** require a specific scoring function. It only
-requires the adapter to commit to one and document it.
+**Tracks and aggregation: only the aggregate is allowed.** A model with
+multiple expression-related output tracks must aggregate them into a
+single scalar via a *fixed* per-adapter rule documented at construction
+time. Per-call track picking is not allowed. The Shorkie and Yorzoi
+adapters below show the locked-in choices.
 
 ### Reference example: Shorkie's scoring function
 
-For grounding, the canonical Shorkie scoring procedure (used in the figures
-of the Shorkie paper) is:
+The canonical Shorkie scoring procedure for this benchmark is:
 
-1. Extract a **16,384 bp** window centered on the variant from the R64-1-1
-   reference.
-2. Verify that the reference base at `pos` matches the `ref` field.
+1. **Position a 16,384 bp input window** so the variant lies inside the
+   model input *and* the target gene's center lies inside the model's
+   output slice (the model crops its output to a smaller centered
+   region). When both constraints can be satisfied, the start position
+   is the midpoint of the valid range, which means the variant ends up
+   approximately — but not exactly — at the center of the input for
+   typical Caudal positives where the variant is within a few kb of the
+   gene. When the variant is too far from the gene's center for both
+   constraints to fit, the window falls back to gene-centered, the
+   variant lies **outside** the model input, and the alt sequence is
+   identical to the ref sequence (variant effect score = 0). This
+   matches the canonical upstream Shorkie scoring behavior. **This is
+   not a rare edge case for the Caudal v1 set: 22% of positives sit
+   beyond half the 16 kb input window from their gene's TSS** and are
+   thus invisible to Shorkie's architecture — see
+   [Open questions](#open-questions--todo) for the implications.
+2. Verify that the reference base at `pos` matches the `ref` field, and
+   **raise on mismatch** — but only when the variant is inside the input
+   window. For variants that fall outside the window (per the
+   gene-centered fallback in step 1), the ref base is unobserved and
+   no check is possible. (The upstream Shorkie scoring script logs a
+   debug warning on mismatch and continues; our adapter must enforce
+   strict verification when the check is meaningful.)
 3. One-hot encode both the reference and the alternate sequences.
-4. Predict expression coverage tracks for both, **averaging predictions over
-   the forward and reverse-complement strands**. Predictions are
-   ensemble-averaged across 8 trained folds (`f0c0`–`f7c0`).
-5. Sum predicted coverage over all output bins overlapping the annotated
-   exons of the target gene `g`, yielding `Cov_ref` and `Cov_alt`.
-6. Score `= log2(Cov_alt + 1) − log2(Cov_ref + 1)` (the log2 fold change of
-   summed gene-body coverage).
+4. Predict expression coverage tracks for both with the **pure-PyTorch
+   Shorkie port** at <https://github.com/tdsone/shorkie-pytorch>
+   (currently vendored in `src/yeastbench/models/shorkie.py`). The
+   benchmark **must not introduce a dependency on `SeqNN` or
+   `baskerville`** — the upstream variant-scoring script
+   (`scripts/eqtl/2_variant_scoring/score_variants_shorkie.py`) is
+   provided as documentation only; its scoring logic is reimplemented
+   on top of the PyTorch model. Predictions are ensemble-averaged
+   across the 8 trained folds (`f0c0`–`f7c0`).
+5. **Strand handling.** Shorkie predicts *stranded* RNA-seq tracks, so
+   averaging both genome strands is only correct for unstranded
+   protocols. The adapter sums coverage on the **single strand the
+   target gene is annotated on** (sense strand, from `pos_gene_strand`
+   / `neg_gene_strand`), not both strands.
+6. **Track aggregation.** For the Caudal benchmark specifically,
+   aggregate over **the 1,014 "1000-RNA-Seq" tracks** from the Shorkie
+   canonical targets sheet (indices 4201..5214 inclusive). Other
+   expression-related output tracks (IDEA induction RNA-seq, ChIP-exo,
+   ChIP-MNase) are excluded. Aggregation form: cross-track mean of the
+   selected tracks → sum over the bins overlapping the target gene's
+   annotated exons → `log2(Cov_alt + 1) − log2(Cov_ref + 1)` (the
+   `logSED_agg` form). The alternative `logSED_mean_pertrack` is
+   intentionally not exposed.
 
-See `scripts/eqtl/2_variant_scoring/score_variants_shorkie.py`. Other models
-do not need to mimic this; it is documented here as one concrete realization
-of the contract.
+   > **Count note.** The benchmark description informally calls these
+   > "the 1011 RNA-seq tracks" (after the 1011 yeast-panel size); the
+   > released targets sheet actually contains 1,014 tracks under the
+   > `1000-RNA-Seq` group. We pin to the released file.
+
+7. **Reverse-complement averaging.** Required for both `ref` and `alt`
+   passes. For each fold, predict on the input and on its
+   reverse-complement, flip the RC prediction along the bin axis, and
+   average. Shorkie's 1011 RNA-seq tracks are unstranded coverage
+   (1 track per sample), so no track-index swap is needed — only the
+   bin-axis flip. Empirically reduces noise in the magnitude score and
+   gains ~0.01–0.015 AUROC / AUPRC on the close-only subset.
+
+8. **Signed measurement → unsigned classification score.** `logSED_agg`
+   is the signed per-variant measurement (effect direction + magnitude).
+   The **classification score fed to AUROC/AUPRC is its absolute
+   value** `|logSED_agg|`. Real eQTLs perturb expression in either
+   direction, so the signed score is uninformative for binary
+   "is-it-an-eQTL" classification; empirically, signed-AUROC sits at
+   ~0.50 on the full set while `|score|` AUROC is ~0.57–0.63. The
+   adapter returns the signed score (so downstream tooling can still
+   inspect direction); the harness takes `abs()` when computing
+   classification metrics.
+
+### Reference example: Yorzoi's scoring function
+
+Yorzoi uses a smaller architecture — **4,992 bp input, 162 output
+tracks (81 forward + 81 reverse strand), 300 bins × 10 bp/bin**
+covering the central 3,000 bp of input. The scoring pipeline mirrors
+Shorkie's (steps 1–4, 7–8 apply with the Yorzoi geometry substituted
+in) except for these adapter-level choices, locked for the run:
+
+- **Strand handling.** **+ (forward) strand only** (tracks 0..80),
+  regardless of the target gene's annotated strand.
+- **Track aggregation.** **All 81 `+` strand tracks**. Aggregation
+  form mirrors Shorkie's `logSED_agg` (cross-track mean → exon-bin sum
+  → log2 fold change).
+- **RC averaging.** Because Yorzoi's tracks are stranded, RC averaging
+  requires a strand-swap on the RC pass in addition to the bin-axis
+  flip: feeding `RC(X)` means the model's `+` output now predicts what
+  was `X`'s `-` strand, and vice versa. For the `+-only` subset, we
+  take indices 0..80 from the forward pass and indices 81..161 from
+  the RC pass (then flip the bin axis), average, and proceed.
+
+**Architectural implications for coverage.** Yorzoi's joint-feasibility
+limit is |variant − gene_center| ≤ ~4 kb (vs Shorkie's ~15 kb); beyond
+that the window falls back to gene-centered and the variant lies
+outside the input, giving a score of 0. Empirically Yorzoi's
+zero-score fraction on Caudal v1 is ~38% on the full set vs Shorkie's
+~9%. The close-only subset below is the fair-comparison view.
 
 ## Evaluation protocol
 
 For each of the four negative-set iterations `i ∈ {1..4}`:
 1. Score every positive and every paired negative with the model.
+   The adapter returns the signed `logSED_agg`; the harness takes
+   `abs()` before ranking (see [Shorkie scoring](#reference-example-shorkies-scoring-function)
+   step 8).
 2. Compute AUROC and AUPRC over the union of positives and negatives in
    iteration `i`. **Do not subsample to balance classes** — the natural
    prevalence is informative.
-3. Record per-iteration metrics.
+3. Record per-iteration metrics for both the signed and absolute
+   scores; report absolute as the primary number.
 
 **Primary report:** mean ± SEM across the four iterations, plus the
-per-iteration ROC and PR curves interpolated to a common grid and shown with
-±1 SEM bands (see
-`scripts/eqtl/3_visualization/1_roc_pr_shorkie_fold.py`).
+per-iteration ROC and PR curves interpolated to a common grid and shown
+with ±1 SEM bands. **The plots must include random and perfect
+baselines:**
 
-**Standard secondary report:** AUROC and AUPRC stratified by distance-to-TSS
-bin (see `scripts/eqtl/3_visualization/2_AUROC_AUPRC_by_dsitance.py`). This
-is reported as Figure 7G–H of the Shorkie paper and we treat it as part of
-the canonical evaluation, not an optional add-on.
+- **ROC**: random = diagonal `y = x`; perfect = step at `(0, 1)`.
+- **PR**: random = horizontal line at the base rate (= 0.5 for the
+  1:1 paired schema); perfect = step at `(1, 1)`.
 
-## Known cheats
+This is a hard requirement of the benchmark, not a stylistic choice —
+the AUROC/AUPRC numbers are uninterpretable in isolation, and the
+baselines provide the only honest visual context for a given run.
 
-Ways a model can score well on this benchmark without actually learning
-variant effects on expression. Listed roughly in decreasing order of how
-plausible / load-bearing we think each one is.
+**Standard secondary reports** (both required):
 
-1. **Sequence memorization (leakage).** Any model whose pretraining corpus
-   contains the R64-1-1 reference has seen every positive variant's flanking
-   sequence verbatim. This affects Shorkie *and* Yorzoi and any future
-   yeast-pretrained model. Such a model can in principle memorize "this
-   sequence neighborhood is associated with strong eQTL signal in the
-   training species" without ever modeling the variant effect. The benchmark
-   cannot distinguish a memorized hit from a learned variant effect on its
-   own. Two things make it interpretable anyway: (a) the DREAM MPRA models
-   are not pretrained on R64-1-1 and serve as a leakage-free reference; (b)
-   the same models can be evaluated on Kita et al., which has a different
-   leakage profile, and the gap between the two benchmarks is informative.
-   For pretrained-on-yeast models specifically, expect to pair this benchmark
-   with a HashFrag-style train/test sequence overlap report before publishing
-   absolute numbers.
+- **Distance-to-TSS stratification.** `|score|` AUROC and AUPRC
+  stratified by `pos_distance_to_tss` bin. **Bins for v1:**
+  `[(0, 500), (500, 1000), (1000, 2000), (2000, 4000), (4000, 8000),
+  (8000, 16000), (16000, 30000)]`. Reported per bin, not just as a
+  curve over cumulative-cutoff thresholds.
+- **Close-only subset.** `|score|` AUROC and AUPRC on the subset where
+  `pos_distance_to_tss ≤ 2000 bp`. **This is the fair-comparison view
+  for models with small receptive windows** (notably Yorzoi at ~5 kb
+  input / ~3 kb output, joint-feasibility limit ~4 kb from gene
+  center). Without this subset, models with smaller windows are
+  penalized for variants their architecture cannot in principle reach.
+  The `≤ 2 kb` cap gives both Shorkie and Yorzoi a safety margin
+  against edge-of-output-crop effects and makes cross-model
+  comparisons meaningful. Revisit when a model with a smaller window
+  is added.
 
-2. **Gene-identity shortcut.** Negatives are paired with a *random* same-chrom
-   gene at the matched TSS distance, so a model that ignores the variant
-   entirely and just learns "gene X is highly expression-variable across
-   isolates" can rank positives above negatives whenever Caudal's positive
-   genes are over-represented among variable genes. This is an asymmetry of
-   the negative-construction scheme, not of the underlying biology.
+The harness produces all three reports (primary + the two secondaries)
+as PNG plots in the run output directory. Plotting is part of
+`Benchmark.plot()` — never an optional post-step.
 
-3. **Distance-to-TSS shortcut.** Distance is matched to ±100 bp tolerance, but
-   the tolerance is loose enough that a model that simply assigns higher
-   scores to variants closer to the TSS can still gain a small advantage if
-   the matching residual is non-zero on average. The expected magnitude is
-   small but non-zero.
+## Running the benchmark
 
-4. **Coding/non-coding asymmetry.** Negatives are required to be non-coding;
-   positives are not filtered. If any Caudal positives fall in coding
-   regions, a model that detects coding context can exploit this directly.
-   (TODO: audit Caudal positives for coding overlap and either filter them
-   out or accept the asymmetry explicitly.)
+The benchmark is invoked via the repo's unified CLI (`ybench`), driven
+by a YAML run-spec that lists `(model, task)` pairs with per-run
+settings. The committed `configs/default.yaml` is the canonical run —
+the one whose numbers we report.
 
-5. **Reference-allele bias.** Standard variant scoring (ref vs alt) compares
-   two sequences, both of which are syntactically valid genomes. A model that
-   has a prior favoring the reference allele (e.g. because pretraining
-   sequences look more like ref than alt) will produce systematic
-   ref→alt shifts that are mostly noise. This is not a "cheat" so much as a
-   confound — a well-calibrated adapter should correct for it.
+```bash
+# List registered models and tasks
+uv run ybench list
 
-## Paired diagnostics
+# Dry-run: show planned (model × task) pairs
+uv run ybench run --config configs/default.yaml --dry-run
 
-> **Status:** scoping. We expect each cheat above to be addressable by either
-> a stratified analysis on Caudal itself or by a sibling benchmark with
-> different construction. This section will be filled in once the suite has
-> at least two eQTL benchmarks committed.
+# Execute everything in the config
+uv run ybench run --config configs/default.yaml
 
-Initial candidates:
-- **For (1) leakage:** report Caudal alongside Kita et al. as a held-out
-  comparison; quantify train/test sequence overlap with HashFrag.
-- **For (2) gene-identity shortcut:** ablate by scoring each variant against
-  a *shuffled* gene-target assignment and reporting the residual AUROC drop.
-- **For (3) distance shortcut:** report AUROC stratified by distance-to-TSS
-  bin (script already exists at
-  `scripts/eqtl/3_visualization/2_AUROC_AUPRC_by_dsitance.py`).
-- **For (4) coding asymmetry:** rerun with positives intersected against the
-  same coding mask as negatives.
-- **For (5) reference bias:** report ref-vs-shuffled-alt as a null distribution.
+# Filter to a single model or task (any combination)
+uv run ybench run --config configs/default.yaml --model shorkie
+uv run ybench run --config configs/default.yaml --task  caudal_eqtl
+```
+
+### Output layout
+
+One directory per `(model, task)` pair, under the config's `out_dir`:
+
+```
+results/default/
+  shorkie__caudal_eqtl/
+    negset_{1..4}_scores.npy   # per-iteration signed logSED_agg, shape (2N,)
+    negset_{1..4}_labels.npy   # 1/0 alternating pos/neg, shape (2N,)
+    negset_{1..4}_pairs.tsv    # pair-level metadata for post-hoc stratification
+    summary.json               # per-iteration + aggregate AUROC/AUPRC (signed + |s|)
+    run_metadata.json          # config hash, git commit, model + task config, timestamp
+  yorzoi__caudal_eqtl/
+    …
+```
+
+The `run_metadata.json` captures everything needed to reproduce that
+directory's numbers: the config file hash, the git commit of the
+repo, the resolved model/task configs, and the timestamp. Raw scores
++ labels + pair metadata are persisted so post-hoc analyses
+(distance-stratified AUROC, signed-vs-absolute comparison, oracle
+diff, etc.) don't require re-running the model.
+
+### Adding a new model or task
+
+- **Model:** add a factory to `MODELS` in `src/yeastbench/registry.py`
+  with signature `(task, device, **model_config) -> VariantEffectScorer`.
+  Then reference it by name in the YAML config.
+- **Task:** add a factory to `TASKS` with signature
+  `(**task_config) -> Benchmark`. Then reference it in the YAML.
+
+No new `run_*.py` scripts; no new CLI wiring.
 
 ## Files
 
 | Purpose | Path |
 | --- | --- |
-| Raw GWAS sumstats (Caudal) | `data/raw/eQTL/GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207.csv` ([source](http://1002genomes.u-strasbg.fr/files/RNAseq)) |
-| Background gVCF (1011 panel) | `data/raw/eQTL/1011Matrix.gvcf` ([source](http://1002genomes.u-strasbg.fr/files/)) |
-| Reference GTF | `data/raw/Saccharomyces_cerevisiae.R64-1-1.115.gtf` |
-| Processed positives (CIS) | `data/processed/eQTL/GWAS/GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207_cleaned_CIS.tab` |
-| Negative sets + per-model scores | `data/processed/revision_experiments/eQTL/` |
-| Cooked benchmark distribution | `caudal_eqtl_v1/` (TBD: GCS bucket or HuggingFace Datasets) — see [Distribution](#distribution) |
-| Cis-classification step (`is_local`) | `scripts/eqtl/0a_gwas_preprocessing/1_snp_position.py` |
-| Negative-set generation | `scripts/eqtl/0_data_generation/1_generate_negs.py` |
-| Shorkie variant scoring | `scripts/eqtl/2_variant_scoring/score_variants_shorkie.py` |
-| Evaluation / curves | `scripts/eqtl/3_visualization/1_roc_pr_shorkie_fold.py` |
-| TSS-distance stratified eval | `scripts/eqtl/3_visualization/2_AUROC_AUPRC_by_dsitance.py` |
+| Raw GWAS sumstats (Caudal) | `data/tasks/caudal_eqtl/GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207.tab.txt` ([source](http://1002genomes.u-strasbg.fr/files/RNAseq)) |
+| Background gVCF (1011 panel) | `data/tasks/1011Matrix.gvcf.gz` ([source](http://1002genomes.u-strasbg.fr/files/), shared with Kita) |
+| Reference GTF | `data/tasks/R64-1-1.115.gtf` |
+| Reference FASTA | `data/tasks/R64-1-1.fa` |
+| Processed benchmark distribution | `gs://yeast-seq2expression/caudal_eqtl_v1/` (GCP bucket; exact URL pinned in v1 release notes) |
+| Negative-set generation | `scripts/eqtl/0_data_generation/1_generate_negs.py --dataset caudal` |
+| Processed-distribution builder | `scripts/eqtl/build_caudal_v1_distribution.py` (raw TSV → spec schema; strand lookup from GTF; symlinks reference files) |
+| Shorkie variant scoring (upstream reference, SeqNN-based) | `scripts/eqtl/2_variant_scoring/score_variants_shorkie.py` — provided as documentation only; the adapter reimplements this on top of `src/yeastbench/models/shorkie.py` (pure PyTorch). |
+| Shorkie adapter | `src/yeastbench/adapters/shorkie_eqtl.py` |
+| Yorzoi adapter | `src/yeastbench/adapters/yorzoi_eqtl.py` |
+| Shared genome utilities (GTF parse, FASTA windowing, one-hot, exon-bin selection) | `src/yeastbench/adapters/_genome.py` |
+| Model + task registry | `src/yeastbench/registry.py` |
+| Canonical run config | [`configs/default.yaml`](../configs/default.yaml) |
+| CLI | `ybench` (`src/yeastbench/cli.py`), installed by `uv sync` |
+| Architecture / API sketch | [`architecture.md`](architecture.md) |
+| `pin N` script | `/tmp/pin_n_caudal.py` (one-off; can be moved into `scripts/eqtl/` if we want it tracked) |
+| Evaluation / curves | TBD — to be implemented as `EQTLClassificationBenchmark.plot()` once the harness lands. |
 
 ## Open questions / TODO
 
 - Add the Caudal et al. citation and DOI.
-- Decide where the cooked distribution will be hosted (GCS bucket vs.
-  HuggingFace Datasets) and pin a release URL for `caudal_eqtl_v1`.
-- For the CLI/TSV adapter form: confirm whether the adapter is expected to
-  read the bundled `reference/` directory directly, or be passed FASTA and
-  GTF paths at invocation time. The row schema is settled; only the
-  invocation contract is still open.
-- Yorzoi exposes multiple expression-related output tracks (RNA-seq +
-  Nanopore + others depending on training); decide whether the Yorzoi
-  adapter sums over a fixed RNA-seq subset (most directly comparable to
-  Shorkie) or over a model-author-chosen track set, and document whichever
-  it is. This is the first cross-family case where the model contract has
-  to confront real heterogeneity.
-- Audit Caudal positives for coding-region overlap. Negatives are restricted
-  to non-coding by construction; if a non-trivial fraction of positives are
-  coding, the asymmetry is itself a learnable cheat (Known cheats #4) and
-  we should either filter positives or accept and document the asymmetry.
-- HashFrag (or equivalent) train/test sequence overlap report for each
-  pretrained-on-yeast model in scope, to quantify Known cheats #1.
+- **CNVs are out of scope for v1.** 47,082 of 59,140 raw rows in the
+  upstream file have `subtype == 'CNV'`; all are excluded. A v2 that
+  adds CNVs would need a CNV-aware scoring contract (a single scalar
+  per `(variant, gene)` doesn't naturally express dosage effects) and
+  is not on the near-term roadmap. Open biology question carried with
+  this: for an SNV positive, whether the variant is on all copies of
+  the gene's chromosome in a given isolate is a confound on the
+  underlying eQTL call itself; reasoning about CNV-overlapping SNV
+  positives may require joining against the panel's CNV calls. Out of
+  scope for v1, flagged for the day someone wants to take it on.
+- **Reconcile `gene_strand` inclusion** in the processed schema with
+  the negative generator's lack of strand output. The processed-file
+  generation step must look up strands from the GTF at write time.
+- **TODO — add an oracle baseline that scores from the measured
+  per-strain RNA-seq instead of model predictions.** For each
+  `(variant, gene)` pair, partition the 1011 panel strains into
+  ref-allele vs alt-allele groups (from the gVCF) and compute an
+  effect-size statistic (e.g. `|t-statistic|` or `|log2FC|`) on the
+  measured expression of `gene`. Use that as the score and run the
+  same AUROC/AUPRC pipeline. **Why this matters:** the positives are
+  *defined* by the upstream Caudal call from this exact data, so the
+  oracle gives a realistic upper bound on what any sequence model
+  could achieve here. If the oracle's AUROC is, say, 0.95, then a
+  Shorkie AUROC of 0.65 means there's a lot of headroom; if the
+  oracle is 0.80, a Shorkie of 0.65 is much closer to the ceiling.
+  Without this baseline the headline AUROC has no scale. Implement as
+  a separate adapter (`MeasuredExpressionOracleScorer`) that consumes
+  the gVCF + Caudal RNA-seq matrix and exposes the same
+  `score_variants` interface, so it slots into the existing harness.
+- **TODO — large fraction of positives is invisible to Shorkie (22%
+  > 8 kb from TSS).** With Shorkie's 16,384 bp input window, the
+  variant can only sit alongside the gene center inside one window
+  when their separation is ≤ 8 kb. **22% of Caudal v1 positives have
+  `pos_distance_to_tss > 8000`** (and 8% are > 16 kb), so Shorkie
+  fundamentally cannot see those variants — their adapter score is 0
+  by construction. This makes the headline AUROC pessimistic and
+  motivates the close-only secondary report. Decisions to make:
+  (a) is the close-only subset's threshold the *correct* primary view
+  for Shorkie-class models, with the full-set AUROC reported only as a
+  diagnostic? (b) should we publish the per-distance-bin AUROC as a
+  primary curve so the architecture limit is visible at a glance?
+  (c) is it worth scoring these variants under a different window
+  placement (e.g. centered on the variant, accepting that the gene
+  prediction degrades) and reporting that as an alternate scoring
+  recipe? Resolve before v1 ships.
+- **The 55-positive drop is accepted for v1.** 55 of 1,901 positives
+  have no `(ref, alt)`-matched variant anywhere in the 1011 panel.
+  They are dropped from every iteration rather than matched with a
+  relaxed filter. If a future version wants full coverage, the paths
+  are (a) widening the distance-to-TSS tolerance beyond the current
+  100/200 bp fallback, or (b) allowing a different `(ref, alt)` as a
+  last-resort fallback — both are weakenings of the matching scheme.

@@ -562,8 +562,8 @@ if __name__ == "__main__":
     """
     Command to reconstruct Caudal plot: 
     uv run scripts/eqtl/0_data_generation/1_generate_negs.py \
-    --gwas_file data/processed/eQTL/GWAS/GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207_cleaned_CIS.tab \
-    --gvcf_file data/raw/eQTL/1011Matrix.gvcf \
-    --gtf_file data/raw/Saccharomyces_cerevisiae.R64-1-1.115.gtf \
+    --gwas_file data/tasks/caudal_eqtl/_intermediates_prep/gwas/GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207_cleaned_CIS.tab \
+    --gvcf_file data/tasks/1011Matrix.gvcf \
+    --gtf_file data/tasks/R64-1-1.115.gtf \
     --output_prefix
     """

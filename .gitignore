@@ -213,3 +213,7 @@ results/*
 archive/*
 notebooks/*
 papers/*
+
+# Vendored reference repos (large, have their own .git; not part of this repo)
+shorkie-paper/
+yorzoi/

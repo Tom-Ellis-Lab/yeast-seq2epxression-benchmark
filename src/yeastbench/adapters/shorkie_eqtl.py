@@ -3,7 +3,9 @@
 Implements the ``logSED_agg`` scoring procedure documented in
 ``benchmarks/caudal_eqtl.md``: window-placement constraint solve, strict
 ref-allele check, ref/alt one-hot, 8-fold ensemble, panel-track slice,
-cross-track mean → exon-bin sum → log2 fold change.
+cross-track mean → per-base unbin → exon-base sum → log2 fold change.
+(Raw-count scale; Shorkie's softplus head needs no inverse transform, but
+per-base summing avoids the CDS-boundary rounding of 16 bp bins.)
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ import numpy as np
 
 from yeastbench.adapters._genome import (
     ARABIC_TO_ROMAN,
-    gene_exon_bins,
+    gene_exon_base_positions,
     one_hot_encode_channels_first,
     parse_gene_annotations,
     place_window,
@@ -39,7 +41,7 @@ class _ScoringJob:
     var_idx_in_window: int  # 0-based
     ref: str
     alt: str
-    bin_idx: np.ndarray  # exon-overlapping output bins for the target gene
+    base_idx: np.ndarray  # exon base positions in the cropped output window
 
 
 class ShorkieVariantScorer(VariantEffectScorer):
@@ -125,8 +127,8 @@ class ShorkieVariantScorer(VariantEffectScorer):
                     var_idx_in_window=var_idx,
                     ref=v.ref.upper(),
                     alt=v.alt.upper(),
-                    bin_idx=gene_exon_bins(
-                        gene, start0, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS
+                    base_idx=gene_exon_base_positions(
+                        gene, start0, CROP_BP_EACH_SIDE, OUTPUT_BINS * BIN_WIDTH
                     ),
                 )
             )
@@ -174,18 +176,18 @@ class ShorkieVariantScorer(VariantEffectScorer):
             ).to(self.model.device)
 
             with _torch.no_grad():
-                # (2B, OUTPUT_BINS, n_tracks) — ensemble + RC averaged
-                acc = self.model.forward_tracks_binned(x, track_idx_t)
-            cov = acc.mean(dim=2)  # cross-track mean → (2B, 896)
+                # (2B, out_len) — ensemble + RC + track-mean, unbinned to
+                # per-base raw counts (softplus head; no inverse transform).
+                cov = self.model.forward_track_mean_perbase(x, track_idx_t)
 
             for i, job in enumerate(batch_jobs):
-                bins = job.bin_idx
-                if bins.size == 0:
+                base_idx = job.base_idx
+                if base_idx.size == 0:
                     scores[batch_start + i] = 0.0
                     continue
-                bins_t = _torch.from_numpy(bins).to(self.model.device)
-                ref_sum = cov[i].index_select(0, bins_t).sum().item()
-                alt_sum = cov[i + B].index_select(0, bins_t).sum().item()
+                base_t = _torch.from_numpy(base_idx).to(self.model.device)
+                ref_sum = cov[i].index_select(0, base_t).sum().item()
+                alt_sum = cov[i + B].index_select(0, base_t).sum().item()
                 scores[batch_start + i] = float(
                     np.log2(alt_sum + 1.0) - np.log2(ref_sum + 1.0)
                 )

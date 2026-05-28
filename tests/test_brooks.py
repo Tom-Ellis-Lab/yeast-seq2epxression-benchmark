@@ -16,7 +16,6 @@ from yeastbench.adapters.protocols import CoverageTrackPredictor
 from yeastbench.benchmarks.base import BenchmarkInfo
 from yeastbench.benchmarks.brooks import (
     BrooksScrambleBenchmark,
-    MIN_READS_PER_RUN,
     WINDOW_LEN,
     _js_divergence,
 )

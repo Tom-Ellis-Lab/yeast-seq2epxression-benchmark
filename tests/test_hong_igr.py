@@ -14,7 +14,6 @@ from yeastbench.adapters._hong_scaffold import (
     MCHERRY_CDS_LEN,
     MCHERRY_CDS_START_IN_PAYLOAD,
     PAYLOAD_LEN,
-    HongInsertionContext,
     HongLocus,
     aggregate_diagnostic_readouts,
     build_insertion_context,
@@ -24,7 +23,6 @@ from yeastbench.adapters._hong_scaffold import (
 from yeastbench.adapters.protocols import IGRInsertionExpressionPredictor
 from yeastbench.benchmarks.base import BenchmarkInfo
 from yeastbench.benchmarks.hong_igr import (
-    IntTrainFitted,
     HongIGRInsertionBenchmark,
     MRNA_FLUO_CEILING_SPCC_PUBLISHED,
     _topk_enrichment,

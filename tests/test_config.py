@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from yeastbench.config import Config, RunSpec, load_config
+from yeastbench.config import load_config
 
 
 @pytest.fixture

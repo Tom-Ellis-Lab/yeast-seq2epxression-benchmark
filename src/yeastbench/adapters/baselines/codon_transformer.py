@@ -15,7 +15,6 @@ directly. No upstream patch required.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Sequence
 
 import numpy as np

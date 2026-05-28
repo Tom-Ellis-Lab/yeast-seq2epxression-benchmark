@@ -18,7 +18,7 @@ Geometry exposed: ``seq_len`` (input length, 4992 bp) and
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar, Literal, Sequence
+from typing import ClassVar, Literal, Sequence
 
 import numpy as np
 
@@ -34,9 +34,6 @@ from yeastbench.adapters._yorzoi_constants import (
 )
 from yeastbench.adapters.protocols import CoverageTrackPredictor
 from yeastbench.models.yorzoi import Yorzoi
-
-if TYPE_CHECKING:
-    import torch
 
 log = logging.getLogger(__name__)
 

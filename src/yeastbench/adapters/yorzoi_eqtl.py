@@ -11,26 +11,20 @@ Implements the logSED-agg scoring procedure documented in
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import Sequence
 
 import numpy as np
 
 from yeastbench.adapters._genome import (
     ARABIC_TO_ROMAN,
-    Gene,
     gene_exon_bins,
     one_hot_encode_channels_first,
     parse_gene_annotations,
     place_window,
 )
 from yeastbench.adapters.protocols import Variant, VariantEffectScorer
-
-if TYPE_CHECKING:
-    import torch
-
 
 from yeastbench.adapters._yorzoi_constants import (
     BIN_WIDTH,

@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from yeastbench.adapters._genome import (
-    Gene,
     gene_exon_bins,
     one_hot_encode_channels_first,
     parse_gene_annotations,

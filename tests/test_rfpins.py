@@ -9,7 +9,7 @@ import pandas as pd
 import pysam
 import pytest
 
-from yeastbench.adapters._genome import Gene, parse_gene_annotations
+from yeastbench.adapters._genome import Gene
 from yeastbench.adapters._wu_scaffold import (
     CASSETTE_FEATURES,
     PAYLOAD_LEN,

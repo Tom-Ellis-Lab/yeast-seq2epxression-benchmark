@@ -23,7 +23,6 @@ from yeastbench.adapters._genome import (
     parse_gene_annotations,
 )
 from yeastbench.adapters._shalem_scaffold import (
-    INSERT_LEN,
     REPLACE_LEN,
     ShalemInsertionContext,
     assemble_replacement,

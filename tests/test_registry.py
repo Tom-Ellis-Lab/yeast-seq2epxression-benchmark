@@ -1,7 +1,6 @@
 """Tests for the model/task registry."""
 from __future__ import annotations
 
-from pathlib import Path
 
 from yeastbench.adapters.protocols import VariantEffectScorer
 from yeastbench.benchmarks.base import Benchmark

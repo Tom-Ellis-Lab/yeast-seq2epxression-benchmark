@@ -34,6 +34,15 @@
   Today only Brooks has this (`scripts/brooks/compare_models.py`).
   Generalising means defining a `Benchmark.compare(...)` classmethod
   + a per-protocol shared-cohort intersection helper.
+- [ ] **ExoShorkie integration** — prerequisite for the per-task
+  ExoShorkie adapter bullets under each benchmark below. Two open
+  questions to resolve first:
+    - *PyTorch port:* check whether our existing Shorkie PyTorch port runs
+      ExoShorkie weights as-is, or needs architecture modifications.
+    - *Ensemble bundling:* ExoShorkie ships as ~40 models, so a full
+      ensemble forward is prohibitively expensive. Leaning toward training
+      a **distilled single PyTorch ExoShorkie** that matches the
+      ensemble's predictions, rather than running all 40 at inference.
 
 ## eQTL
 

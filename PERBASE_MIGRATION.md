@@ -20,8 +20,8 @@ headline numbers.
 - [x] **brooks** — PR #12. Yorzoi re-baselined (Δr ≈ −0.001; headline
   unchanged — LFC/correlation metric is invariant to the rescaling); Shorkie
   unchanged (no transform).
-- [ ] **eqtl** — in progress. Caudal + Kita; per-base exon-base sum +
-  strand-matched track mean. Re-baseline pending.
+- [ ] **eqtl** — PR #13 (stacked on #12); code + tests done. Caudal + Kita;
+  per-base exon-base sum + strand-matched track mean. GPU re-baseline pending.
 - [ ] **mpra_marginalized** — via the `MarginalizedLogSED` engine readout
   (Rafi DREAM).
 - [ ] **shalem** — via the engine readout.

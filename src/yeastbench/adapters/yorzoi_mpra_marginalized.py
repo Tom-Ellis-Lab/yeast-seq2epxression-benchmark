@@ -154,8 +154,6 @@ class YorzoiMPRAMarginalizedPredictor(MarginalizedSequenceExpressionPredictor):
 
             for i in range(batch_end - batch_start):
                 ctx = self.contexts[batch_start + i]
-                if ctx.exon_bins.size == 0:
-                    continue
                 bins_t = _torch.as_tensor(ctx.exon_bins, device=self.model.device, dtype=_torch.long)
                 ref_sums[batch_start + i] = pred[i].index_select(1, bins_t).sum(dim=1)
 
@@ -197,8 +195,6 @@ class YorzoiMPRAMarginalizedPredictor(MarginalizedSequenceExpressionPredictor):
 
             for i in range(batch_end - batch_start):
                 ctx = self.contexts[batch_start + i]
-                if ctx.exon_bins.size == 0:
-                    continue
                 bins_t = _torch.as_tensor(ctx.exon_bins, device=self.model.device, dtype=_torch.long)
                 alt_exon_sums[batch_start + i] = pred[i].index_select(1, bins_t).sum(dim=1)
 

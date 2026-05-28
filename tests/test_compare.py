@@ -22,8 +22,6 @@ import numpy as np
 import pytest
 
 from yeastbench.benchmarks.base import (
-    Benchmark,
-    BenchmarkInfo,
     _default_compare_plot,
 )
 from yeastbench.compare import (

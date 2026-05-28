@@ -3,16 +3,13 @@
 lives in ``test_mpra.py``."""
 from __future__ import annotations
 
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from yeastbench.adapters._genome import Gene, one_hot_encode_channels_first
 from yeastbench.adapters._marginalized_mpra import (
     HOST_GENES,
     INSERT_LEN,
-    InsertionContext,
     build_alt_one_hot,
     extract_insert,
     reverse_complement,

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import Sequence
 
 import numpy as np
 from tqdm import tqdm
@@ -34,9 +34,6 @@ from yeastbench.adapters._yorzoi_constants import (
     SEQ_LEN,
 )
 from yeastbench.models.yorzoi import Yorzoi
-
-if TYPE_CHECKING:
-    import torch
 
 log = logging.getLogger(__name__)
 

@@ -30,9 +30,9 @@ ceiling.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Mapping, Sequence
+from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -43,7 +43,6 @@ from yeastbench.adapters.protocols import IGRInsertionExpressionPredictor
 from yeastbench.benchmarks.base import (
     Benchmark,
     BenchmarkInfo,
-    model_color,
 )
 
 LABEL_COL = "fluorescence_norm_intrain92"

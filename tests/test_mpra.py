@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Sequence
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from yeastbench.adapters.protocols import MarginalizedSequenceExpressionPredictor

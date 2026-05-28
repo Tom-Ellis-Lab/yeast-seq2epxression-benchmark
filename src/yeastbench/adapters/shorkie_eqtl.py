@@ -9,13 +9,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import Sequence
 
 import numpy as np
 
 from yeastbench.adapters._genome import (
     ARABIC_TO_ROMAN,
-    Gene,
     gene_exon_bins,
     one_hot_encode_channels_first,
     parse_gene_annotations,
@@ -30,9 +29,6 @@ from yeastbench.adapters._shorkie_constants import (
 )
 from yeastbench.adapters.protocols import Variant, VariantEffectScorer
 from yeastbench.models.shorkie import Shorkie
-
-if TYPE_CHECKING:
-    import torch
 
 
 @dataclass(frozen=True)

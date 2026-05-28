@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import Sequence
 
 import numpy as np
 from tqdm import tqdm
@@ -36,9 +36,6 @@ from yeastbench.adapters._shorkie_constants import (
     SHORKIE_T0_RNA_SEQ_TRACK_IDS,
 )
 from yeastbench.models.shorkie import Shorkie
-
-if TYPE_CHECKING:
-    import torch
 
 log = logging.getLogger(__name__)
 

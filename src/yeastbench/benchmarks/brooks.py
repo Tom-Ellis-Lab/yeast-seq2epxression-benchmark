@@ -35,7 +35,7 @@ import json
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Mapping, Sequence
+from typing import Any, ClassVar, Mapping
 
 import numpy as np
 import pandas as pd
@@ -46,7 +46,6 @@ from yeastbench.adapters.protocols import CoverageTrackPredictor
 from yeastbench.benchmarks.base import (
     Benchmark,
     BenchmarkInfo,
-    MODEL_COLORS,
     model_color,
 )
 

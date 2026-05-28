@@ -23,8 +23,6 @@ from yeastbench.adapters._yorzoi_constants import (
     CROP_BP_EACH_SIDE,
     OUTPUT_BINS,
     SEQ_LEN,
-    YORZOI_MINUS_TRACK_IDS,
-    YORZOI_PLUS_TRACK_IDS,
 )
 from yeastbench.adapters.protocols import LocalCodingVariantPredictor
 from yeastbench.models.yorzoi import Yorzoi

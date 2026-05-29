@@ -7,14 +7,22 @@ candidate insert/variant clone the REF one-hots, splice the candidate in,
 run a batched ALT forward, and score ``log2(alt+1) − log2(ref+1)``
 aggregated across contexts.
 
-The two models reduce in *opposite order* and that must stay bit-exact:
-Shorkie's ``forward_track_mean_binned`` folds the cross-track mean into
-the wrapper (returns ``(B, bins)``); Yorzoi's ``forward_tracks_binned``
-returns ``(B, 162, bins)`` and the adapter bin-sums first, then takes a
-strand-matched track mean. To keep the engine track-axis-agnostic, the
-entire per-context reduction lives inside a :class:`ModelCoverage`
-strategy — the mixin never sees a track axis. See the model wrapper
-docstrings for why the orderings are kept distinct.
+Predictions are read on the **per-base, untransformed** scale: the
+``ModelCoverage`` strategies call the wrapper's per-base forwards, which
+(for Yorzoi) apply the Borzoi inverse transform *per element before*
+RC-averaging and then unbin, so every downstream sum/mean here operates
+on raw predicted counts. The exon readout selects exact **base
+positions** (``gene_exon_base_positions``), not bin indices.
+
+The two models reduce in *opposite order*:
+Shorkie's ``forward_track_mean_perbase`` folds the cross-track mean into
+the wrapper (returns ``(B, bins*BIN_WIDTH)``); Yorzoi's
+``forward_tracks_perbase`` returns ``(B, 162, bins*BIN_WIDTH)`` and the
+adapter base-sums first, then takes a strand-matched track mean. To keep
+the engine track-axis-agnostic, the entire per-context reduction lives
+inside a :class:`ModelCoverage` strategy — the mixin never sees a track
+axis. See the model wrapper docstrings for why the orderings are kept
+distinct.
 
 ``MarginalizedLogSED`` owns the orchestration; a task subclass supplies
 the per-context accessors, the candidate encoder, and the aggregation.
@@ -81,8 +89,9 @@ class ModelCoverage(Protocol):
 
 class ShorkieCoverage:
     """Shorkie coverage strategy: channels-first one-hots, the
-    track-mean-folded forward, and a plain exon-bin sum (no track axis
-    remains after the wrapper)."""
+    track-mean-folded **per-base** forward, and a plain exon-base sum (no
+    track axis remains after the wrapper; the softplus head is already in
+    raw counts, so the per-base forward is unbin-only)."""
 
     def __init__(self, model, track_subset: Sequence[int]) -> None:
         import torch as _torch
@@ -100,17 +109,20 @@ class ShorkieCoverage:
         alt[row, :, start : start + length] = block_oh
 
     def forward(self, batch_oh):
-        return self.model.forward_track_mean_binned(batch_oh, self._track_idx_t)
+        return self.model.forward_track_mean_perbase(batch_oh, self._track_idx_t)
 
     def readout(self, out, row, bins_t, strand):
+        # ``bins_t`` holds exon BASE positions; out is (B, bins*BIN_WIDTH).
         return out[row].index_select(0, bins_t).sum()
 
 
 class YorzoiCoverage:
     """Yorzoi coverage strategy: channels-last one-hots, the full
-    per-track forward, then bin-sum followed by a strand-matched
-    cross-track mean (matches the logSED_agg ordering of the original
-    Yorzoi adapters)."""
+    per-track **per-base** forward (Borzoi inverse applied per-pass before
+    RC-averaging inside the wrapper, then unbinned to raw counts), then an
+    exon-base sum followed by a strand-matched cross-track mean (matches
+    the logSED_agg ordering of the original Yorzoi adapters, now on the
+    raw-count scale)."""
 
     def __init__(self, model) -> None:
         self.model = model
@@ -123,9 +135,11 @@ class YorzoiCoverage:
         alt[row, start : start + length, :] = block_oh
 
     def forward(self, batch_oh):
-        return self.model.forward_tracks_binned(batch_oh).float()
+        # (B, 162, OUTPUT_BINS*BIN_WIDTH) raw per-base counts (already float32).
+        return self.model.forward_tracks_perbase(batch_oh)
 
     def readout(self, out, row, bins_t, strand):
+        # ``bins_t`` holds exon BASE positions; out is (162, bins*BIN_WIDTH).
         per_track = out[row].index_select(1, bins_t).sum(dim=1)  # (162,)
         if strand == "+":
             return per_track[0:_YORZOI_N_PLUS_TRACKS].mean()

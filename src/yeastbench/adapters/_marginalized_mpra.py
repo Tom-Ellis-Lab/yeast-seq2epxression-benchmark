@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from yeastbench.adapters._genome import (
-    gene_exon_bins,
+    gene_exon_base_positions,
     one_hot_encode_channels_first,
     parse_gene_annotations,
     place_window,
@@ -111,7 +111,7 @@ class InsertionContext:
     offset_bp: int
     window_start: int        # 0-based genomic coordinate
     insert_start_in_window: int  # 0-based position within the model-input window
-    exon_bins: np.ndarray    # output-bin indices overlapping gene exons
+    exon_base_positions: np.ndarray  # per-base positions overlapping gene exons
 
 
 def compute_insertion_contexts(
@@ -165,10 +165,10 @@ def compute_insertion_contexts(
             if insert_start < window_start or insert_end > window_start + seq_len:
                 continue
 
-            exon_bins = gene_exon_bins(
-                gene, window_start, crop_bp_each_side, bin_width, output_bins
+            exon_base_positions = gene_exon_base_positions(
+                gene, window_start, crop_bp_each_side, output_bins * bin_width
             )
-            if exon_bins.size == 0:
+            if exon_base_positions.size == 0:
                 continue
 
             contexts.append(InsertionContext(
@@ -177,7 +177,7 @@ def compute_insertion_contexts(
                 offset_bp=offset,
                 window_start=window_start,
                 insert_start_in_window=insert_start - window_start,
-                exon_bins=exon_bins,
+                exon_base_positions=exon_base_positions,
             ))
 
     return contexts
@@ -295,7 +295,7 @@ class MPRAMarginalizedBase(MarginalizedLogSED, MarginalizedSequenceExpressionPre
         return ctx.insert_start_in_window
 
     def _ctx_bins(self, ctx: InsertionContext) -> np.ndarray:
-        return ctx.exon_bins
+        return ctx.exon_base_positions
 
     def _encode_candidate(self, seq_110bp: str) -> tuple[str, str, int]:
         insert = extract_insert(seq_110bp)

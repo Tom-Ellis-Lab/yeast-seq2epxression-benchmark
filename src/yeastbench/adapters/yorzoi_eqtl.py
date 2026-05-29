@@ -6,7 +6,8 @@ Implements the logSED-agg scoring procedure documented in
   covering the central 3,000 bp.
 - ``+`` (forward) strand tracks only (indices 0..80 of the 162-track
   output), regardless of the target gene's strand. Locked by the spec.
-- Aggregation: cross-track mean → exon-bin sum → log2 fold change.
+- Aggregation (raw-count scale): inverse Borzoi transform + per-base
+  unbin → strand-matched cross-track mean → exon-base sum → log2 FC.
 - Optional RC averaging — handled in `yeastbench.models.yorzoi.Yorzoi`.
 """
 from __future__ import annotations
@@ -19,7 +20,7 @@ import numpy as np
 
 from yeastbench.adapters._genome import (
     ARABIC_TO_ROMAN,
-    gene_exon_bins,
+    gene_exon_base_positions,
     one_hot_encode_channels_first,
     parse_gene_annotations,
     place_window,
@@ -43,7 +44,7 @@ class _ScoringJob:
     var_idx_in_window: int
     ref: str
     alt: str
-    bin_idx: np.ndarray
+    base_idx: np.ndarray  # exon base positions in the cropped output
 
 
 class YorzoiVariantScorer(VariantEffectScorer):
@@ -123,8 +124,8 @@ class YorzoiVariantScorer(VariantEffectScorer):
                     var_idx_in_window=var_idx,
                     ref=v.ref.upper(),
                     alt=v.alt.upper(),
-                    bin_idx=gene_exon_bins(
-                        gene, start0, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS
+                    base_idx=gene_exon_base_positions(
+                        gene, start0, CROP_BP_EACH_SIDE, OUTPUT_BINS * BIN_WIDTH
                     ),
                 )
             )
@@ -174,18 +175,21 @@ class YorzoiVariantScorer(VariantEffectScorer):
             ).to(self.model.device)
 
             with _torch.no_grad():
-                pred = self.model.forward_tracks_binned(x).float()  # (2B, 162, 300)
-            # Cross-track mean over plus-strand tracks → (2B, 300)
-            cov = pred.index_select(1, plus_idx_t).mean(dim=1)
+                # Per-base raw counts per track — the inverse Borzoi
+                # transform is applied per pass before RC-averaging inside
+                # the wrapper, so the track-mean below is on raw counts.
+                perbase = self.model.forward_tracks_perbase(x)  # (2B, 162, out_len)
+            # Strand-matched track mean on raw per-base counts → (2B, out_len)
+            cov = perbase.index_select(1, plus_idx_t).mean(dim=1)
 
             for i, job in enumerate(batch_jobs):
-                bins = job.bin_idx
-                if bins.size == 0:
+                base_idx = job.base_idx
+                if base_idx.size == 0:
                     scores[batch_start + i] = 0.0
                     continue
-                bins_t = _torch.from_numpy(bins).to(self.model.device)
-                ref_sum = cov[i].index_select(0, bins_t).sum().item()
-                alt_sum = cov[i + B].index_select(0, bins_t).sum().item()
+                base_t = _torch.from_numpy(base_idx).to(self.model.device)
+                ref_sum = cov[i].index_select(0, base_t).sum().item()
+                alt_sum = cov[i + B].index_select(0, base_t).sum().item()
                 scores[batch_start + i] = float(
                     np.log2(alt_sum + 1.0) - np.log2(ref_sum + 1.0)
                 )

@@ -74,9 +74,12 @@ class InsertionSite:
 
 @dataclass(frozen=True)
 class InsertionContext:
-    """One model-input window + the readout's output bins."""
+    """One model-input window + the readout's output bins, plus the per-base
+    positions covering the same readout span (for per-base, untransformed
+    scoring)."""
     window_seq: str
     readout_bins: np.ndarray   # output-bin indices overlapping the cassette readout
+    readout_base_positions: np.ndarray  # per-base positions over the same span
     up_avail: int              # native bp available upstream of the insertion
     window_start_in_spliced: int
     payload_rc: bool
@@ -115,6 +118,25 @@ def _readout_bins(
     if span is None:
         return np.array([], dtype=np.int64)
     return np.arange(span[0], span[1], dtype=np.int64)
+
+
+def _readout_base_positions(
+    readout_start_in_window: int,
+    readout_len: int,
+    crop_bp_each_side: int,
+    out_len: int,
+) -> np.ndarray:
+    """Per-base analogue of :func:`_readout_bins`: cropped-output base
+    positions in ``[0, out_len)`` covered by the readout span. The cassette
+    readout is one contiguous feature, so no loop is needed. Unlike the
+    1-based gene-exon helper, ``readout_start_in_window`` is already 0-based
+    — no ``-1`` offset. Summing exact readout bases avoids the bin-boundary
+    rounding ``_readout_bins`` incurs when the CDS edge lands mid-bin."""
+    lo = max(0, readout_start_in_window - crop_bp_each_side)
+    hi = min(out_len, readout_start_in_window + readout_len - crop_bp_each_side)
+    if hi <= lo:
+        return np.array([], dtype=np.int64)
+    return np.arange(lo, hi, dtype=np.int64)
 
 
 def build_insertion_context(
@@ -196,10 +218,18 @@ def build_insertion_context(
     )
     if readout_bins.size == 0:
         return None
+    # readout_bins stays the window-validity gate, so locus selection is
+    # unchanged; the per-base positions are the readout actually used by the
+    # per-base adapters.
+    readout_base_positions = _readout_base_positions(
+        readout_start_in_window, cassette.readout_len,
+        crop_bp_each_side, output_bins * bin_width,
+    )
 
     return InsertionContext(
         window_seq=window_seq,
         readout_bins=readout_bins,
+        readout_base_positions=readout_base_positions,
         up_avail=up_avail,
         window_start_in_spliced=window_start,
         payload_rc=(site.cassette_strand == "-"),

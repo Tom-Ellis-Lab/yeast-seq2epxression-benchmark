@@ -112,12 +112,17 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
                 ])
             ).to(self.model.device)
             with _torch.no_grad():
-                # (B, OUTPUT_BINS) — ensemble + RC + per-fold track mean
-                cov = self.model.forward_track_mean_binned(x, self._track_idx_t)
+                # (B, OUTPUT_BINS*BIN_WIDTH) per-base raw counts — ensemble +
+                # RC + per-fold track mean, then unbinned (softplus head is
+                # already raw counts, so no inverse transform needed).
+                cov = self.model.forward_track_mean_perbase(x, self._track_idx_t)
             for j, (row_idx, ctx) in enumerate(batch):
-                bins_t = _torch.as_tensor(
-                    ctx.rfp_bins, device=self.model.device, dtype=_torch.long
+                base_idx = ctx.rfp_base_positions
+                if base_idx.size == 0:
+                    continue  # readout outside the crop → leave score NaN
+                base_t = _torch.as_tensor(
+                    base_idx, device=self.model.device, dtype=_torch.long
                 )
-                scores[row_idx] = float(cov[j].index_select(0, bins_t).sum().item())
+                scores[row_idx] = float(cov[j].index_select(0, base_t).sum().item())
 
         return scores

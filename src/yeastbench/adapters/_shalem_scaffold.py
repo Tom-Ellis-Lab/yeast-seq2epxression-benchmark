@@ -24,7 +24,7 @@ import numpy as np
 
 from yeastbench.adapters._genome import (
     Gene,
-    gene_exon_bins,
+    gene_exon_base_positions,
     one_hot_encode_channels_first,
     parse_gene_annotations,
     place_window,
@@ -146,7 +146,7 @@ class ShalemInsertionContext:
     gene_strand: str
     window_start: int         # 0-based genomic
     replace_start_in_window: int  # 0-based position of the 450 bp replacement
-    exon_bins: np.ndarray     # output-bin indices overlapping gene exons
+    exon_base_positions: np.ndarray  # per-base positions overlapping gene exons
 
 
 def compute_insertion_contexts(
@@ -210,12 +210,12 @@ def compute_insertion_contexts(
                 f"window (shouldn't happen with the filtered host-gene list)"
             )
 
-        exon_bins = gene_exon_bins(
-            gene, window_start, crop_bp_each_side, bin_width, output_bins
+        exon_base_positions = gene_exon_base_positions(
+            gene, window_start, crop_bp_each_side, output_bins * bin_width
         )
-        if exon_bins.size == 0:
+        if exon_base_positions.size == 0:
             raise RuntimeError(
-                f"No exon bins in output crop for {h.gene_id} — selection "
+                f"No exon bases in output crop for {h.gene_id} — selection "
                 "filter should have rejected this"
             )
 
@@ -224,7 +224,7 @@ def compute_insertion_contexts(
             gene_strand=gene.strand,
             window_start=window_start,
             replace_start_in_window=replace_start - window_start,
-            exon_bins=exon_bins,
+            exon_base_positions=exon_base_positions,
         ))
     return contexts
 
@@ -336,7 +336,7 @@ class ShalemMarginalizedBase(MarginalizedLogSED, TerminatorMarginalizedExpressio
         return ctx.replace_start_in_window
 
     def _ctx_bins(self, ctx: ShalemInsertionContext) -> np.ndarray:
-        return ctx.exon_bins
+        return ctx.exon_base_positions
 
     def _encode_candidate(self, oligo_150bp: str) -> tuple[str, str, int]:
         return (

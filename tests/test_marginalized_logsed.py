@@ -1,9 +1,14 @@
 """Characterization + unit tests for the shared marginalized-logSED engine.
 
 The characterization test pins the public output of the Shorkie/Yorzoi
-Shalem adapters bit-for-bit using a deterministic stub model and a tiny
-synthetic genome, so the mixin extraction can be proven a no-op. Values
-in ``EXPECTED`` were recorded from the pre-refactor adapters.
+Shalem + MPRA adapters using a deterministic stub model and a tiny
+synthetic genome. The ``EXPECTED`` / ``EXPECTED_MPRA`` values are the
+**per-base, untransformed** baseline: the engine now reads the wrapper's
+per-base forwards (Yorzoi inverts the Borzoi transform per-pass before
+RC-averaging, then unbins; Shorkie is unbin-only) and the exon readout
+selects exact base positions. These goldens were re-recorded when the
+family was converted off the transformed-binned scale — they are an
+intentional re-baseline, not a no-op refactor.
 """
 from __future__ import annotations
 
@@ -64,6 +69,19 @@ class StubModel:
         # Yorzoi: (B, 162, OB), per-track scale so + and - strands differ
         scale = 1.0 + 0.01 * torch.arange(self._nt, dtype=base.dtype, device=base.device)
         return base[:, None, :] * scale[None, :, None]
+
+    # ── per-base forwards (what the converted engine actually calls) ──
+    # The stub has no Borzoi transform, so its per-base output is simply the
+    # binned output unbinned (÷ bin_width, repeat) — matching the wrapper
+    # contract that summing a bin's BIN_WIDTH bases recovers the bin total.
+    def _unbin(self, binned):
+        return binned.repeat_interleave(self._bw, dim=-1) / float(self._bw)
+
+    def forward_track_mean_perbase(self, x, track_subset):
+        return self._unbin(self.forward_track_mean_binned(x, track_subset))
+
+    def forward_tracks_perbase(self, x):
+        return self._unbin(self.forward_tracks_binned(x))
 
 
 # ── Synthetic genome that yields valid Shalem contexts ─────────
@@ -148,10 +166,10 @@ def _build_yorzoi_shalem(stub, fa, gt, host_json):
     )
 
 
-# Recorded from the pre-refactor adapters (deterministic stub + genome).
+# Per-base untransformed baseline (deterministic stub + genome).
 EXPECTED = {
-    "shorkie": [-0.0008351802825927734, -0.0008091926574707031],
-    "yorzoi": [-0.00086212158203125, 0.0],
+    "shorkie": [-0.00012493133544921875, -3.123283386230469e-05],
+    "yorzoi": [-8.678436279296875e-05, 0.0],
 }
 
 
@@ -208,7 +226,7 @@ def _build_yorzoi_mpra(stub, fa, gt):
 
 EXPECTED_MPRA = {
     "shorkie": [5.7220458984375e-06, 5.7220458984375e-06],
-    "yorzoi": [1.6689300537109375e-05, 1.6689300537109375e-05],
+    "yorzoi": [1.71661376953125e-05, 1.71661376953125e-05],
 }
 
 
@@ -270,3 +288,42 @@ def test_logsed_primitive_sign():
     ref = torch.tensor([1.0, 3.0])
     logsed = torch.log2(alt + 1.0) - torch.log2(ref + 1.0)
     assert logsed[0] > 0 and logsed[1] < 0
+
+
+class TestPerBaseForward:
+    """The converted Coverage strategies read the wrapper's **per-base**
+    forwards: output length is ``OUTPUT_BINS*BIN_WIDTH`` and summing a
+    bin's ``BIN_WIDTH`` bases recovers that bin's total — i.e. the readout
+    operates on raw per-base counts, not transformed bins. (Inverse-
+    before-mean order is proven wrapper-side in test_perbase_wrappers.py;
+    here we pin that the engine consumes the per-base axis.)"""
+
+    @staticmethod
+    def _stub(layout, n_tracks):
+        # seq_len >= crop + output_bins*bin_width = 8 + 40 = 48
+        return StubModel(
+            seq_len=64, crop=8, bin_width=4, output_bins=10,
+            n_tracks=n_tracks, layout=layout,
+        )
+
+    def test_shorkie_forward_is_perbase_and_unbins(self):
+        from yeastbench.adapters._marginalized_logsed import ShorkieCoverage
+
+        stub = self._stub("cf", 4)
+        cov = ShorkieCoverage(stub, [0, 1, 2, 3])
+        x = torch.rand(2, 4, 64)
+        binned = stub.forward_track_mean_binned(x, cov._track_idx_t)  # (2, 10)
+        perbase = cov.forward(x)  # (2, 40)
+        assert perbase.shape == (2, 10 * 4)
+        torch.testing.assert_close(perbase.reshape(2, 10, 4).sum(-1), binned)
+
+    def test_yorzoi_forward_is_perbase_and_unbins(self):
+        from yeastbench.adapters._marginalized_logsed import YorzoiCoverage
+
+        stub = self._stub("cl", 162)
+        cov = YorzoiCoverage(stub)
+        x = torch.rand(2, 64, 4)
+        binned = stub.forward_tracks_binned(x)  # (2, 162, 10)
+        perbase = cov.forward(x)  # (2, 162, 40)
+        assert perbase.shape == (2, 162, 10 * 4)
+        torch.testing.assert_close(perbase.reshape(2, 162, 10, 4).sum(-1), binned)

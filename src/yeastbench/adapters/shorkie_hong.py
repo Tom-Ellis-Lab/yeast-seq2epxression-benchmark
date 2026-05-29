@@ -36,7 +36,7 @@ from yeastbench.adapters._hong_scaffold import (
     DEFAULT_CASSETTE_FASTA,
     HongInsertionContext,
     HongLocus,
-    aggregate_diagnostic_readouts,
+    aggregate_diagnostic_base_readouts,
     build_insertion_context,
     load_cassette_payload,
 )
@@ -185,12 +185,17 @@ class ShorkieHongPredictor(IGRInsertionExpressionPredictor):
                 ])
             ).to(self.model.device)
             with _torch.no_grad():
-                cov = self.model.forward_track_mean_binned(x, self._track_idx_t)
+                # (B, OUTPUT_BINS*BIN_WIDTH) per-base raw counts (unbin-only;
+                # softplus head is already raw counts).
+                cov = self.model.forward_track_mean_perbase(x, self._track_idx_t)
             for j, (row_idx, ctx) in enumerate(batch):
-                bins_t = _torch.as_tensor(
-                    ctx.mcherry_bins, device=self.model.device, dtype=_torch.long
+                base_idx = ctx.mcherry_base_positions
+                if base_idx.size == 0:
+                    continue  # readout outside the crop → leave score NaN
+                base_t = _torch.as_tensor(
+                    base_idx, device=self.model.device, dtype=_torch.long
                 )
-                scores[row_idx] = float(cov[j].index_select(0, bins_t).sum().item())
+                scores[row_idx] = float(cov[j].index_select(0, base_t).sum().item())
 
         return scores
 
@@ -211,16 +216,17 @@ class ShorkieHongPredictor(IGRInsertionExpressionPredictor):
 
         contexts, valid_idx = self._build_contexts(loci)
         n = len(loci)
-        # Per-locus per-bin coverage, per track group.
-        # cov_per_group[group_name] is (n, OUTPUT_BINS); rows not in
-        # valid_idx are filled with NaN later.
+        out_len = OUTPUT_BINS * BIN_WIDTH
+        # Per-locus per-base coverage, per track group.
+        # cov_per_group[group_name] is (n, OUTPUT_BINS*BIN_WIDTH); rows not
+        # in valid_idx are filled with NaN later.
         cov_per_group: dict[str, np.ndarray] = {}
         for group_name, track_ids, _sign in self._diagnostic_track_groups:
             cov_per_group[group_name] = np.full(
-                (n, OUTPUT_BINS), np.nan, dtype=np.float64
+                (n, out_len), np.nan, dtype=np.float64
             )
 
-        # Inference loop: for each batch, run forward_track_mean_binned
+        # Inference loop: for each batch, run forward_track_mean_perbase
         # once per track group. Encoding is shared.
         for bs in tqdm(
             range(0, len(contexts), self.batch_size),
@@ -237,14 +243,14 @@ class ShorkieHongPredictor(IGRInsertionExpressionPredictor):
                     track_ids, device=self.model.device, dtype=_torch.long,
                 )
                 with _torch.no_grad():
-                    cov = self.model.forward_track_mean_binned(x, track_idx_t)
+                    cov = self.model.forward_track_mean_perbase(x, track_idx_t)
                 arr = cov.cpu().numpy()
                 for j, (row_idx, _ctx) in enumerate(batch):
                     cov_per_group[group_name][row_idx] = arr[j]
 
-        readouts = aggregate_diagnostic_readouts(
+        readouts = aggregate_diagnostic_base_readouts(
             cov_per_group, contexts, self._diagnostic_track_groups,
-            n, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+            n, CROP_BP_EACH_SIDE, out_len,
         )
         # Primary alias: shares the same per-locus bins as
         # predict_expressions by construction.

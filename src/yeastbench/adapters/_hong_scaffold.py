@@ -86,10 +86,13 @@ class HongLocus:
 
 @dataclass(frozen=True)
 class HongInsertionContext:
-    """One model-input window for a Hong locus."""
+    """One model-input window for a Hong locus. ``mcherry_bins`` is the
+    binned readout; ``mcherry_base_positions`` is the per-base analogue
+    (for per-base, untransformed scoring)."""
     locus_id: str
     window_seq: str
     mcherry_bins: np.ndarray
+    mcherry_base_positions: np.ndarray
     locus: HongLocus
     up_avail: int
     window_start_in_spliced: int
@@ -130,16 +133,33 @@ def build_insertion_context(
     )
     if ctx is None:
         return None
+    # Per-base positions of the mCherry CDS in the cropped output. Derived
+    # here (not in the shared cassette scaffold) so this conversion leaves
+    # _cassette_scaffold.py untouched and independent of the Wu change.
+    mcherry_base_positions = _mcherry_base_positions(
+        ctx.readout_start_in_window, crop_bp_each_side, output_bins * bin_width
+    )
     return HongInsertionContext(
         locus_id=locus.locus_id,
         window_seq=ctx.window_seq,
         mcherry_bins=ctx.readout_bins,
+        mcherry_base_positions=mcherry_base_positions,
         locus=locus,
         up_avail=ctx.up_avail,
         window_start_in_spliced=ctx.window_start_in_spliced,
         payload_start_in_window=ctx.payload_start_in_window,
         mcherry_start_in_window=ctx.readout_start_in_window,
     )
+
+
+def _mcherry_base_positions(
+    mcherry_start_in_window: int, crop_bp_each_side: int, out_len: int
+) -> np.ndarray:
+    """Per-base positions in ``[0, out_len)`` covering the mCherry CDS.
+    ``mcherry_start_in_window`` is 0-based, so no ``-1`` offset."""
+    lo = max(0, mcherry_start_in_window - crop_bp_each_side)
+    hi = min(out_len, mcherry_start_in_window + MCHERRY_CDS_LEN - crop_bp_each_side)
+    return np.arange(lo, hi, dtype=np.int64) if hi > lo else np.array([], dtype=np.int64)
 
 
 # ── Diagnostic-B readout regions ──────────────────────────────
@@ -160,27 +180,49 @@ DIAGNOSTIC_REGION_NAMES: tuple[str, ...] = (
 )
 
 
+def _region_spans_bp(
+    ctx: HongInsertionContext,
+) -> dict[str, list[tuple[int, int]]]:
+    """Window-coordinate bp spans for each named readout region — the one
+    source of region geometry, shared by the bin and per-base helpers so
+    they cannot drift. Window positions are derived from the context's
+    payload placement: the cassette occupies ``[payload_start_in_window,
+    +PAYLOAD_LEN]`` and the mCherry CDS ``[mcherry_start_in_window,
+    +MCHERRY_CDS_LEN]``; flanks are the adjacent native sequence."""
+    cassette_lo = ctx.payload_start_in_window
+    cassette_hi = ctx.payload_start_in_window + PAYLOAD_LEN
+    mcherry_lo = ctx.mcherry_start_in_window
+    mcherry_hi = ctx.mcherry_start_in_window + MCHERRY_CDS_LEN
+    return {
+        "cassette CDS":   [(mcherry_lo, mcherry_hi)],
+        "cassette full":  [(cassette_lo, cassette_hi)],
+        "flank L 1kb":    [(cassette_lo - 1000, cassette_lo)],
+        "flank R 1kb":    [(cassette_hi, cassette_hi + 1000)],
+        "flank both 1kb": [(cassette_lo - 1000, cassette_lo),
+                           (cassette_hi, cassette_hi + 1000)],
+        "flank both 3kb": [(cassette_lo - 3000, cassette_lo),
+                           (cassette_hi, cassette_hi + 3000)],
+    }
+
+
+def _spans_to_indices(
+    spans: list[tuple[int, int]], to_idx
+) -> np.ndarray:
+    """Map bp spans → output-index array via ``to_idx(lo_bp, hi_bp)``,
+    unioning multiple spans (e.g. the two-sided flank regions)."""
+    combined = to_idx(*spans[0])
+    for lo, hi in spans[1:]:
+        combined = np.union1d(combined, to_idx(lo, hi))
+    return combined
+
+
 def readout_region_bins(
     ctx: HongInsertionContext,
     crop_bp_each_side: int,
     bin_width: int,
     output_bins: int,
 ) -> dict[str, np.ndarray]:
-    """Compute the output-bin indices for each named readout region,
-    given an insertion context. Window positions are derived from the
-    context's payload placement.
-
-    The cassette occupies window positions ``[ctx.payload_start_in_window,
-    ctx.payload_start_in_window + PAYLOAD_LEN]`` and the mCherry CDS
-    sits at ``[ctx.mcherry_start_in_window,
-    ctx.mcherry_start_in_window + MCHERRY_CDS_LEN]``. The flank regions
-    are immediately adjacent native sequence on each side, of the
-    requested length.
-    """
-    cassette_lo = ctx.payload_start_in_window
-    cassette_hi = ctx.payload_start_in_window + PAYLOAD_LEN
-    mcherry_lo = ctx.mcherry_start_in_window
-    mcherry_hi = ctx.mcherry_start_in_window + MCHERRY_CDS_LEN
+    """Output-bin indices for each named readout region (binned scale)."""
 
     def _bins(lo_bp: int, hi_bp: int) -> np.ndarray:
         b_lo = max(0, (lo_bp - crop_bp_each_side) // bin_width)
@@ -192,18 +234,65 @@ def readout_region_bins(
             [], dtype=np.int64
         )
 
-    flank_l_1kb = _bins(cassette_lo - 1000, cassette_lo)
-    flank_r_1kb = _bins(cassette_hi, cassette_hi + 1000)
-    flank_l_3kb = _bins(cassette_lo - 3000, cassette_lo)
-    flank_r_3kb = _bins(cassette_hi, cassette_hi + 3000)
     return {
-        "cassette CDS":    _bins(mcherry_lo, mcherry_hi),
-        "cassette full":   _bins(cassette_lo, cassette_hi),
-        "flank L 1kb":     flank_l_1kb,
-        "flank R 1kb":     flank_r_1kb,
-        "flank both 1kb":  np.union1d(flank_l_1kb, flank_r_1kb),
-        "flank both 3kb":  np.union1d(flank_l_3kb, flank_r_3kb),
+        name: _spans_to_indices(spans, _bins)
+        for name, spans in _region_spans_bp(ctx).items()
     }
+
+
+def readout_region_base_positions(
+    ctx: HongInsertionContext,
+    crop_bp_each_side: int,
+    out_len: int,
+) -> dict[str, np.ndarray]:
+    """Per-base analogue of :func:`readout_region_bins`: exact base
+    positions in ``[0, out_len)`` for each readout region. ``out_len`` is
+    ``output_bins * bin_width``; window positions are 0-based so there is
+    no ``-1`` offset."""
+
+    def _bases(lo_bp: int, hi_bp: int) -> np.ndarray:
+        lo = max(0, lo_bp - crop_bp_each_side)
+        hi = min(out_len, hi_bp - crop_bp_each_side)
+        return np.arange(lo, hi, dtype=np.int64) if hi > lo else np.array(
+            [], dtype=np.int64
+        )
+
+    return {
+        name: _spans_to_indices(spans, _bases)
+        for name, spans in _region_spans_bp(ctx).items()
+    }
+
+
+def _aggregate_diagnostic(
+    region_fn,
+    group_cov: dict[str, np.ndarray],
+    contexts: Sequence[tuple[int, "HongInsertionContext"]],
+    track_groups: Iterable[tuple[str, object, int]],
+    n: int,
+) -> dict[str, np.ndarray]:
+    """Shared core: sum per-locus coverage over each named readout region,
+    per track group, with biological sign applied. ``region_fn(ctx)``
+    yields ``{region_name: index_array}`` and is computed from *each
+    locus's own context* — required when a locus's window is clamped
+    against a chromosome end (the cassette is no longer at the window
+    midpoint, so a shared index set would land on native sequence)."""
+    readouts: dict[str, np.ndarray] = {
+        f"{group_name} × {region_name}": np.full(n, np.nan, dtype=np.float64)
+        for group_name in group_cov
+        for region_name in DIAGNOSTIC_REGION_NAMES
+    }
+    for row_idx, ctx in contexts:
+        regions = region_fn(ctx)
+        for group_name, _idx, sign in track_groups:
+            if group_name not in group_cov:
+                continue
+            cov_row = group_cov[group_name][row_idx]
+            for region_name, idx in regions.items():
+                if len(idx) > 0:
+                    readouts[f"{group_name} × {region_name}"][row_idx] = float(
+                        sign * cov_row[idx].sum()
+                    )
+    return readouts
 
 
 def aggregate_diagnostic_readouts(
@@ -215,32 +304,29 @@ def aggregate_diagnostic_readouts(
     bin_width: int,
     output_bins: int,
 ) -> dict[str, np.ndarray]:
-    """Sum per-locus coverage over each named readout region, per track
-    group, with biological sign applied. Region bins are computed from
-    *each locus's own context* — required for correctness when a locus's
-    window is clamped against a chromosome end (the cassette is no
-    longer at the window midpoint, so a shared bin set would land on
-    native sequence instead of the cassette).
-    """
-    readouts: dict[str, np.ndarray] = {
-        f"{group_name} × {region_name}": np.full(n, np.nan, dtype=np.float64)
-        for group_name in group_cov
-        for region_name in DIAGNOSTIC_REGION_NAMES
-    }
-    for row_idx, ctx in contexts:
-        region_bins = readout_region_bins(
-            ctx, crop_bp_each_side, bin_width, output_bins,
-        )
-        for group_name, _idx, sign in track_groups:
-            if group_name not in group_cov:
-                continue
-            cov_row = group_cov[group_name][row_idx]
-            for region_name, bins in region_bins.items():
-                if len(bins) > 0:
-                    readouts[f"{group_name} × {region_name}"][row_idx] = float(
-                        sign * cov_row[bins].sum()
-                    )
-    return readouts
+    """Binned-scale diagnostic aggregation (see :func:`_aggregate_diagnostic`)."""
+    return _aggregate_diagnostic(
+        lambda ctx: readout_region_bins(
+            ctx, crop_bp_each_side, bin_width, output_bins
+        ),
+        group_cov, contexts, track_groups, n,
+    )
+
+
+def aggregate_diagnostic_base_readouts(
+    group_cov: dict[str, np.ndarray],
+    contexts: Sequence[tuple[int, "HongInsertionContext"]],
+    track_groups: Iterable[tuple[str, object, int]],
+    n: int,
+    crop_bp_each_side: int,
+    out_len: int,
+) -> dict[str, np.ndarray]:
+    """Per-base diagnostic aggregation: ``group_cov`` rows are per-base
+    (length ``out_len``) and regions are exact base positions."""
+    return _aggregate_diagnostic(
+        lambda ctx: readout_region_base_positions(ctx, crop_bp_each_side, out_len),
+        group_cov, contexts, track_groups, n,
+    )
 
 
 __all__ = [
@@ -253,7 +339,9 @@ __all__ = [
     "DIAGNOSTIC_REGION_NAMES",
     "load_cassette_payload",
     "readout_region_bins",
+    "readout_region_base_positions",
     "aggregate_diagnostic_readouts",
+    "aggregate_diagnostic_base_readouts",
     "HongLocus",
     "HongInsertionContext",
     "build_insertion_context",

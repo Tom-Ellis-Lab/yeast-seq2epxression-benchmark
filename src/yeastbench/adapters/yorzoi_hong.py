@@ -35,7 +35,7 @@ from yeastbench.adapters._hong_scaffold import (
     DEFAULT_CASSETTE_FASTA,
     HongInsertionContext,
     HongLocus,
-    aggregate_diagnostic_readouts,
+    aggregate_diagnostic_base_readouts,
     build_insertion_context,
     load_cassette_payload,
 )
@@ -173,12 +173,17 @@ class YorzoiHongPredictor(IGRInsertionExpressionPredictor):
                 ])
             ).to(self.model.device)
             with _torch.no_grad():
-                pred = self.model.forward_tracks_binned(x).float()  # (B, 162, bins)
+                # Per-base raw counts: the Borzoi inverse is applied per pass
+                # before RC-averaging inside the wrapper, then unbinned.
+                perbase = self.model.forward_tracks_perbase(x)  # (B, 162, 3000)
             for j, (row_idx, ctx) in enumerate(batch):
-                bins_t = _torch.as_tensor(
-                    ctx.mcherry_bins, device=self.model.device, dtype=_torch.long
+                base_idx = ctx.mcherry_base_positions
+                if base_idx.size == 0:
+                    continue  # readout outside the crop → leave score NaN
+                base_t = _torch.as_tensor(
+                    base_idx, device=self.model.device, dtype=_torch.long
                 )
-                per_track = pred[j].index_select(1, bins_t).sum(dim=1)  # (162,)
+                per_track = perbase[j].index_select(1, base_t).sum(dim=1)  # (162,)
                 scores[row_idx] = float(
                     per_track[YORZOI_PLUS_TRACK_START:YORZOI_PLUS_TRACK_END].mean().item()
                 )
@@ -202,8 +207,10 @@ class YorzoiHongPredictor(IGRInsertionExpressionPredictor):
         contexts, valid_idx = self._build_contexts(loci)
         n = len(loci)
 
-        # Run inference once with all + tracks, retain full (n, OUT, 81).
-        full_cov = np.full((n, OUTPUT_BINS, 81), np.nan, dtype=np.float32)
+        # Run inference once with all + tracks, retain full per-base
+        # (n, OUTPUT_BINS*BIN_WIDTH, 81) raw counts.
+        out_len = OUTPUT_BINS * BIN_WIDTH
+        full_cov = np.full((n, out_len, 81), np.nan, dtype=np.float32)
         for bs in tqdm(
             range(0, len(contexts), self.batch_size),
             desc="Yorzoi Hong (diagnostic)",
@@ -216,8 +223,8 @@ class YorzoiHongPredictor(IGRInsertionExpressionPredictor):
                 ])
             ).to(self.model.device)
             with _torch.no_grad():
-                pred = self.model.forward_tracks_binned(x).float()  # (B, 162, bins)
-            plus_only = pred[:, :81, :].permute(0, 2, 1).cpu().numpy()  # (B, bins, 81)
+                perbase = self.model.forward_tracks_perbase(x)  # (B, 162, 3000)
+            plus_only = perbase[:, :81, :].permute(0, 2, 1).cpu().numpy()  # (B, 3000, 81)
             for j, (row_idx, _ctx) in enumerate(batch):
                 full_cov[row_idx] = plus_only[j]
 
@@ -225,10 +232,11 @@ class YorzoiHongPredictor(IGRInsertionExpressionPredictor):
         for group_name, idx, _sign in self._diagnostic_track_groups:
             if not idx:
                 continue
+            # Cross-track mean on raw per-base counts.
             group_cov[group_name] = full_cov[:, :, idx].mean(axis=2)
-        readouts = aggregate_diagnostic_readouts(
+        readouts = aggregate_diagnostic_base_readouts(
             group_cov, contexts, self._diagnostic_track_groups,
-            n, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+            n, CROP_BP_EACH_SIDE, out_len,
         )
         readouts["primary"] = readouts[PRIMARY_READOUT_NAME]
         return readouts

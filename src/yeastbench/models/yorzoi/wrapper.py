@@ -39,6 +39,26 @@ PLUS_TRACK_IDS: list[int] = list(range(0, 81))
 MINUS_TRACK_IDS: list[int] = list(range(81, 162))
 
 
+def _borzoi_transform_inv(y: "torch.Tensor") -> "torch.Tensor":
+    """Local port of ``yorzoi.utils._borzoi_transform_inv`` (per element).
+
+    Inverts the no-scale Borzoi target transform the model was trained
+    with (``yorzoi/dataset.py`` applies ``_borzoi_transform``, no
+    ``track_scale``). NB: this is *not* ``undo_squashed_scale`` — that
+    Borzoi-inherited path assumes ``track_scale=0.01`` and does not match
+    this model's targets."""
+    import torch as _torch
+
+    expd = _torch.where(y <= 384.0, y, 384.0 + _torch.pow(y - 384.0, 2.0))
+    return _torch.pow(_torch.clamp(expd, min=0.0), 1.0 / 0.75)
+
+
+def _unbin_per_base(binned: "torch.Tensor", bin_width: int) -> "torch.Tensor":
+    """Spread each bin total over its ``bin_width`` bases (÷ width, repeat)
+    along the last axis. Summing a base interval recovers the bin total."""
+    return binned.repeat_interleave(bin_width, dim=-1) / float(bin_width)
+
+
 class Yorzoi:
     """Benchmark-side wrapper around `yorzoi.model.borzoi.Borzoi`."""
 
@@ -115,3 +135,28 @@ class Yorzoi:
             out_rc = self.model(x_rc)
         out_rc_aligned = out_rc.index_select(1, self._full_swap_idx).flip(dims=[2])
         return 0.5 * (out_fwd + out_rc_aligned)
+
+    def forward_tracks_perbase(self, x: "torch.Tensor") -> "torch.Tensor":
+        """Per-base, per-track **raw** predicted counts:
+        ``(B, 162, OUTPUT_BINS * BIN_WIDTH)``.
+
+        Inverts the Borzoi transform on **each forward pass before**
+        RC-averaging — the inverse is nonlinear, so it must precede every
+        downstream mean (RC, track, …); see ``untransform_then_unbin`` in
+        the Yorzoi source. Then unbins 10 bp → per-base. Adapters do
+        track aggregation and base sums on these raw counts.
+        """
+        with self._autocast_ctx():
+            out_fwd = self.model(x)
+        raw_fwd = _borzoi_transform_inv(out_fwd.float())
+        if not self.use_rc:
+            return _unbin_per_base(raw_fwd, BIN_WIDTH)
+        x_rc = x.flip(dims=[1, 2])
+        with self._autocast_ctx():
+            out_rc = self.model(x_rc)
+        # Invert before align/average. The per-element inverse commutes
+        # with the strand-swap reindex and the bin flip.
+        raw_rc = _borzoi_transform_inv(out_rc.float())
+        raw_rc_aligned = raw_rc.index_select(1, self._full_swap_idx).flip(dims=[2])
+        raw = 0.5 * (raw_fwd + raw_rc_aligned)
+        return _unbin_per_base(raw, BIN_WIDTH)

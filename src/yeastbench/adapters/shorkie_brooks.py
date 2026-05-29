@@ -30,7 +30,6 @@ import numpy as np
 
 from yeastbench.adapters._genome import one_hot_encode_channels_first
 from yeastbench.adapters._shorkie_constants import (
-    BIN_WIDTH,
     CROP_BP_EACH_SIDE,
     SEQ_LEN,
     SHORKIE_T0_RNA_SEQ_TRACK_IDS,
@@ -39,14 +38,6 @@ from yeastbench.adapters.protocols import CoverageTrackPredictor
 from yeastbench.models.shorkie import Shorkie
 
 log = logging.getLogger(__name__)
-
-
-def _unbin_per_base(binned: np.ndarray, bin_width: int) -> np.ndarray:
-    """Spread per-bin totals back to per-base (each bin's total /
-    bin_width, repeated bin_width times). Sum over a CDS interval on
-    the per-base vector matches the bin-level sum that the model
-    actually outputs."""
-    return np.repeat(binned, bin_width) / float(bin_width)
 
 
 class ShorkieBrooksPredictor(CoverageTrackPredictor):
@@ -124,12 +115,8 @@ class ShorkieBrooksPredictor(CoverageTrackPredictor):
         )
 
         with _torch.no_grad():
-            # (B, OUTPUT_BINS) — ensemble + RC + track-mean (Pattern B:
-            # per-fold track mean folded into the ensemble accumulator).
-            acc = self.model.forward_track_mean_binned(x, track_idx_t)
-
-        binned = acc.cpu().numpy()                          # (B, OUTPUT_BINS)
-        return np.stack(
-            [_unbin_per_base(binned[i], BIN_WIDTH) for i in range(B)],
-            axis=0,
-        )                                                   # (B, 14336)
+            # (B, 14336) — ensemble + RC + track-mean, then 16 bp → per-base
+            # unbin in the wrapper (Shorkie's softplus head is raw counts, so
+            # no inverse transform; order is irrelevant — all linear).
+            perbase = self.model.forward_track_mean_perbase(x, track_idx_t)
+        return perbase.cpu().numpy()                        # (B, 14336)

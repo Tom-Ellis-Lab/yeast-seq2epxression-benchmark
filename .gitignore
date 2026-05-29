@@ -214,6 +214,8 @@ archive/*
 notebooks/*
 papers/*
 
-# Vendored reference repos (large, have their own .git; not part of this repo)
-shorkie-paper/
-yorzoi/
+# Vendored reference repos (large, have their own .git; not part of this repo).
+# Anchored to repo root so they don't match the src/yeastbench/models/yorzoi
+# package directory.
+/shorkie-paper/
+/yorzoi/

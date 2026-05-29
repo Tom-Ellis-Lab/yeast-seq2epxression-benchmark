@@ -151,3 +151,68 @@ def test_brooks_track_mean_is_on_raw_counts():
     expected_bin_total = float(plus_raws.mean())  # 1010
     got = float(out[0, :Y_BIN].sum())
     assert abs(got - expected_bin_total) < 1.0, (got, expected_bin_total)
+
+
+# ── Chen marginalized per-base CDS readout ────────────────────
+
+
+class _StubPerbaseChenModel:
+    """Stand-in for the model wrapper exposing the per-base forwards the
+    Chen adapters call. Base position ``p`` carries value ``p`` on every
+    track, so a CDS base-sum is a known arithmetic series and the strand-
+    matched track mean (Yorzoi) is trivial to predict."""
+
+    def __init__(self, out_len, n_tracks=N_TRACKS_TOTAL):
+        self.device = torch.device("cpu")
+        self._ol = out_len
+        self._nt = n_tracks
+
+    def forward_tracks_perbase(self, x):  # Yorzoi path
+        base = torch.arange(self._ol, dtype=torch.float32)
+        return base[None, None, :].expand(x.shape[0], self._nt, self._ol).contiguous()
+
+    def forward_track_mean_perbase(self, x, track_subset):  # Shorkie path
+        base = torch.arange(self._ol, dtype=torch.float32)
+        return base[None, :].expand(x.shape[0], self._ol).contiguous()
+
+
+def _fake_chen_ctx(cds_base_lo, cds_base_hi):
+    from yeastbench.adapters._chen_marginalized import ChenHostContext, HostMeta
+
+    host = HostMeta(
+        gene_id="G", gene_name="G", chrom="I", strand="+",
+        cds_start=1, cds_end=2, tier="high", dee2_tpm=1.0,
+    )
+    return ChenHostContext(
+        host=host, window_start=0, seq_len=10, window_seq="",
+        cds_bin_lo=0, cds_bin_hi=1, cds_base_lo=cds_base_lo, cds_base_hi=cds_base_hi,
+        var_start_in_window=0, var_needs_revcomp=False,
+    )
+
+
+def test_yorzoi_chen_exon_sums_on_raw_base_positions():
+    """YorzoiChenPredictor._predict_exon_sums reads forward_tracks_perbase,
+    sums the CDS base positions, then means strand-matched tracks — all on
+    raw counts (inverse applied upstream in the wrapper)."""
+    from yeastbench.adapters.yorzoi_chen_marginalized import YorzoiChenPredictor
+
+    out_len = Y_OUT_BINS * Y_BIN
+    pred = YorzoiChenPredictor.__new__(YorzoiChenPredictor)  # skip model/data wiring
+    pred.model = _StubPerbaseChenModel(out_len)
+    pred.contexts = [_fake_chen_ctx(10, 25)]  # 15 CDS bases
+    pred._track_slices = [(0, N_PLUS_TRACKS)]
+    sums = pred._predict_exon_sums(torch.zeros(1, Y_SEQ_LEN, 4))
+    assert float(sums[0]) == pytest.approx(float(sum(range(10, 25))))
+
+
+def test_shorkie_chen_exon_sums_on_raw_base_positions():
+    from yeastbench.adapters.shorkie_chen_marginalized import ShorkieChenPredictor
+    from yeastbench.models.shorkie.wrapper import BIN_WIDTH as S_BIN, OUTPUT_BINS as S_OB
+
+    out_len = S_OB * S_BIN
+    pred = ShorkieChenPredictor.__new__(ShorkieChenPredictor)
+    pred.model = _StubPerbaseChenModel(out_len)
+    pred._track_idx_gpu = torch.tensor([0, 1], dtype=torch.long)
+    pred.contexts = [_fake_chen_ctx(10, 25)]
+    sums = pred._predict_exon_sums(torch.zeros(1, 4, pred.model._ol))
+    assert float(sums[0]) == pytest.approx(float(sum(range(10, 25))))

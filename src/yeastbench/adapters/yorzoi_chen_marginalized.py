@@ -122,14 +122,17 @@ class YorzoiChenPredictor(LocalCodingVariantPredictor):
             raise ValueError(f"batch size {B} must be a multiple of n_hosts={n}")
 
         with _torch.no_grad():
-            pred = self.model.forward_tracks_binned(batch_oh).float()  # (B, 162, OUT_BINS)
+            # Per-base raw counts: the Borzoi inverse is applied per pass
+            # before RC-averaging inside the wrapper, then unbinned.
+            pred = self.model.forward_tracks_perbase(batch_oh)  # (B, 162, OUT_BINS*BIN_WIDTH)
 
         out = _torch.zeros(B, device=pred.device, dtype=pred.dtype)
         for h, ctx in enumerate(self.contexts):
             ts, te = self._track_slices[h]
             rows = _torch.arange(h, B, n, device=pred.device)
-            # Sum over CDS bins, mean across strand-matched tracks.
-            cds = pred[rows][:, ts:te, ctx.cds_bin_lo:ctx.cds_bin_hi].sum(dim=2)  # (R, 81)
+            # Sum over CDS base positions, mean across strand-matched tracks
+            # (raw counts; the nonlinear inverse already applied upstream).
+            cds = pred[rows][:, ts:te, ctx.cds_base_lo:ctx.cds_base_hi].sum(dim=2)  # (R, 81)
             out[rows] = cds.mean(dim=1)
         return out
 

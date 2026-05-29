@@ -225,6 +225,8 @@ class ChenHostContext:
     window_seq: str                  # the actual modified chrom slice, length seq_len
     cds_bin_lo: int                  # output bin (closed) — variant CDS
     cds_bin_hi: int                  # output bin (open)
+    cds_base_lo: int                 # output base position (closed) — variant CDS
+    cds_base_hi: int                 # output base position (open)
     var_start_in_window: int         # +strand position of the 36-nt variable block
     var_needs_revcomp: bool          # True if the host is − strand → alt block must be revcomp'd
 
@@ -337,6 +339,10 @@ def build_host_contexts(
             raise RuntimeError(
                 f"host {host.gene_name}: cassette CDS produces no output bins"
             )
+        # Exact per-base CDS span in the cropped output (same base_start_bp
+        # as the bin calc; contiguous because the cassette CDS is one span).
+        base_lo = max(0, cds_lo_pos - bin_start_bp)
+        base_hi = min(output_bins * bin_width, cds_hi_pos - bin_start_bp)
 
         window_seq = modified[window_start : window_start + seq_len]
         contexts.append(ChenHostContext(
@@ -346,6 +352,8 @@ def build_host_contexts(
             window_seq=window_seq,
             cds_bin_lo=int(bin_lo),
             cds_bin_hi=int(bin_hi),
+            cds_base_lo=int(base_lo),
+            cds_base_hi=int(base_hi),
             var_start_in_window=int(var_start_in_window),
             var_needs_revcomp=var_needs_revcomp,
         ))

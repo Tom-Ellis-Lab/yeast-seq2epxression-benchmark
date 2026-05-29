@@ -15,9 +15,11 @@ from yeastbench.adapters._hong_scaffold import (
     MCHERRY_CDS_START_IN_PAYLOAD,
     PAYLOAD_LEN,
     HongLocus,
+    aggregate_diagnostic_base_readouts,
     aggregate_diagnostic_readouts,
     build_insertion_context,
     load_cassette_payload,
+    readout_region_base_positions,
     readout_region_bins,
 )
 from yeastbench.adapters.protocols import IGRInsertionExpressionPredictor
@@ -287,6 +289,159 @@ class TestAggregateDiagnosticReadouts:
         )
         for region_name in DIAGNOSTIC_REGION_NAMES:
             assert f"G × {region_name}" in readouts
+
+
+# ── Per-base (untransformed) readout ──────────────────────────
+
+
+class _StubPerbaseModel:
+    """Stand-in for the model wrapper exposing the per-base forwards the
+    Hong adapters call. Base position ``p`` carries value ``p`` on every
+    track, so a base-sum over a region is a known arithmetic series and the
+    cross-track mean (Yorzoi) is trivial to predict."""
+
+    def __init__(self, out_len: int, n_tracks: int = 162):
+        import torch
+
+        self.device = torch.device("cpu")
+        self._ol = out_len
+        self._nt = n_tracks
+
+    def forward_tracks_perbase(self, x):  # Yorzoi path
+        import torch
+
+        base = torch.arange(self._ol, dtype=torch.float32)
+        return base[None, None, :].expand(x.shape[0], self._nt, self._ol).contiguous()
+
+    def forward_track_mean_perbase(self, x, track_subset):  # Shorkie path
+        import torch
+
+        base = torch.arange(self._ol, dtype=torch.float32)
+        return base[None, :].expand(x.shape[0], self._ol).contiguous()
+
+
+def _write_mini_genome_path(tmp_path: Path) -> Path:
+    rng = np.random.default_rng(0)
+    chrom = "".join(rng.choice(list("ACGT"), 60_000))
+    fa = tmp_path / "mini.fa"
+    fa.write_text(">I\n" + "\n".join(chrom[i : i + 60] for i in range(0, len(chrom), 60)) + "\n")
+    pysam.faidx(str(fa))
+    return fa
+
+
+class TestHongPerBaseReadout:
+    PARAMS = dict(
+        seq_len=16384, crop_bp_each_side=1024, bin_width=16, output_bins=896
+    )
+
+    def test_mcherry_base_positions_are_exact_cds_span(self, mini_genome):
+        payload = load_cassette_payload(REAL_CASSETTE)
+        ctx = build_insertion_context(
+            HongLocus("c", "IntTrain", "I", 30_000), payload, mini_genome, **self.PARAMS,
+        )
+        assert ctx is not None
+        # centered cassette → CDS fully inside the crop → exactly RFP_CDS_LEN
+        assert ctx.mcherry_base_positions.size == MCHERRY_CDS_LEN
+        # contiguous span starting at mcherry_start_in_window - crop
+        lo = ctx.mcherry_start_in_window - self.PARAMS["crop_bp_each_side"]
+        np.testing.assert_array_equal(
+            ctx.mcherry_base_positions, np.arange(lo, lo + MCHERRY_CDS_LEN)
+        )
+
+    def test_base_readout_tighter_than_bins(self, mini_genome):
+        payload = load_cassette_payload(REAL_CASSETTE)
+        ctx = build_insertion_context(
+            HongLocus("c", "IntTrain", "I", 30_000), payload, mini_genome, **self.PARAMS,
+        )
+        assert ctx is not None
+        # 711 is not a multiple of 16, so the whole-bin footprint overhangs.
+        assert ctx.mcherry_base_positions.size == MCHERRY_CDS_LEN
+        assert ctx.mcherry_bins.size * self.PARAMS["bin_width"] > MCHERRY_CDS_LEN
+
+    def test_region_base_positions_are_per_locus(self, mini_genome):
+        # Clamped (near-end) and centered loci put the cassette at different
+        # window offsets → different base positions (per-locus, not shared).
+        payload = load_cassette_payload(REAL_CASSETTE)
+        chrom_len = mini_genome.get_reference_length("I")
+        centered = build_insertion_context(
+            HongLocus("c", "IntTrain", "I", 30_000), payload, mini_genome, **self.PARAMS,
+        )
+        near_end = build_insertion_context(
+            HongLocus("e", "IntProp", "I", chrom_len - 4_000), payload, mini_genome, **self.PARAMS,
+        )
+        assert centered is not None and near_end is not None
+        out_len = self.PARAMS["output_bins"] * self.PARAMS["bin_width"]
+        rb_c = readout_region_base_positions(centered, self.PARAMS["crop_bp_each_side"], out_len)
+        rb_e = readout_region_base_positions(near_end, self.PARAMS["crop_bp_each_side"], out_len)
+        assert not np.array_equal(rb_c["cassette CDS"], rb_e["cassette CDS"])
+        # cassette CDS region == the context's mcherry base positions
+        np.testing.assert_array_equal(rb_c["cassette CDS"], centered.mcherry_base_positions)
+
+    def test_aggregate_base_readouts_per_locus(self, mini_genome):
+        # Base-path analogue of the IntProp5 per-locus regression.
+        payload = load_cassette_payload(REAL_CASSETTE)
+        chrom_len = mini_genome.get_reference_length("I")
+        centered = build_insertion_context(
+            HongLocus("c", "IntTrain", "I", 30_000), payload, mini_genome, **self.PARAMS,
+        )
+        near_end = build_insertion_context(
+            HongLocus("e", "IntProp", "I", chrom_len - 4_000), payload, mini_genome, **self.PARAMS,
+        )
+        assert centered is not None and near_end is not None
+        out_len = self.PARAMS["output_bins"] * self.PARAMS["bin_width"]
+        cov = np.zeros((2, out_len), dtype=np.float64)
+        cov[0, centered.mcherry_base_positions] = 1.0
+        cov[1, near_end.mcherry_base_positions] = 1.0
+        readouts = aggregate_diagnostic_base_readouts(
+            {"G": cov}, [(0, centered), (1, near_end)], [("G", [0], +1)],
+            2, self.PARAMS["crop_bp_each_side"], out_len,
+        )
+        cds = readouts["G × cassette CDS"]
+        assert cds[0] == pytest.approx(float(centered.mcherry_base_positions.size))
+        assert cds[1] == pytest.approx(float(near_end.mcherry_base_positions.size))
+
+    def test_yorzoi_hong_sums_raw_base_positions(self, tmp_path):
+        pytest.importorskip("torch")
+        from yeastbench.adapters._yorzoi_constants import (
+            BIN_WIDTH, CROP_BP_EACH_SIDE, OUTPUT_BINS, SEQ_LEN,
+        )
+        from yeastbench.adapters.yorzoi_hong import YorzoiHongPredictor
+
+        fa = _write_mini_genome_path(tmp_path)
+        payload = load_cassette_payload(REAL_CASSETTE)
+        locus = HongLocus("c", "IntTrain", "I", 30_000)
+        ctx = build_insertion_context(
+            locus, payload, pysam.FastaFile(str(fa)),
+            SEQ_LEN, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+        )
+        model = _StubPerbaseModel(OUTPUT_BINS * BIN_WIDTH, n_tracks=162)
+        adapter = YorzoiHongPredictor(
+            model, fasta_path=fa, batch_size=4, track_annotation_path="/nonexistent",
+        )
+        out = adapter.predict_expressions([locus])
+        # all + tracks identical → mean == base-sum over mcherry base positions
+        assert out[0] == pytest.approx(float(ctx.mcherry_base_positions.sum()))
+
+    def test_shorkie_hong_sums_raw_base_positions(self, tmp_path):
+        pytest.importorskip("torch")
+        from yeastbench.adapters._shorkie_constants import (
+            BIN_WIDTH, CROP_BP_EACH_SIDE, OUTPUT_BINS, SEQ_LEN,
+        )
+        from yeastbench.adapters.shorkie_hong import ShorkieHongPredictor
+
+        fa = _write_mini_genome_path(tmp_path)
+        payload = load_cassette_payload(REAL_CASSETTE)
+        locus = HongLocus("c", "IntTrain", "I", 30_000)
+        ctx = build_insertion_context(
+            locus, payload, pysam.FastaFile(str(fa)),
+            SEQ_LEN, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+        )
+        model = _StubPerbaseModel(OUTPUT_BINS * BIN_WIDTH)
+        adapter = ShorkieHongPredictor(
+            model, fasta_path=fa, batch_size=4, targets_path="/nonexistent",
+        )
+        out = adapter.predict_expressions([locus])
+        assert out[0] == pytest.approx(float(ctx.mcherry_base_positions.sum()))
 
 
 # ── Top-k enrichment helper ───────────────────────────────────

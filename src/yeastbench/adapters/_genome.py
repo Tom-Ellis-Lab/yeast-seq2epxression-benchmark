@@ -139,3 +139,29 @@ def gene_exon_bins(
     if not out:
         return np.array([], dtype=np.int64)
     return np.array(sorted(out), dtype=np.int64)
+
+
+def gene_exon_base_positions(
+    gene: Gene,
+    window_start_0based: int,
+    crop_bp_each_side: int,
+    out_len: int,
+) -> np.ndarray:
+    """Per-base analogue of :func:`gene_exon_bins`: positions in
+    ``[0, out_len)`` of the cropped output window that fall inside any of
+    the gene's annotated exons. Used for per-base (untransformed) scoring,
+    where summing exact exon bases avoids the bin-boundary rounding that
+    :func:`gene_exon_bins` incurs when an exon edge lands mid-bin.
+
+    The cropped output covers genomic ``[window_start + crop, window_start
+    + crop + out_len)`` (0-based)."""
+    base_start_bp = window_start_0based + crop_bp_each_side
+    out: set[int] = set()
+    for ex_start, ex_end in gene.exons:
+        lo = max(0, (ex_start - 1) - base_start_bp)
+        hi = min(out_len, ex_end - base_start_bp)
+        if hi > lo:
+            out.update(range(lo, hi))
+    if not out:
+        return np.array([], dtype=np.int64)
+    return np.array(sorted(out), dtype=np.int64)

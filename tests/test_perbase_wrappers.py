@@ -60,6 +60,28 @@ def test_jensen_gap_motivates_order():
     assert abs(float(inv_of_mean) - 1005.0) > 1.0
 
 
+def test_gene_exon_base_positions():
+    from yeastbench.adapters._genome import Gene, gene_exon_base_positions
+
+    # Exon 1-based [101, 110]; window_start=0, crop=50 → cropped output covers
+    # genomic [50, 150); exon 0-based [100, 110) → output offsets [50, 60).
+    gene = Gene(
+        chrom_roman="I", strand="+", tss=101,
+        gene_start=101, gene_end=110, exons=((101, 110),),
+    )
+    base = gene_exon_base_positions(gene, 0, 50, 100)
+    assert base.tolist() == list(range(50, 60))
+
+    # Exon partially outside the crop is clamped; fully-outside exon drops.
+    gene2 = Gene(
+        chrom_roman="I", strand="+", tss=40, gene_start=40, gene_end=55,
+        exons=((40, 55), (200, 210)),
+    )
+    base2 = gene_exon_base_positions(gene2, 0, 50, 100)
+    # exon [39,55) → offsets [max(0,-11), 5) = [0,5); second exon out of range.
+    assert base2.tolist() == list(range(0, 5))
+
+
 def test_unbin_recovers_bin_total():
     binned = torch.tensor([[3.0, 10.0]])  # (1 track, 2 bins)
     per_base = _unbin_per_base(binned, 4)  # (1, 8)

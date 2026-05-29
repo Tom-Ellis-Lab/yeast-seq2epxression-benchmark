@@ -625,6 +625,25 @@ re-runs naturally on the corrected scale; expect:
 - Scalar magnitude predictions (DREAM YFP, Wu mCherry): can shift
   meaningfully.
 
+**Follow-up — investigate input-shift / bin-boundary sensitivity (Karollus
+et al., *Genome Biology* 2023, https://doi.org/10.1186/s13059-023-02899-9).**
+That benchmark of sequence-to-expression models cautions:
+
+> "Here it is important to note that many of these models are sensitive to
+> small changes in the input (e.g., small shifts), particularly if
+> regulatory elements fall directly on bin boundaries."
+
+The per-base unbin above removes the *readout-side* CDS-boundary rounding,
+but not the *model's own* sensitivity to where a regulatory element lands
+relative to its internal bins (Yorzoi 10 bp, Shorkie 16 bp). We should
+quantify this for our adapters: shift the model-input window (or the
+element within it) by a few bp so a TSS / motif / CDS edge crosses a bin
+boundary, and measure how much the prediction moves. If it moves
+materially, our `place_window` alignment could be a silent confounder, and
+a shift-averaging / jittered readout (or at least reporting prediction
+variance under small shifts) is worth adding. Relevant to every binned
+model in the suite.
+
 ## Documentation
 
 - [x] Spec per benchmark (`benchmarks/*.md`)

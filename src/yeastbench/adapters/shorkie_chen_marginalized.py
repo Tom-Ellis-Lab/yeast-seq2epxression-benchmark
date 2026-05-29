@@ -146,13 +146,15 @@ class ShorkieChenPredictor(LocalCodingVariantPredictor):
             raise ValueError(f"batch size {B} must be a multiple of n_hosts={n}")
 
         with _torch.no_grad():
-            cov = self.model.forward_track_mean_binned(batch_oh, self._track_idx_gpu)  # (B, OUT_BINS)
+            # (B, OUT_BINS*BIN_WIDTH) per-base raw counts (unbin-only;
+            # softplus head is already raw counts).
+            cov = self.model.forward_track_mean_perbase(batch_oh, self._track_idx_gpu)
 
         out = _torch.zeros(B, device=cov.device, dtype=cov.dtype)
-        # Could be vectorised but n_hosts is small; per-host bin slice is clearest.
+        # Could be vectorised but n_hosts is small; per-host base slice is clearest.
         for h, ctx in enumerate(self.contexts):
             mask_rows = _torch.arange(h, B, n, device=cov.device)
-            out[mask_rows] = cov[mask_rows, ctx.cds_bin_lo:ctx.cds_bin_hi].sum(dim=1)
+            out[mask_rows] = cov[mask_rows, ctx.cds_base_lo:ctx.cds_base_hi].sum(dim=1)
         return out
 
     def _splice_batch(

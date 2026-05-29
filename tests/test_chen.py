@@ -165,3 +165,9 @@ def test_marginalized_host_contexts_build_for_all_libraries():
         for c in contexts:
             assert c.cds_bin_hi > c.cds_bin_lo
             assert c.exon_bins.size > 0
+            # Per-base CDS span is non-empty and tighter than the rounded
+            # bin footprint (used by the per-base untransformed readout).
+            assert c.cds_base_hi > c.cds_base_lo
+            assert (c.cds_base_hi - c.cds_base_lo) <= (
+                c.cds_bin_hi - c.cds_bin_lo
+            ) * BIN_WIDTH

@@ -141,6 +141,42 @@ class TestBuildInsertionContext:
         rfp0 = len(payload) - RFP_CDS_START_IN_PAYLOAD - RFP_CDS_LEN
         assert ctx.window_seq[crop : crop + 30] == rc[rfp0 : rfp0 + 30]
 
+    def test_rfp_base_positions_are_exact_cds_span(self, mini_genome):
+        # Per-base readout: the mCherry CDS maps to exactly RFP_CDS_LEN
+        # contiguous base positions, clamped to the output crop. For a +
+        # strand locus the stop sits at the downstream crop edge, so the CDS
+        # base positions are the last RFP_CDS_LEN of the [0, out_len) output.
+        payload = load_cassette_payload(REAL_CASSETTE)
+        locus = WuLocus("G+", "I", "+", 30_000, 30_300)
+        ctx = build_insertion_context(locus, payload, mini_genome, **self.PARAMS)
+        assert ctx is not None
+        out_len = self.PARAMS["output_bins"] * self.PARAMS["bin_width"]  # 14336
+        assert ctx.rfp_base_positions.size == RFP_CDS_LEN  # 711, exact
+        np.testing.assert_array_equal(
+            ctx.rfp_base_positions, np.arange(out_len - RFP_CDS_LEN, out_len)
+        )
+
+    def test_base_readout_is_tighter_than_bin_readout(self, mini_genome):
+        # RFP_CDS_LEN (711) is not a multiple of bin_width (16), so the
+        # whole-bin readout overhangs the CDS edges: base count < bins*width.
+        payload = load_cassette_payload(REAL_CASSETTE)
+        locus = WuLocus("G+", "I", "+", 30_000, 30_300)
+        ctx = build_insertion_context(locus, payload, mini_genome, **self.PARAMS)
+        assert ctx is not None
+        bin_footprint = ctx.rfp_bins.size * self.PARAMS["bin_width"]
+        assert ctx.rfp_base_positions.size == RFP_CDS_LEN
+        assert bin_footprint > RFP_CDS_LEN  # bins round outward; bases are exact
+
+    def test_minus_strand_base_positions_match_bins_span(self, mini_genome):
+        # − strand: stop at the LEFT crop edge → CDS base positions start at 0.
+        payload = load_cassette_payload(REAL_CASSETTE)
+        locus = WuLocus("G-", "I", "-", 30_000, 30_300)
+        ctx = build_insertion_context(locus, payload, mini_genome, **self.PARAMS)
+        assert ctx is not None
+        np.testing.assert_array_equal(
+            ctx.rfp_base_positions, np.arange(0, RFP_CDS_LEN)
+        )
+
     def test_short_chromosome_returns_none(self, tmp_path):
         # Chromosome shorter than SEQ_LEN → native+payload can't fill a
         # full window even with all available flank.
@@ -156,6 +192,99 @@ class TestBuildInsertionContext:
         locus = WuLocus("Gshort", "I", "+", 2_000, 2_300)
         ctx = build_insertion_context(locus, payload, g, **self.PARAMS)
         assert ctx is None
+
+
+# ── Per-base adapter wiring (stub model, no GPU) ──────────────
+
+
+class _StubPerbaseModel:
+    """Minimal stand-in for the model wrapper exposing the per-base forwards
+    the Wu adapters call. Base position ``p`` carries value ``p`` on every
+    track, so a base-sum over the readout is a known arithmetic series and
+    the strand-matched track mean is trivial to predict."""
+
+    def __init__(self, out_len: int, n_tracks: int = 162):
+        import torch
+
+        self.device = torch.device("cpu")
+        self._ol = out_len
+        self._nt = n_tracks
+
+    def forward_tracks_perbase(self, x):  # Yorzoi path
+        import torch
+
+        base = torch.arange(self._ol, dtype=torch.float32)
+        return base[None, None, :].expand(x.shape[0], self._nt, self._ol).contiguous()
+
+    def forward_track_mean_perbase(self, x, track_subset):  # Shorkie path
+        import torch
+
+        base = torch.arange(self._ol, dtype=torch.float32)
+        return base[None, :].expand(x.shape[0], self._ol).contiguous()
+
+
+def _write_mini_genome(tmp_path: Path) -> Path:
+    rng = np.random.default_rng(0)
+    chrom = "".join(rng.choice(list("ACGT"), 60_000))
+    fa = tmp_path / "mini.fa"
+    fa.write_text(">I\n" + "\n".join(chrom[i : i + 60] for i in range(0, len(chrom), 60)) + "\n")
+    pysam.faidx(str(fa))
+    return fa
+
+
+def _write_mini_gtf(tmp_path: Path) -> Path:
+    gtf = tmp_path / "mini.gtf"
+    gtf.write_text(
+        'I\tsgd\tgene\t30000\t30300\t.\t+\t.\tgene_id "G+";\n'
+        'I\tsgd\texon\t30000\t30300\t.\t+\t.\tgene_id "G+";\n'
+    )
+    return gtf
+
+
+class TestWuPerBaseAdapter:
+    """The adapters call the per-base forward and read the cassette CDS by
+    base position; with an identity-per-position stub the score is the exact
+    sum of the readout base positions (raw counts, not transformed bins)."""
+
+    def test_yorzoi_wu_sums_raw_base_positions(self, tmp_path):
+        pytest.importorskip("torch")
+        from yeastbench.adapters._yorzoi_constants import (
+            BIN_WIDTH, CROP_BP_EACH_SIDE, OUTPUT_BINS, SEQ_LEN,
+        )
+        from yeastbench.adapters.yorzoi_wu import YorzoiWuPredictor
+
+        fa, gtf = _write_mini_genome(tmp_path), _write_mini_gtf(tmp_path)
+        payload = load_cassette_payload(REAL_CASSETTE)
+        locus = WuLocus("G+", "I", "+", 30_000, 30_300)
+        ctx = build_insertion_context(
+            locus, payload, pysam.FastaFile(str(fa)),
+            SEQ_LEN, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+        )
+        model = _StubPerbaseModel(OUTPUT_BINS * BIN_WIDTH, n_tracks=162)
+        adapter = YorzoiWuPredictor(model, fasta_path=fa, gtf_path=gtf, batch_size=4)
+        out = adapter.predict_expressions([locus])
+        assert out[0] == pytest.approx(float(ctx.rfp_base_positions.sum()))
+
+    def test_shorkie_wu_sums_raw_base_positions(self, tmp_path):
+        pytest.importorskip("torch")
+        from yeastbench.adapters._shorkie_constants import (
+            BIN_WIDTH, CROP_BP_EACH_SIDE, OUTPUT_BINS, SEQ_LEN,
+        )
+        from yeastbench.adapters.shorkie_wu import ShorkieWuPredictor
+
+        fa, gtf = _write_mini_genome(tmp_path), _write_mini_gtf(tmp_path)
+        payload = load_cassette_payload(REAL_CASSETTE)
+        locus = WuLocus("G+", "I", "+", 30_000, 30_300)
+        ctx = build_insertion_context(
+            locus, payload, pysam.FastaFile(str(fa)),
+            SEQ_LEN, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
+        )
+        model = _StubPerbaseModel(OUTPUT_BINS * BIN_WIDTH)
+        adapter = ShorkieWuPredictor(
+            model, fasta_path=fa, gtf_path=gtf, batch_size=4,
+        )
+        out = adapter.predict_expressions([locus])
+        assert out[0] == pytest.approx(float(ctx.rfp_base_positions.sum()))
 
 
 # ── Annotation helpers ────────────────────────────────────────

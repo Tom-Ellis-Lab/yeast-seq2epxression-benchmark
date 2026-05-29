@@ -103,12 +103,18 @@ class YorzoiWuPredictor(CassetteExpressionPredictor):
                 ])
             ).to(self.model.device)
             with _torch.no_grad():
-                pred = self.model.forward_tracks_binned(x).float()  # (B, 162, bins)
+                # Per-base raw counts per track: the Borzoi inverse is applied
+                # per pass before RC-averaging inside the wrapper, so the
+                # base-sum + track-mean below are on raw counts.
+                perbase = self.model.forward_tracks_perbase(x)  # (B, 162, 3000)
             for j, (row_idx, ctx, strand) in enumerate(batch):
-                bins_t = _torch.as_tensor(
-                    ctx.rfp_bins, device=self.model.device, dtype=_torch.long
+                base_idx = ctx.rfp_base_positions
+                if base_idx.size == 0:
+                    continue  # readout outside the crop → leave score NaN
+                base_t = _torch.as_tensor(
+                    base_idx, device=self.model.device, dtype=_torch.long
                 )
-                per_track = pred[j].index_select(1, bins_t).sum(dim=1)  # (162,)
+                per_track = perbase[j].index_select(1, base_t).sum(dim=1)  # (162,)
                 ts, te = (0, 81) if strand == "+" else (81, 162)
                 scores[row_idx] = float(per_track[ts:te].mean().item())
 

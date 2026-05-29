@@ -153,11 +153,12 @@ def resolve_loci(
 class WuInsertionContext:
     """Wu-named view over an ``InsertionContext`` — preserves the
     historical public fields (``gene_id``, ``rfp_bins``, ``locus``,
-    ``rfp_start_in_window``) so the Wu adapters/tests/scripts don't
-    need to change."""
+    ``rfp_start_in_window``) plus ``rfp_base_positions`` for per-base
+    (untransformed) scoring."""
     gene_id: str
     window_seq: str
     rfp_bins: np.ndarray
+    rfp_base_positions: np.ndarray  # per-base positions over the mCherry CDS
     locus: WuLocus
     up_avail: int
     window_start_in_spliced: int
@@ -203,6 +204,7 @@ def build_insertion_context(
         gene_id=locus.gene_id,
         window_seq=ctx.window_seq,
         rfp_bins=ctx.readout_bins,
+        rfp_base_positions=ctx.readout_base_positions,
         locus=locus,
         up_avail=ctx.up_avail,
         window_start_in_spliced=ctx.window_start_in_spliced,

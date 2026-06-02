@@ -1,11 +1,12 @@
 # Cuperus et al. — 5′-UTR MPRA expression (HIS3 reporter)
 
-> **Status:** implemented (pending GPU run). Benchmark class, scaffold,
-> Shorkie/Yorzoi adapters, and registry/config are in, and the construct is
-> pinned + verified. What remains is the GPU run to record headline numbers,
-> the marginalization-divergence check, and confirming the sign convention. v1
-> scores in the **natural HIS3 reporter context** — no marginalization (see
-> *Why no marginalization*).
+> **Status:** implemented; **v1 GPU run done (2026-06-02)** — see *Results*.
+> Headline: Shorkie clean-bucket Spearman **0.28**, Yorzoi **0.11**; both
+> metrics behaved as designed (per-bucket ρ climbs monotonically with depth for
+> Shorkie; metric 2 + the depth split show Shorkie carries genuine mRNA signal
+> while Yorzoi is near-noise on the clean data). Still open: the
+> single-`HIS3`-vs-marginalized divergence check. v1 scores in the **natural
+> HIS3 reporter context** — no marginalization (see *Why no marginalization*).
 
 ## At a glance
 
@@ -171,9 +172,44 @@ Carry as diagnostics; include only if metric 2 needs backup:
 - **uORF sign test** — is `g` lower for uORF-containing inserts than for matched non-uORF inserts? (Known NMD direction; no fitting.) A direct probe of the mRNA channel.
 - **Top/bottom-decile AUROC** — rank-only, robust to the noisy label tail.
 
-## Sign convention (verify empirically)
+## Results (v1 — 2026-06-02 GPU run)
 
-Higher `growth_rate` = better 5′-UTR = more His3 protein. A 5′-UTR that raises `HIS3` mRNA (e.g. by avoiding a uORF → less NMD) → higher `g`. Expected correlation: **positive**, but attenuated by the translation-only fraction the model can't see. Confirm the sign on the first run — the RNA-vs-translation indirection makes it less certain than for Rafi/Shalem.
+Both models scored zero-shot over the full library (489,348 random + 11,856 native) on one RTX A6000. Spearman is the headline (scale-free); the clean bucket is `t0 ≥ 101` (≈ the paper's top-5 %).
+
+| Spearman ρ | Shorkie | Yorzoi |
+| --- | ---: | ---: |
+| random — overall | 0.252 | 0.117 |
+| random — clean bucket (`t0 ≥ 101`) | **0.280** | 0.114 |
+| random — metric 2 partial (beyond Kozak) | 0.270 | 0.092 |
+| random — metric 2 incremental R² | 0.072 | 0.009 |
+| native — overall | 0.201 | 0.164 |
+| native — clean-bucket raw (`t0 ≥ 101`) | 0.373 | −0.010 |
+| native — metric 2 partial (clean) | **0.259** | **0.005** |
+| native — metric 2 incremental R² | 0.058 | 0.002 |
+
+Depth stratification — random-library Spearman ρ by `t0` bucket:
+
+| bucket | `t0` | n | Shorkie | Yorzoi |
+| --- | --- | ---: | ---: | ---: |
+| 1 | < 10 | 37,992 | 0.152 | 0.090 |
+| 2 | 10–29 | 120,288 | 0.240 | 0.120 |
+| 3 | 30–59 | 192,541 | 0.262 | 0.121 |
+| 4 | 60–100 | 113,859 | 0.276 | 0.115 |
+| 5 | ≥ 101 | 24,668 | **0.280** | 0.114 |
+
+1. **Shorkie ≫ Yorzoi** — ~2.5× the correlation on the clean random bucket (0.280 vs 0.114). A per-track-group check ruled out a Yorzoi readout artifact: all 81 plus-strand track groups (extra-chromosome strains, Illumina, JS Nanopore) give ρ ≈ 0.09–0.12, so the gap is genuine, not track selection.
+2. **Depth stratification validated.** Shorkie's per-bucket ρ climbs monotonically with read depth (0.152 → 0.280) exactly as predicted — the low-`t0` bucket is measurement-noise-limited, the clean bucket is the cleanest read, and it reproduces an independent 2k sanity sample (0.279) to three decimals. Yorzoi's is flat (~0.11–0.12): its signal sits near the noise floor everywhere.
+3. **Metric 2 + the depth split separate genuine signal from artifact.** On the clean random bucket both models' correlation survives residualizing out Kozak (Shorkie partial 0.270 vs raw 0.280; Yorzoi 0.092 vs 0.114) — neither wins via Kozak; Shorkie just has ~3× more real mRNA-channel signal. Native is starker: Shorkie's clean-bucket native correlation is strong and survives Kozak (raw ρ 0.37 → partial 0.26), while **Yorzoi has essentially no native signal on the clean bucket** (raw ρ ≈ 0, partial 0.005) — its all-depth native 0.164 *reverses* with read depth (0.164 → 0.108 at `t0 ≥ 10` → ≈ 0 at `t0 ≥ 101`), marking it a low-depth confound rather than expression signal. Net: Shorkie carries genuine 5′-UTR→mRNA signal on both libraries; Yorzoi does not on native.
+
+**Sign:** positive for both, as expected (higher predicted `HIS3` coverage → higher `growth_rate`).
+
+**Ceiling context.** Shorkie's clean-bucket ρ = 0.280 → r² ≈ 0.078, against the Cuperus CNN's R² = 0.62 on the same top-5 % split — so an mRNA-coverage model recovers ~12 % of the sequence-achievable variance, i.e. the RNA-visible (NMD / stability) slice of a protein-level assay, as the benchmark's framing predicts.
+
+Artifacts: `results/default/{shorkie,yorzoi}__cuperus_utr/` (per model) and `results/default/compare/` (cross-model). Mechanism breakdown — uORF effect, worked examples, the Shorkie/Yorzoi native contrast — in `notebooks/cuperus_predictions.ipynb` (generator: `scripts/cuperus/build_predictions_notebook.py`).
+
+## Sign convention
+
+Higher `growth_rate` = better 5′-UTR = more His3 protein. A 5′-UTR that raises `HIS3` mRNA (e.g. by avoiding a uORF → less NMD) → higher `g`. Expected correlation: **positive**, attenuated by the translation-only fraction the model can't see. **Confirmed positive in the v1 run** (Shorkie / Yorzoi both > 0; see *Results*).
 
 ## Files (target layout)
 

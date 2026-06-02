@@ -829,9 +829,10 @@ way they do, not part of the benchmark itself.
 - `scripts/chen/build_investigation_notebooks.py` — generates the
   Shorkie / Yorzoi PGAL1-investigation ipynbs and their per-host
   prediction caches. Has no role in scoring any benchmark.
-- `scripts/cuperus/build_investigation_notebooks.py` — generates the
-  Cuperus translation-feature screen notebook (the `f`=Kozak analysis
-  referenced by the spec). No role in scoring.
+- `scripts/cuperus/build_investigation_notebooks.py` and
+  `build_predictions_notebook.py` — generate the Cuperus translation-feature
+  screen (the `f`=Kozak analysis) and the v1 prediction-inspection notebook
+  (uORF mechanism, worked examples). No role in scoring.
 
 **Notebooks under `notebooks/` (already gitignored; remove from local
 checkouts too):**

@@ -21,7 +21,7 @@ not in the individual specs. The forward-looking task list lives in
 | [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect (ORF-deletion locus) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | implemented, GPU runs done |
 | [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on IntProp | implemented, GPU runs done |
 | [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | implemented, GPU runs done |
-| [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression | under design | spec only |
+| [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | spec, ready to implement |
 
 "Implemented" means the benchmark class + both model adapters are registered
 ([`src/yeastbench/registry.py`](../src/yeastbench/registry.py)) and covered by
@@ -61,9 +61,12 @@ log-fold-change of CDS coverage against an unscrambled parental control, read
 against a leave-one-out reproducibility ceiling.
 
 **5′-UTR grammar — [Cuperus](cuperus_mpra_5utr.md).** ~500k random 50 bp 5′-UTRs
-upstream of a HIS3 reporter, selected by growth. Probes translational/regulatory
-grammar. Metric design is in progress (the assay reads protein-level growth, so a
-mRNA-abundance model can only see the RNA-visible fraction of the signal).
+in the native `CYC1`pr–`HIS3`–`CYC1`term reporter, selected by growth. Probes
+translation-initiation / uORF / structure grammar. Scored zero-shot in the literal
+reporter context (no marginalization — the construct is native yeast sequence), with
+a second metric isolating the model's mRNA-channel signal beyond hand-crafted Kozak
+features. The assay reads protein-level growth, so an mRNA-abundance model only sees
+the RNA-visible fraction (uORF→NMD, structure→stability).
 
 ## Planned / v2
 

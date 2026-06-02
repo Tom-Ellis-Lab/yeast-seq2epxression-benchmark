@@ -1,8 +1,11 @@
 # Cuperus et al. — 5′-UTR MPRA expression (HIS3 reporter)
 
-> **Status:** spec, ready to implement. Data is vendored (`archive/cuperus/`);
-> the two metrics are defined below. v1 scores in the **natural HIS3 reporter
-> context** — no marginalization (see *Why no marginalization*).
+> **Status:** implemented (pending GPU run). Benchmark class, scaffold,
+> Shorkie/Yorzoi adapters, and registry/config are in, and the construct is
+> pinned + verified. What remains is the GPU run to record headline numbers,
+> the marginalization-divergence check, and confirming the sign convention. v1
+> scores in the **natural HIS3 reporter context** — no marginalization (see
+> *Why no marginalization*).
 
 ## At a glance
 
@@ -189,7 +192,8 @@ Higher `growth_rate` = better 5′-UTR = more His3 protein. A 5′-UTR that rais
 
 ## Open questions / TODO
 
-- **Construct sequence sourcing.** Pin the exact `CYC1` promoter (298 nt) and `CYC1` terminator from `p415-CYC1` (Mumberg et al. 1995 / pRS415 map), and the `HIS3` CDS (YOR202W). The 50 bp insert replaces the native 56-bp `CYC1` 5′-UTR immediately upstream of the `HIS3` ATG. Confirm against the Seeliglab construct.
-- **`f` validation.** After the first run, check whether metric 2 separates from metric 1; if `f` is too weak, consider adding an in-frame-uAUG term or a CNN-derived translation component (keeping it translation-only).
-- **Native variable-length slot.** Confirm how sub-50 bp native fragments sit in the construct (does the slot shrink, or is the fragment padded to the ATG?) against the Seeliglab native construct (Methods: smaller fragments for UTRs < 50 bp).
-- **Scaffold reuse.** `_cuperus_scaffold.py` (build a fixed construct with one variable slot) is close to `_cassette_scaffold.py`; unify if the abstractions line up.
+- **`f` validation (after the first GPU run).** Check whether metric 2 separates from metric 1; if `f` is too weak, consider adding an in-frame-uAUG term or a CNN-derived translation component (keeping it translation-only).
+- **GPU run + sign convention.** Record headline numbers for Shorkie/Yorzoi (metric 1 overall + per bucket, metric 2 per library), confirm the predicted-coverage→`growth_rate` sign is positive, and run the single-`HIS3`-vs-marginalized divergence check (the adapters take `backgrounds=`).
+- **Native sub-50 bp fragments.** The scaffold assembles `promoter + fragment + HIS3`, so the slot length follows the fragment; revisit whether very short native fragments should carry their flanking native UTR context (minor — 0.3 % are < 5 bp).
+
+*Resolved:* the construct sequences are pinned + verified (`scripts/cuperus/build_construct.py` reconstructs them from the genome; junctions match the paper's cloning overhangs), and the scaffold reuses `_cassette_scaffold.py`.

@@ -350,11 +350,14 @@ https://github.com/daftpunksss/YeIP.
 - [x] Source data acquisition — vendored at `archive/cuperus/` (random
   489,348, scored in full with 5 `t0` depth buckets; native 11,856
   variable-length — a second primary eval, not a secondary).
-- [ ] Benchmark class — score the literal `CYC1`pr–`HIS3`–`CYC1`term
-  reporter (one forward per UTR, read out `HIS3` coverage) for both the
-  random and native libraries; new `FivePrimeUtrReporterExpressionPredictor`
-  protocol. Metric 2 (Kozak partial-corr) lives in the benchmark/eval layer.
-- [ ] Shorkie + Yorzoi adapters
+- [x] Benchmark class — `CuperusUTRBenchmark` + `_cuperus_scaffold.py` score the
+  literal `CYC1`pr–`HIS3`–`CYC1`term reporter (one forward per UTR, read out
+  `HIS3` coverage) for both libraries; new `FivePrimeUtrReporterExpressionPredictor`
+  protocol; metric 2 (Kozak partial-corr) in the eval layer. Metrics + scaffold tested.
+- [x] Shorkie + Yorzoi adapters (+ registry + `configs/default.yaml` wiring).
+- [ ] GPU run — record headline numbers (metric 1 overall + buckets, metric 2 per
+  library) for Shorkie/Yorzoi; confirm the sign convention; run the single-`HIS3`
+  vs marginalized divergence check (adapters take `backgrounds=`).
 - [ ] **ExoShorkie adapter** (same new protocol). Random 50 bp 5′
   UTRs in the CYC1-HIS3 plasmid construct are the same exogenous-in-
   yeast flavour as Rafi and Wu — should benefit from ExoShorkie's

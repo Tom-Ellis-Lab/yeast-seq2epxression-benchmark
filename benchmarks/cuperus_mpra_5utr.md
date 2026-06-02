@@ -145,17 +145,18 @@ Quantifies whether `g` carries mRNA-channel signal *beyond* what a pure translat
 Rules:
 - **Scope.** Computed on the full library (most statistical power for the `f`-regression); optionally recomputed on bucket 5 (clean) as a noise-controlled check.
 - **Cross-validated.** Fit the `f`-regressions on train folds, evaluate the residual correlation out-of-fold. Use the **same folds and the same `f`** across every model compared, so the only thing that varies is `g`.
-- **Interpretation caveat.** Metric 2 *understates* a model that already captures the same mechanism `f` encodes (a model that has learned Kozak gets no credit for it here). That is by design — we want credit only for the mRNA channel `f` cannot reach.
+- **Interpretation caveat.** Metric 2 *understates* a model that already captures the same mechanism `f` encodes (a model that has learned Kozak gets no credit for it here) — by design, since we want credit only for the mRNA channel `f` cannot reach. The screen below shows `f` is small, so this understatement is small.
 
 #### The translation-only features `f`
 
 `f` must be **exclusively translational and not mRNA-mediated**, or it leaks the channel we want to attribute to the model. From the paper's feature analysis (Fig 1; *Effects of 5′ UTR features*):
 
-- **Include — Kozak / start-codon context.** One-hot encoding of the 5 nt immediately 5′ of the `HIS3` ATG (= the last 5 nt of the insert, positions −5 … −1), with −3 carrying most of the signal (A at −3 is most favorable). This is pure initiation efficiency; it does not act through mRNA abundance.
-- **Exclude — uORFs / upstream AUGs.** The strongest single feature, but it acts partly through **NMD-driven mRNA decay** — exactly the channel an RNA-seq model can legitimately capture. Putting it in `f` would steal the model's credit. (It is instead the basis for the optional uORF validity-gate below.)
-- **Exclude — secondary structure (MFE).** Affects translation but also mRNA stability, is construct-dependent, and is weak (paper R²=0.078). Not cleanly translation-only.
+- **Include — Kozak / start-codon context (this is all of `f`).** One-hot encoding of the 5 nt immediately 5′ of the `HIS3` ATG (the last 5 nt of the insert, positions −5 … −1), with −3 dominant (A at −3 favorable). The feature screen (`notebooks/cuperus_translation_features.ipynb`, clean bucket) confirms it carries real, translation-grounded signal — Spearman ρ ≈ 0.14 (random) / 0.32 (native), A-at-−3 worth +0.31 nats — and that it is **orthogonal to the mRNA channel**: incremental R² is 0.04 (Kozak) vs 0.40 (uORF block) vs 0.43 (both), so Kozak adds ~its full standalone share on top of uORF and double-counts nothing.
+- **Exclude — uORFs / upstream AUGs.** By far the strongest feature (ρ ≈ −0.63, −1.27 nats), but it acts through **NMD-driven mRNA decay** — exactly the channel an RNA-seq model can legitimately capture. Putting it in `f` would steal the model's credit. (It is instead the basis for the optional uORF validity-gate below.)
+- **Exclude — secondary structure (MFE).** Weak (ρ ≈ 0.23, R² ≈ 0.06, matching the paper's 0.078) and partly mRNA-stability-mediated; construct-dependent. Not cleanly translation-only.
+- **Exclude — in-frame uAUG extension.** Its sign flips between the random (+) and native (−) libraries — confounded (with uORF-absence) rather than a stable translation feature. Dropped.
 
-This is deliberately a **try-then-validate** starting point: Kozak alone is a weak predictor, so metric 2 may collapse toward metric 1 (if `f` removes little variance) — in which case `f` is too weak or the model already encodes Kozak. We decide empirically, after the first run, whether metric 2 earns its place and whether `f` needs enriching (e.g. an in-frame-uAUG term, or a CNN-derived translation component).
+**What this means for metric 2.** Because `f` (Kozak) removes only ~4 % of the variance and is orthogonal to the dominant uORF channel (~40 %), the partial correlation sits close to the raw metric-1 correlation. So metric 2 is not a large reweighting — it is a **validity check**: it confirms a model's metric-1 score is not merely re-derived Kozak context (which `f` already holds). Equivalently, metric 1 is already a fairly clean read of the mRNA channel, because the only clean translation-only feature is small. If a later run wants `f` to carry more, the principled additions stay translation-only and non-mRNA (e.g. a ribosome-load or CNN-derived translation component), never uORF/structure.
 
 ### Ceiling anchor
 

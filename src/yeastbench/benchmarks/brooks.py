@@ -780,8 +780,8 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         return plot_path
 
 
-# ── Brooks-specific compare helpers (lifted from
-#    scripts/brooks/compare_models.py) ──────────────────────────────────
+# ── Brooks-specific compare helpers (shared-cohort intersection
+#    used by `ybench compare`) ─────────────────────────────────────────
 
 
 def _load_brooks_run_dir(model_dir: Path) -> dict | None:

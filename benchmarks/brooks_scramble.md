@@ -5,7 +5,8 @@
 > per receptive field): `brooks_scramble_v1.tsv` at 4992 bp (698
 > samples, Yorzoi) and `brooks_scramble_v1_w16384.tsv` at 16384 bp
 > (1055 samples, Shorkie). Cross-model headline numbers come from
-> the **shared sample set** via `scripts/brooks/compare_models.py`;
+> the **shared sample set** via `ybench compare` (Brooks shared-cohort
+> logic in `src/yeastbench/benchmarks/brooks.py`);
 > per-model full-set numbers reported as secondary. Headline (shared
 > cohort, n_scored = 327): Yorzoi r = 0.222 / dir-acc = 0.635;
 > Shorkie r ≈ 0 / dir-acc = 0.553; LOO noise ceiling r = 0.805 /
@@ -279,7 +280,7 @@ using a proxy track is deferred (open question).
    v2 refinement if a global trans shift is observed.
 2. **Shorkie Tier-1 substitute** — deferred. Shorkie can't see Nanopore
    direct-RNA; decide whether a proxy-track LFC-vs-native comparison is
-   worth defining once Yorzoi numbers exist (benchmarks.md §3.3).
+   worth defining once Yorzoi numbers exist.
 3. **Rearrangement-type classification** — derive from `JS<S>_1` vs
    `JS94_1` diff; cross-check against Table S3 if obtainable (not in the
    bucket).

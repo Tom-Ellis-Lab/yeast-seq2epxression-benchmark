@@ -20,7 +20,7 @@
 - [ ] **Automated cross-model comparison runner (`ybench compare` or
   equivalent).** Walks `results/<config>/<model>__<task>/summary.json`
   + raw arrays, intersects on a common per-task sample axis where
-  applicable (mirroring `scripts/brooks/compare_models.py`), and
+  applicable (mirroring the Brooks shared-cohort logic), and
   emits a unified per-task comparison directory under
   `results/<config>/compare__shared/<task>/` with:
     - a side-by-side metrics table (per-task summary CSV/JSON
@@ -31,7 +31,8 @@
     - a top-level `compare__all/index.md` that aggregates the per-task
       summaries into a single results page (the existing Documentation
       "Results summary page" item collapses into this).
-  Today only Brooks has this (`scripts/brooks/compare_models.py`).
+  Today only Brooks has this (the shared-cohort intersection in
+  `src/yeastbench/benchmarks/brooks.py`, run via `ybench compare`).
   Generalising means defining a `Benchmark.compare(...)` classmethod
   + a per-protocol shared-cohort intersection helper.
 - [ ] **ExoShorkie integration** — prerequisite for the per-task
@@ -451,7 +452,8 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   metrics are computed on the intersection of the two models'
   sample sets** (the shared cohort), reported as the primary number.
   Full-set per-model numbers are reported as secondary so the gap is
-  documented. `scripts/brooks/compare_models.py` reads each model's
+  documented. `ybench compare` (Brooks shared-cohort logic in
+  `src/yeastbench/benchmarks/brooks.py`) reads each model's
   result dir, intersects on `sample_id`, recomputes per-replicate
   metrics + LOO ceiling on the shared cohort, and writes
   `results/brooks/compare__shared/summary.json` + a Tier-1 chart
@@ -583,7 +585,41 @@ Direction (revisit before designing):
 
 Not blocking any benchmark; queued for explicit design discussion.
 
+**Part 1 (model-wrapper classes + thin adapters) shipped in PR #3** — all
+task adapters now take a `Yorzoi` / `Shorkie` wrapper instance and call its
+batched forward; the wrappers own `from_pretrained` / RC averaging / the
+8-fold ensemble loop / the strand swap (bit-identical numbers, net −127 LOC).
+Remaining follow-ups (migrated from the former `REFACTOR_PLAN.md`):
+
+- [ ] **Wrapper caching at the registry level.** Each adapter's
+  `from_pretrained` builds its own wrapper, so a config running N tasks on
+  the same model loads weights N times. Fine for the default config (3–6
+  tasks per model, often on different devices); worth caching once a single
+  `ybench run` routinely repeats model loads. Low priority.
+- [ ] **Cross-task adapter consolidation.** Adapters for structurally
+  similar tasks across benchmarks (e.g. `yorzoi_shalem` vs
+  `yorzoi_mpra_marginalized` — both marginalized-over-host-genes logSED)
+  still re-implement the REF-cache + ALT-splice loop separately. Could
+  parametrise one `MarginalizedExpressionPredictor` per model over many
+  tasks (route by a `Scaffold` / `Site` arg). Defer until either a third
+  marginalized-family task or a bug that needs fixing in N parallel adapters.
+
 ### Correctness sweep — always evaluate on the untransformed, unbinned scale
+
+**Status (2026-06-02): code-complete.** Every adapter family was converted
+to per-base untransformed raw-count readout — brooks (PR #12), eqtl (#14),
+the marginalized-logSED MPRA + Shalem family, Wu (#16), Hong (#17), Chen
+(#18). The `Yorzoi` / `Shorkie` wrappers own the inverse transform + per-base
+unbin; adapters consume per-base raw counts.
+
+**Residual — GPU re-baseline of headline numbers.** Each conversion
+re-baselines its task (rank metrics ~stable; Pearson / absolute-magnitude
+predictions shift), so headline numbers must be (re-)recorded on the
+converted code. brooks was re-baselined in #12 (Δr ≈ −0.001, headline
+unchanged); the **eqtl (Caudal/Kita) re-baseline is still pending**; the
+marginalized / Wu / Hong / Chen headline numbers should be confirmed against
+the converted code. (Migrated from the former `PERBASE_MIGRATION.md`
+checklist.)
 
 Yorzoi was trained with the Borzoi piecewise transform
 ``y = transform(bin_4bp(x))`` where ``transform(x) = min(x^0.75, 384 +
@@ -675,6 +711,13 @@ model in the suite.
 
 *Empty by design — anything that doesn't make the v1 cut goes here so
 the v1 scope stays bounded. Move items in once v1 is locked.*
+
+### Species LM (Keren et al.)
+
+Sequence language-model evaluation on yeast (Keren et al.). Deferred from
+v1 — no spec file or adapter yet. When it lands it gets a
+`benchmarks/species_lm.md` spec and joins the index in
+`benchmarks/README.md`.
 
 ### Condition coherence — does the model respect promoter-driven OFF states?
 

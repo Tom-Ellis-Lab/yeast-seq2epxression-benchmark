@@ -143,7 +143,7 @@ Quantifies whether `g` carries mRNA-channel signal *beyond* what a pure translat
 - **Alongside: incremental R²** = `R²(E ~ f + g) − R²(E ~ f)`.
 
 Rules:
-- **Scope.** Computed on the full library (most statistical power for the `f`-regression); optionally recomputed on bucket 5 (clean) as a noise-controlled check.
+- **Scope.** K-fold CV **within the clean bucket** (`t0 ≥ 101`, ≈ 24.5k rows) — fit `f` and evaluate the partial correlation on the same low-noise, in-distribution data. That bucket keeps ~80 % of the full `growth_rate` variance (sd 1.02 vs 1.14) at the lowest label noise, and ≈ 24.5k rows is ample for the 15-column `f` (~1.6k rows/parameter). Fitting `f` on the noisier low-depth bulk is deliberately avoided: the pseudocount shrinks `growth_rate` there, attenuating the Kozak coefficients, so they would under-remove Kozak on the clean set and hand the model spurious credit for it. Full-library CV is a secondary diagnostic only.
 - **Cross-validated.** Fit the `f`-regressions on train folds, evaluate the residual correlation out-of-fold. Use the **same folds and the same `f`** across every model compared, so the only thing that varies is `g`.
 - **Interpretation caveat.** Metric 2 *understates* a model that already captures the same mechanism `f` encodes (a model that has learned Kozak gets no credit for it here) — by design, since we want credit only for the mRNA channel `f` cannot reach. The screen below shows `f` is small, so this understatement is small.
 

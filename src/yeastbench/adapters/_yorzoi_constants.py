@@ -20,6 +20,16 @@ CROP_BP_EACH_SIDE: int = 996  # (4992 - 3000) // 2
 YORZOI_PLUS_TRACK_IDS: list[int] = list(range(0, 81))
 YORZOI_MINUS_TRACK_IDS: list[int] = list(range(81, 162))
 
+# Exogenous-human Illumina RNA-seq plus-track indices, from
+# `yorzoi/track_annotation.json` plus axis: idx 0..9 are the 10 human
+# BAC/cosmid RNA-seq samples (`759h10_NC_000004.12`, `802D1new_NC_…`,
+# …, `E533_NC_000007.14`) — all carrying human-chromosome NC_0000…
+# accessions. These are the only foreign-DNA-expression tracks Yorzoi
+# saw, so the Meneu adapter averages over them as its best in-distribution
+# proxy for transcription of exogenous (bacterial) DNA in yeast. Minus-
+# strand indices are derived by +81.
+YORZOI_HUMAN_ILLUMINA_PLUS_TRACK_IDS: list[int] = list(range(0, 10))
+
 # Brooks Nanopore direct-RNA subset of Yorzoi's plus-strand tracks. These
 # 63 indices are all the strict-WT Brooks BEDs in the manifest (pattern
 # `JS\d+_\d{8}_porechopped_filtered_canuCorrected_distinguished.plus.bw`,

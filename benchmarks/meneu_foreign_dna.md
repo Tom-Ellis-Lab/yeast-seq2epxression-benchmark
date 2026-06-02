@@ -1,0 +1,330 @@
+# Meneu et al. — foreign-DNA RNA-seq coverage-track prediction
+
+> **Status:** spec, ready to implement. Far-OOD **zero-shot** stress test —
+> yeast-trained sequence-to-expression models tile two whole bacterial
+> chromosomes integrated into *S. cerevisiae* and predict their RNA-seq
+> coverage, scored per chromosome against the measured RNA-seq. Leakage-free
+> by construction (the bacterial sequence is foreign to every yeast model).
+> Data is **not yet vendored** — pulled at build time from the ExoShorkie
+> figshare (genomes + processed RNA-seq) with GEO/Zenodo as provenance.
+> Two open scope choices are deferred to v2 (reproducibility ceiling, yeast
+> in-distribution anchor) — see *Open questions*.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Task** | Tile each integrated foreign-chromosome reference end-to-end, predict a per-base RNA-seq coverage track zero-shot, and correlate against the measured RNA-seq per chromosome. A whole-distribution OOD test, not a local cis-perturbation probe. |
+| **Source** | Meneu *et al.* 2025, *Sequence-dependent activity and compartmentalization of foreign DNA in a eukaryotic nucleus*, Science 387(6734):eadm9466. DOI: [10.1126/science.adm9466](https://doi.org/10.1126/science.adm9466). PDFs in `papers/science.adm9466.pdf` (+ `_sm.pdf`). |
+| **Data** | Genomes + processed CPM RNA-seq from the **ExoShorkie figshare** ([10.6084/m9.figshare.31075375](https://doi.org/10.6084/m9.figshare.31075375)). Provenance: GEO **GSE217022** (raw + per-replicate bigwigs), Zenodo **14024599** (Meneu reference sequences) / **7198985** (the assembly the bigwigs were mapped to). |
+| **Assay** | Stranded directional mRNA RNA-seq (rRNA-depleted, PE150, 3 biological replicates), CPM-normalized per-base coverage. On bacterial DNA the signal follows bacterial gene orientation. |
+| **Expression label** | Per-base **CPM coverage**, unstranded (forward + reverse summed). Scale-free — Pearson/Spearman only need monotone correspondence. |
+| **Eval set** | **Mpneumo** (*M. pneumoniae* M129, ~818 kb, 40% GC — yeast-like, transcribed) and **Mmyco** (*M. mycoides* PG1, ~1,222 kb, 24% GC — AT-rich, near-silent). Scored **per chromosome, never pooled.** |
+| **Primary metric** | Per chromosome, 1 bp, over 5 kb windows: **median raw Pearson** + **median JS divergence** of normalized profiles (*within-region shape*) + **per-window-total fold-change error** `log2(Σpred+1)−log2(Σtrue+1)` after genome-wide depth-normalization (*across-region magnitude*, adapting the Yorzoi paper). Low-signal-window floor; mask the yeast CEN/ARS/HIS3 + telomere insert. See *Metrics*. |
+| **Adapter protocol** | `TiledCoverageTrackPredictor` — new protocol, identical surface to `CoverageTrackPredictor`, so the registry dispatches Meneu to its own adapters without colliding with Brooks. Reused via thin adapter subclasses. |
+
+## Why this benchmark exists
+
+Every other benchmark in this suite perturbs *local* cis-sequence (a 5′-UTR, a
+terminator, an intergenic insertion, a structural rearrangement). Meneu provides
+the opposite extreme: ~2 Mb of genuinely **foreign bacterial sequence** placed in
+a yeast nucleus and profiled by RNA-seq. Running a yeast-trained model over it
+zero-shot is a far-out-of-distribution stress test of sequence composition — the
+natural home for the ROADMAP "native-genome track prediction" item, generalized
+from held-out yeast regions to non-native DNA the model provably never saw.
+
+It is mechanically the **Brooks SCRaMBLE coverage benchmark with the LFC
+machinery stripped out**: same `CoverageTrackPredictor`-style protocol
+(sequence-in / per-base coverage-out), same model adapters, same "self-contained
+TSV per receptive field" data pattern. The genuinely new code is (a) tiling a
+megabase contig end-to-end (Brooks predicts isolated gene windows) and (b) a
+per-chromosome Pearson/Spearman over the stitched track instead of paired LFC.
+
+### The reference ladder (orientation, not competition)
+
+The right references come from **ExoShorkie** (Mandl & Orenstein 2026,
+`papers/2026.01.25.701486v1.full.pdf`), which predicts RNA-seq coverage of
+exogenous genomes — the same task and assay, on **the same two chromosomes**. (The
+Meneu paper itself has no RNA-seq model, so it offers no comparison here.) Read
+every result against these as *rough* orientation — different processing, metric,
+and training regime, not exact targets:
+
+| Reference | Regime | ~Mpneumo | ~Mmyco |
+| --- | --- | --- | --- |
+| **ExoShorkie** | Shorkie *transfer-learned* on exogenous RNA-seq | ~0.60–0.68 | ~0.62–0.76 |
+| **NatShorkie** | native-trained Shorkie, **zero-shot** (≈ our Shorkie) | ~0.46 | ~0.58 |
+| **ExoYorzoi** | Yorzoi, zero-shot on bacterial (≈ our Yorzoi) | ~0.38 | ~0.58 |
+
+(Median per-window Spearman, read from ExoShorkie Fig. 3; orientation only.)
+The takeaway: the task is *learnable* with transfer learning (ExoShorkie), and
+native-trained models already capture a meaningful zero-shot fraction
+(NatShorkie / ExoYorzoi). Our benchmark measures **that zero-shot fraction** as a
+portable, model-agnostic eval.
+
+### GC gradient — informative, but Mmyco is not the worst case
+
+Order results by GC distance from yeast (Mmyco 24% → Mpneumo 40% ≈ yeast 38%).
+But note ExoShorkie scores **Mmyco higher than Mpneumo** despite its 24% GC and
+near-silent transcription — sparse signal can still rank well. So "AT-rich =
+hardest" is *not* assumed; the GC axis is reported, not editorialized.
+
+### Caveat: the cis model can't see trans / chromatin context
+
+The measured RNA-seq reflects the foreign chromosome's full nuclear context
+(3D compartment, chromatin state, decay). A cis sequence-to-expression model sees
+only local sequence, so there is an intrinsic ceiling below 1.0. We frame results
+as the cis-predictable, zero-shot fraction and read them against the references
+above, never against a perfect correlation.
+
+## The sequences scored
+
+The integrated reference per strain is a chimeric contig:
+`telomere — [bacterial arm] — CEN6/ARS-HIS3 cassette — [bacterial arm] — telomere`.
+The bacterial chromosome was cloned circular with a yeast CEN6/ARS-HIS3 selection
+cassette, then CRISPR-linearized and capped with yeast telomere seeds — so the
+deposited contig (~818 kb Mpneumo ≈ native M129 + ~1.5 kb cassette; ~1,222 kb
+Mmyco ≈ native PG1 + ~10.5 kb cassette) contains a small **internal** non-bacterial
+insert plus telomere ends.
+
+- **Tile the bacterial body only.** Step a `seq_len`-wide window by its
+  *predicted-region* length (Shorkie 14,336 bp / Yorzoi 3,000 bp) so the central
+  regions tile contiguously; N-pad contig ends (the one-hot encoder maps `N` → an
+  all-zero column, so padding is safe).
+- **Mask the yeast insert + telomeres.** Exclude the CEN6/ARS-HIS3 cassette and
+  the telomere-seed ends from scoring; the benchmark correlates only over
+  bacterial positions. Exact coordinates come from the reference FASTA/GTF at
+  build time (see *Open questions*).
+- **Unstranded.** v1 scores forward + reverse summed coverage. This is the only
+  target physically defined for both models on a tiled contig: Shorkie is
+  strand-blind, and every window straddles forward- and reverse-oriented bacterial
+  genes, so there is no single per-tile strand. Per-strand is a Yorzoi-only v2.
+
+## Data
+
+### Provenance and inventory
+- **ExoShorkie figshare ([10.6084/m9.figshare.31075375](https://doi.org/10.6084/m9.figshare.31075375))** — the
+  reference exogenous-genome sequences and processed CPM RNA-seq tracks used in
+  the ExoShorkie study, including Mpneumo and Mmyco. **Primary build-time source**
+  (genomes already matched to the bigwigs, which sidesteps the contig-naming
+  hazard below). File inventory enumerated at build time via the DOI.
+- **GEO `GSE217022`** — Meneu's raw + processed sequencing, including the
+  **per-replicate** RNA-seq bigwigs (Mpneumo `GSM6703673/674/675`, Mmyco
+  `GSM6703670/671/672`; each ships `.CPM.bw` / `.fwd-CPM.bw` / `.rev-CPM.bw`).
+  Provenance and the source for a future reproducibility ceiling.
+- **Zenodo `14024599`** (Meneu reference sequences) / **`7198985`** (the assembly
+  the GEO bigwigs were mapped to). Cross-check only.
+
+> **Coordinate hazard.** A contig-name / linear-origin mismatch between the
+> coverage track and the tiled FASTA silently zeros the correlation and is
+> indistinguishable from "model failed OOD." Contig names differ across sources
+> (bacterial headers are bare `Mpneumo` / `Mmmyco`; yeast chroms are `>I…` in one
+> file and `>chrI…` in another). Building genomes + tracks from the **same
+> figshare release** avoids this; verify name + length + origin before scoring.
+
+### Measured RNA-seq label
+Per-base CPM coverage, unstranded (forward + reverse summed). CPM scale cancels in
+Pearson/Spearman — adapters may return raw counts.
+
+### Per-chromosome eval units
+Each chromosome (Mpneumo, Mmyco) is scored independently. **Never pooled** — a
+pooled correlation would be dominated by the larger / more-transcribed contig.
+
+### Masking / what's excluded
+The internal CEN6/ARS-HIS3 cassette, the telomere-seed ends, and any N-padded
+contig ends are excluded from the per-base correlation.
+
+## Metrics
+
+### Per-chromosome correlation, 1 bp resolution
+After each adapter unbins its prediction to per-base, stitch the tiled predicted
+regions into one whole-contig per-base vector, drop masked / N-padded positions,
+and align to the measured per-base coverage. Each model is tiled **independently
+at its own window** (Shorkie 16,384 bp, Yorzoi 4,992 bp) — there is no shared
+window, so neither model is starved of context nor fed mid-contig Ns (only the two
+contig ends N-pad, and those are excluded). The comparison unit is the
+**whole-chromosome** correlation against the same per-base truth; the
+receptive-field difference (Shorkie integrates ~14 kb of context per central
+region, Yorzoi ~3 kb) is an intrinsic model property, reported as such, not an
+artifact to equalize. 1 bp resolution needs no common-bin choice and is uniform
+across every model (each unbins to per-base).
+
+Three metrics per chromosome (shape co-variation, shape mass-placement, magnitude):
+
+- **Shape — median per-window Pearson.** Tile the stitched per-base tracks into
+  fixed **non-overlapping 5 kb windows** (the same windows for every model,
+  independent of each model's prediction tiling), compute **Pearson on the raw
+  per-base coverage** (untransformed, unbinned) within each window, and report the
+  **median across windows**. Equal-weighting windows stops a few high-expression
+  loci from dominating *and* stops the score from being inflated by merely
+  capturing the coarse transcribed-vs-silent landscape — it forces local profile
+  reconstruction. Raw Pearson is scale-invariant, so **no depth-normalization is
+  needed** for this metric (it would be a no-op; the magnitude metric below *does*
+  depth-normalize). **Low-signal floor:** skip windows whose
+  *true* coverage is near-flat (variance/mean below ε — frequent on near-silent
+  Mmyco, ~48% zero-coverage, where per-window Pearson is otherwise undefined noise;
+  windows where the model fails on real signal are kept), and report the
+  scored-window count per chromosome. (A global whole-chromosome Pearson is
+  rejected — dominated by large-scale structure; per-base Spearman is rejected —
+  low-coverage ranks are arbitrary.)
+- **Shape, mass-placement — Jensen–Shannon divergence of the normalized profiles.**
+  Within each 5 kb window, normalize true and predicted coverage to sum 1 and
+  compute the JS divergence (bits); report the **median across surviving windows**
+  (same windows + floor as the Pearson). JS is symmetric, bounded `[0, 1]` bits,
+  and finite without smoothing, so it averages and compares cleanly across windows,
+  chromosomes, and the future reproducibility ceiling — which is why **JS, not KL**,
+  is used (KL is asymmetric, unbounded, and sparsity-dependent; this matches the
+  Brooks Tier-2 shape convention and reuses `brooks.py:_js_divergence`). Pearson and
+  JS are complementary: Pearson catches peak co-location, JS catches where the
+  transcriptional mass sits.
+- **Magnitude — relative log (fold-change) error**, adapting the Yorzoi paper's
+  fold-change error (Schneider et al. 2025, `papers/2025.09.20.677345v1.full.pdf`,
+  "Pearson Correlation and Fold-Change Error") to a per-window form. First
+  **depth-normalize genome-wide**: scale the predicted track by
+  `sum(true)/sum(pred)` over scored positions so the totals match — this removes
+  the model's arbitrary global scale, so the error measures *regional allocation*
+  rather than global mis-calibration. Then per 5 kb window take the fold-change
+  error of the **window totals**, `log2((Σ_window pred + 1) / (Σ_window true + 1))`
+  (their `log2(Ŷ/Y)`, +1 for finiteness), and summarize across surviving windows as
+  mean ± spread. It asks: did the model allocate the right *amount* of signal to
+  each region? — the level dimension the scale-invariant shape metrics are blind
+  to. Together: *right shape within regions?* (Pearson + JS) vs *right level across
+  regions?* (fold-change error).
+
+v1 fixes **5 kb windows + raw Pearson** (decided). A per-gene metric is *not* used
+— no meaningful genes on the artificial chromosome. The argument against raw
+Pearson — within a window, covariance weights positions by squared distance-to-mean,
+so a single strong peak dominates and the low/medium bulk barely registers — is
+mild at 5 kb (small dynamic range), is offset by the per-window median and the
+separate fold-change error, and is accepted for v1. Residual caveat (not solved in
+v1): a window holding an on- and an off-region scores high partly for the on/off
+contrast rather than quantitative level; a finer shape metric is a separate
+project.
+
+### Reference baseline
+The ExoShorkie / NatShorkie / ExoYorzoi numbers above, cited as rough orientation,
+not as targets to beat.
+
+## Sign convention (verify empirically)
+Higher predicted coverage ↔ higher measured coverage → positive correlation.
+Verify on the first run: a far-OOD model can emit near-flat coverage on low-GC
+sequence, which simply yields a low / undefined correlation — reported honestly,
+no special handling.
+
+## Model contract
+
+The shipped coverage-track protocol surface (`protocols.py`). The Meneu protocol
+is a distinct type with the **identical** surface (so registry dispatch does not
+collide with Brooks' `CoverageTrackPredictor`):
+
+```python
+@runtime_checkable
+class TiledCoverageTrackPredictor(Protocol):
+    """Predict an RNA-seq-like coverage profile for a batch of constructs,
+    for whole-contig tiled-coverage benchmarks (Meneu foreign DNA). Same
+    surface as CoverageTrackPredictor; a distinct type purely so the
+    registry can dispatch tiled-coverage tasks to their own adapters."""
+
+    seq_len: int
+    crop_bp_each_side: int
+    batch_size: int
+    varies_by_strain: bool
+
+    def predict_coverage_batch(
+        self,
+        seqs: Sequence[str],
+        strands: Sequence[str],
+        strains: Sequence[str | None] | None = None,
+    ) -> np.ndarray: ...
+```
+
+Returns `(B, seq_len - 2 * crop_bp_each_side)` in **raw per-base predicted-count
+units** (the adapter inverts any training transform and unbins to per-base). The
+benchmark reads `seq_len`/`crop_bp_each_side` to map the tile's true coverage to
+the predicted central region. (The Brooks spec's older `predict_coverage(seq,
+strand)` block is stale — this batched API is the live one.)
+
+## Files (target layout)
+
+### Raw upstream (build-time only)
+- ExoShorkie figshare genomes + processed RNA-seq, cached under
+  `data/tasks/meneu_foreign_dna/_cache/` (idempotent download).
+- GEO `GSE217022` per-replicate bigwigs — only if the reproducibility ceiling is
+  built (deferred; see *Open questions*).
+
+### Processed distribution (the sole run-time dependency)
+- `data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1.tsv` (4992 / Yorzoi) and
+  `..._v1_w16384.tsv` (16384 / Shorkie) — **built, gitignored, self-contained.**
+  One row per tile: `tile_id, chrom, strain, window_start, window_len,
+  crop_bp_each_side, seq, true_cov` (per-base unstranded CPM, comma-serialized,
+  full-window; the benchmark crops to the predicted region, stitches, and masks).
+  At run time the benchmark depends on this file alone — no figshare, no GEO.
+
+### Track subsets / RC averaging
+- **Shorkie:** the **384-track T0 subset** (`SHORKIE_T0_RNA_SEQ_TRACK_IDS`), for
+  consistency with every other Shorkie benchmark (Brooks/Hong/Chen/Shalem/Wu/MPRA).
+  These are a steady-state subset of the higher-quality `RNA-Seq` group (paper
+  Pearson ~0.776) — not the worse `1000-RNA-Seq` 1000-strains collection (~0.629) —
+  and steady-state log-phase matches Meneu's assay. No subset override needed (it
+  is already the `ShorkieBrooksPredictor` default). `varies_by_strain=False`.
+- **Yorzoi:** there is no generic-RNA-seq group in `track_annotation.json` (the
+  81 plus-tracks are ~70 Brooks Nanopore direct-RNA, ~10 exogenous-human Illumina,
+  1 SRA Illumina). The headline config is the **10 exogenous-human Illumina
+  tracks** (the set ExoYorzoi used). Record metrics under each group
+  (Illumina-10 / Nanopore-70 / SRA-1), report the table, and document the best in
+  prose. Set `varies_by_strain=False` (bacterial strains have no matched tracks).
+- Both adapters average forward + RC internally; the Yorzoi adapter additionally
+  sums its + and − track axes so it returns one unstranded track per tile.
+
+### Build script
+- `scripts/meneu/build_meneu_distribution.py` — the only component that touches
+  figshare/GEO: cache genomes + RNA-seq, parse the chimeric FASTA, read CPM
+  coverage per base, mask the CEN/ARS/HIS3 + telomere insert, tile the bacterial
+  body, write one TSV per window size. Reuses Brooks' `read_fasta` / `_comma_ints`
+  / `--window` + out-path / idempotent `fetch()` patterns; adds pyBigWig reading,
+  contig tiling, and insert masking (none exist in the Brooks builder).
+
+## Open questions / TODO
+
+1. **Insert coordinates to mask.** Extract the exact CEN6/ARS-HIS3 + telomere-seed
+   coordinates per chromosome from the reference FASTA/GTF (or by diffing against
+   the native NCBI assembly) before tiling.
+2. **Coordinate match.** Verify the figshare coverage-track contig name + length +
+   linear origin match the tiled FASTA before trusting any correlation.
+3. **Reproducibility ceiling — v2 unless figshare makes it trivial.** The honest
+   denominator for low OOD numbers (especially near-silent Mmyco): rep↔rep
+   test-retest Pearson/Spearman per chromosome. ExoShorkie appears to deposit
+   *replicate-merged* tracks (Picard-merged per its methods), so this would need
+   the 3 per-replicate bigwigs from `GSE217022` (`GSM6703670-675`). Confirm at
+   build: if per-replicate tracks are already on figshare it is cheap enough for
+   v1; otherwise defer to v2.
+4. **No yeast in-distribution anchor.** chrXVI was considered as a "familiar
+   yeast" reference and dropped — it is ~74% inside Yorzoi's training (not a clean
+   control), and this benchmark is about foreign DNA. Out of scope; the held-out
+   chrXVI carve-out is irrelevant.
+5. **Yorzoi track-group selection rule.** Whether to pick the headline group purely
+   descriptively (report all, name the best) or via a fixed selection set; chrXVI-
+   anchored selection is off the table for v1 (no anchor). Default: descriptive.
+6. **Per-base track metric — decided.** Shape = **median per-window raw Pearson**
+   (co-variation) + **median per-window JS divergence** of sum-1-normalized
+   profiles (mass-placement); both on non-overlapping **5 kb** windows with a
+   true-signal floor + reported scored-window count (no depth-norm for these — raw
+   Pearson is scale-invariant; JS reuses `brooks.py:_js_divergence`). Magnitude =
+   per-window-total fold-change error `log2((Σpred+1)/(Σtrue+1))` **after genome-wide
+   depth-normalization** (`pred *= sum(true)/sum(pred)`), summarized mean ± spread
+   across windows (regional-allocation accuracy, controlling for global scale).
+   Rejected: global
+   whole-chromosome Pearson (large-scale structure inflates), Spearman (low-coverage
+   rank noise), per-gene (no genes), `log1p` within-window (raw chosen), **KL
+   divergence** (asymmetric/unbounded/sparsity-dependent — JS chosen). Impl details
+   to pin on real data: the floor ε and the fold-change-error ε.
+7. **Per-strand correlation — Yorzoi-only v2.** Tests whether the model transcribes
+   bacterial genes in the correct orientation; impossible for strand-blind Shorkie.
+   The Meneu RNA-seq *is* stranded (directional library, fwd/rev bigwigs), so the
+   ground truth supports it — v1 sums strands only because Shorkie cannot.
+8. **Mosaic / translocation strains — v2.** The XVIf* strains *do* have RNA-seq
+   coverage bigwigs (`GSM8640818-825`), so they extend the *same* coverage pipeline
+   (not a separate DESeq2 task). Deferred for perturbation confounds (+thiolutin /
+   upf1 / rrp6) and per-strain coordinate-matching cost. YACs (P. falciparum,
+   Phytoplasma) have no RNA-seq and cannot be scored here.
+9. **Registry name.** `TiledCoverageTrackPredictor` vs another task-named protocol;
+   identical surface to `CoverageTrackPredictor`, distinct type for dispatch only.

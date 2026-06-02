@@ -12,8 +12,8 @@
 | **Source** | Cuperus *et al.* 2017, *Deep learning of the regulatory grammar of yeast 5′ UTRs from 500,000 random sequences*, Genome Research 27:2015–2024. DOI: [10.1101/gr.224964.117](https://doi.org/10.1101/gr.224964.117). PMC: [PMC5741052](https://pmc.ncbi.nlm.nih.gov/articles/PMC5741052/). Code/data: [Seeliglab/2017---Deep-learning-yeast-UTRs](https://github.com/Seeliglab/2017---Deep-learning-yeast-UTRs). PDF in `papers/`. |
 | **Assay** | Massively parallel growth-based selection. ~500 k 50 bp random 5′-UTRs cloned into a single-copy `p415-CYC1` CEN plasmid, replacing the native 56-bp `CYC1` 5′-UTR immediately upstream of the `HIS3` ATG (`CYC1` promoter + `CYC1` terminator). Pool grown in SD-His + 1.5 mM 3-AT (His3 inhibitor) for ~6.2 doublings; pre/post-selection plasmid DNA deep-sequenced. Growth ∝ His3 protein ∝ 5′-UTR translational efficiency + mRNA level. |
 | **Expression label** | Scalar per sequence: **`growth_rate`** (the committed column), a depth-normalized, +1-pseudocounted **natural-log** enrichment — see *Data → Label*. Higher = better 5′-UTR (more His3 → faster growth). Not normalized to any reference sequence; absolute values differ between experiments. |
-| **Test set size** | **24,468** random sequences — the top 5 % of the 489,348-variant library by input read depth (`t0`), reproduced deterministically (see *Data → Test split*). Native stratum (11,856 yeast-genome fragments) is an optional secondary. |
-| **Primary metric** | **Metric 1:** Spearman ρ (headline) + Pearson *r* between the model's predicted `HIS3` coverage and `growth_rate`. **Metric 2:** the model's partial correlation / incremental R² over translation-only (Kozak) features. See *Metrics*. |
+| **Eval set** | Two libraries, both primary, scored and reported separately. **(1) Random** — all 489,348 sequences, scored in full (zero-shot, no train/test split); metric 1 reported **overall** and **stratified into 5 input-read-depth (`t0`) buckets** (clean bucket `t0 ≥ 101`, ~5 % ≈ the paper's top-5 %). **(2) Native** — 11,856 real yeast 5′-UTR fragments in the same reporter (its own selection experiment). See *Read-depth strata* and *Native library*. |
+| **Primary metric** | **Metric 1:** Spearman ρ (headline) + Pearson *r* between the model's predicted `HIS3` coverage and `growth_rate`, reported overall and per depth bucket. **Metric 2:** the model's partial correlation / incremental R² over translation-only (Kozak) features. See *Metrics*. |
 | **Adapter protocol** | `FivePrimeUtrReporterExpressionPredictor` (new): given a list of 50 bp UTRs, return one scalar per UTR = predicted `HIS3` expression in the reporter construct. Distinct from the marginalized-logSED protocols (Rafi/Shalem) — Cuperus scores a single fixed reporter, not a marginalization over host genes. |
 
 ## Why this benchmark exists
@@ -73,37 +73,67 @@ Vendored at `archive/cuperus/` (also on the Seeliglab GitHub at `Data/Random_UTR
 
 ### Label
 
-The committed column is **`growth_rate`**, not "log₂ enrichment". Exact closed form (verified against the data, max residual 5e-12):
+The label column `growth_rate` is given by the following closed form (verified against the committed data, max residual 5e-12):
 
 ```
 growth_rate = ln( ((t1+1) / Σ(t1+1)) / ((t0+1) / Σ(t0+1)) )
 ```
 
-i.e. the **natural-log** enrichment of **+1-pseudocounted, depth-normalized** frequencies. `t0` = pre-selection (input) read depth, `t1` = post-selection. The paper's figures label it "Enrichment (log2)", but the committed column is in nats with a pseudocount — three differences from a naive `log2(t1/t0)`: the +1 pseudocount (regularizes, makes `t1=0` rows finite, shrinks low-count UTRs toward 0), per-timepoint depth normalization (a per-construct constant), and ln vs log2. None of this changes rankings (Spearman is transform-invariant; the depth-norm is a constant Pearson absorbs) — but use the column as-is and name it correctly.
+i.e. the **natural-log** enrichment of **+1-pseudocounted, depth-normalized** frequencies. `t0` = pre-selection (input) read depth, `t1` = post-selection. The paper's figures label it "Enrichment (log2)", but the committed column is in nats with a pseudocount — three differences from a naive `log2(t1/t0)`: the +1 pseudocount (regularizes, makes `t1=0` rows finite, shrinks low-count UTRs toward 0), per-timepoint depth normalization (a per-construct constant), and ln vs log2. None of this changes rankings (Spearman is transform-invariant; the depth-norm is a constant Pearson absorbs), so use the `growth_rate` column as-is.
 
-### Test split
+### Read-depth strata
 
-Top 5 % by input read depth (`t0`), reproduced exactly as the Seeliglab `Notebook_1` does:
+We're zero-shot, so there is no train/test split — score **all 489,348** random sequences and report metric 1 both overall and stratified by **input read depth `t0`** (pre-selection depth). `t0` is the right stratifying axis because it is fixed before selection, so it is independent of the UTR's effect; bucketing by post-selection depth or by the label itself would bias the strata toward high/low expression.
+
+Why stratify: the label is a ratio of two read counts, so its sampling noise scales with depth. A per-construct first-order proxy for the label's noise SD (counts modeled as Poisson, propagated through the label by the delta method) is
+
+```
+noise_SD ≈ √( 1/(t0+1) + 1/(t1+1) )   # nats; compare to the ~1.0 spread of growth_rate
+```
+
+— a *relative* reliability indicator for ranking strata, not a calibrated noise figure (real counts are overdispersed, so this is a floor). Measurement noise attenuates correlation (`r ≤ √(1 − Var_noise/Var_label)`), so each bucket has its own achievable ceiling, lowest in the noisy bucket.
+
+Buckets (edges on `t0`; the partition is exact — every sequence lands in exactly one — and the per-sequence bucket label is pinned in the manifest):
+
+| # | `t0` | n | % | median `noise_SD` | |
+|---|---|---:|---:|---:|---|
+| 1 | `< 10` | 37,992 | 7.8 % | 0.82 | noisy |
+| 2 | `10–29` | 120,288 | 24.6 % | 0.38 | low |
+| 3 | `30–59` | 192,541 | 39.3 % | 0.26 | medium |
+| 4 | `60–100` | 113,859 | 23.3 % | 0.20 | high |
+| 5 | `≥ 101` | 24,668 | 5.0 % | 0.16 | clean |
+
+Bucket 5 (`t0 ≥ 101`) ≈ the paper's top-5 % test set. The paper's exact split takes 24,468 rows (it breaks the 1,128 ties at `t0 = 101` by sort order, as the Seeliglab `Notebook_1` does):
 
 ```python
 sorted_inds = df.sort_values("t0").index
-test = sorted_inds[int(0.95 * len(df)):]   # N = 489,348 → 24,468 rows
+top5 = sorted_inds[int(0.95 * len(df)):]   # N = 489,348 → 24,468 rows
 ```
 
-~1,128 rows sit at the `t0 = 101` boundary and are sort-order-dependent, so **pin an explicit index** in the distribution manifest rather than recomputing on the fly. The paper's CNN R²=0.62 is reported on this split.
+Use that exact 24,468-row cohort for the CNN R²=0.62 comparison (see *Ceiling anchor*); the threshold form of bucket 5 (24,668 rows) is what the stratified report uses.
 
-### Native and evolved strata
+### Native library (second primary eval)
 
-- **Native (11,856 rows):** optional secondary. Fragments are **variable length ≤ 50 bp** (tiled, with overlaps), so the construct's variable slot is not a fixed 50 bp here — the adapter must handle variable insert lengths. These are native yeast sequences the models saw in training (contamination flag).
-- **Evolved:** in-silico optimization trajectories with only Round0 measured — model predictions, **not** the paper's 573 experimentally-measured constructs (those are not in the vendored tables). Not usable as a measured eval beyond Round0. Out of scope.
+The 11,856 native fragments are scored in the **same `HIS3` reporter**, the variable slot holding each native 5′-UTR fragment in place of the 50 bp random insert. What shapes the eval:
+
+- **Variable length ≤ 50 bp** (tiled from real yeast 5′-UTRs with 25 bp overlap; 81 % are 50 bp, min 2 bp). The construct slot and the metric-2 Kozak window (−5…−1 before the ATG) must handle this; for the 0.3 % of fragments < 5 bp the window spills into the fixed construct sequence upstream of the slot — immaterial at that frequency, but note it.
+- **Its own experiment.** `growth_rate` uses the same closed form (verified, residual 5e-12) but with the native library's own depth normalizers, so its absolute scale differs from random (native range ≈ [−2.6, 2.4], sd ≈ 0.48 vs random ≈ 1.1). **Don't pool the two** — report each library's metrics separately.
+- **Deeply sequenced.** Median `t0` = 131 (vs 42 for random), so most native measurements are clean and the 5-bucket scheme doesn't fit. Report metric 1 **overall** (headline) plus a robustness check on the `t0 ≥ 10` subset, which drops the noisy ~14 % tail (including the ~10 % of rows with `t0 = 0`, finite only via the pseudocount).
+- **Generalization test, not leakage.** These are real genomic UTR sequences the models saw during training — but scored here in the synthetic `HIS3` reporter, not at their native loci, so it's a generalization test with a mild memorization caveat, not direct label leakage.
+
+Metrics 1 and 2 and the feature set `f` are identical to the random library; the native ceiling anchor is the Cuperus CNN's **R²=0.60** on native UTRs (Fig 3B).
+
+### Evolved sequences (out of scope)
+
+In-silico optimization trajectories with only Round0 measured — model predictions, not the paper's 573 experimentally-measured constructs (those are not in the vendored tables). Not usable as a measured eval beyond Round0.
 
 ## Metrics
 
-Let `E` = `growth_rate`, `g` = the model's predicted `HIS3` coverage, `f` = the translation-only features below.
+Let `E` = `growth_rate`, `g` = the model's predicted `HIS3` coverage, `f` = the translation-only features below. Both metrics are computed **per library** (random and native) and reported separately — the two labels come from different selection experiments and aren't comparable in absolute scale.
 
 ### Metric 1 — direct, zero-shot
 
-**Spearman ρ (headline)** and **Pearson *r* (secondary)** between `g` and `E` over the 24,468 test sequences. Spearman leads: it is robust to the pseudocount shrinkage and the nonlinear enrichment→protein→mRNA chain. For Pearson, correlate `log g` with `E` (both on a log scale). This is the simple, fully comparable number; its ceiling is the RNA-visible fraction (see *Caveat*).
+**Spearman ρ (headline)** and **Pearson *r* (secondary)** between `g` and `E`, reported **overall (all 489,348)** and **per depth bucket** (see *Read-depth strata*). Spearman leads: it is robust to the pseudocount shrinkage and the nonlinear enrichment→protein→mRNA chain. For Pearson, correlate `log g` with `E` (both on a log scale). Expect the correlation to climb monotonically from bucket 1 (noise-limited) to bucket 5 (clean ≈ paper top-5 %); its ceiling is the RNA-visible fraction (see *Caveat*).
 
 ### Metric 2 — the model's signal beyond hand-crafted translation
 
@@ -113,6 +143,7 @@ Quantifies whether `g` carries mRNA-channel signal *beyond* what a pure translat
 - **Alongside: incremental R²** = `R²(E ~ f + g) − R²(E ~ f)`.
 
 Rules:
+- **Scope.** Computed on the full library (most statistical power for the `f`-regression); optionally recomputed on bucket 5 (clean) as a noise-controlled check.
 - **Cross-validated.** Fit the `f`-regressions on train folds, evaluate the residual correlation out-of-fold. Use the **same folds and the same `f`** across every model compared, so the only thing that varies is `g`.
 - **Interpretation caveat.** Metric 2 *understates* a model that already captures the same mechanism `f` encodes (a model that has learned Kozak gets no credit for it here). That is by design — we want credit only for the mRNA channel `f` cannot reach.
 
@@ -124,11 +155,11 @@ Rules:
 - **Exclude — uORFs / upstream AUGs.** The strongest single feature, but it acts partly through **NMD-driven mRNA decay** — exactly the channel an RNA-seq model can legitimately capture. Putting it in `f` would steal the model's credit. (It is instead the basis for the optional uORF validity-gate below.)
 - **Exclude — secondary structure (MFE).** Affects translation but also mRNA stability, is construct-dependent, and is weak (paper R²=0.078). Not cleanly translation-only.
 
-This is the **try-then-validate** starting point you flagged: Kozak alone is a weak predictor, so metric 2 may collapse toward metric 1 (if `f` removes little variance) — in which case `f` is too weak or the model already encodes Kozak. We decide empirically, after the first run, whether metric 2 earns its place and whether `f` needs enriching (e.g. an in-frame-uAUG term, or a CNN-derived translation component).
+This is deliberately a **try-then-validate** starting point: Kozak alone is a weak predictor, so metric 2 may collapse toward metric 1 (if `f` removes little variance) — in which case `f` is too weak or the model already encodes Kozak. We decide empirically, after the first run, whether metric 2 earns its place and whether `f` needs enriching (e.g. an in-frame-uAUG term, or a CNN-derived translation component).
 
 ### Ceiling anchor
 
-Report the Cuperus CNN's **R²=0.62** on this exact top-5 % split as a fixed reference (sequence→enrichment, captures both translation and mRNA channels), so metric 1 reads as a fraction of achievable signal.
+Report the Cuperus CNN as a fixed reference (sequence→enrichment, captures both translation and mRNA channels). Its accuracy is itself depth-dependent: **R²=0.62** on the top-5 %-by-depth set (≈ bucket 5) vs **R²=0.47** on a randomly chosen, depth-mixed 5 %. So read each random-library bucket against a depth-appropriate ceiling (≈0.62 for bucket 5; the overall number sits nearer the depth-mixed 0.47), not a single anchor. For the native library the anchor is the CNN's **R²=0.60** on native UTRs (Fig 3B).
 
 ### Optional secondaries (not in the v1 headline)
 
@@ -146,7 +177,8 @@ Higher `growth_rate` = better 5′-UTR = more His3 protein. A 5′-UTR that rais
 - `archive/cuperus/GSM2793752_Random_UTRs.csv.gz` — random library (vendored).
 
 ### Processed distribution (`data/tasks/cuperus_mpra_5utr/`)
-- `test_set.tsv` — the 24,468 top-`t0` sequences with `growth_rate`; the test index pinned by SHA256 in a manifest.
+- `random_utrs.tsv` — all 489,348 random sequences with `growth_rate`, `t0`, `t1`, and a precomputed depth-bucket label (1–5); the bucket edges and the exact paper top-5 % index pinned by SHA256 in a manifest.
+- `native_utrs.tsv` — the 11,856 native fragments with `UTR_name`, `UTR` (variable length), `growth_rate`, `t0`, `t1`.
 - `construct.json` (or `.fa`) — the reconstructed `CYC1`pr / `HIS3` CDS / `CYC1` terminator flanks and the 50 bp slot coordinates.
 
 ### Track subsets / RC averaging
@@ -158,5 +190,5 @@ Higher `growth_rate` = better 5′-UTR = more His3 protein. A 5′-UTR that rais
 
 - **Construct sequence sourcing.** Pin the exact `CYC1` promoter (298 nt) and `CYC1` terminator from `p415-CYC1` (Mumberg et al. 1995 / pRS415 map), and the `HIS3` CDS (YOR202W). The 50 bp insert replaces the native 56-bp `CYC1` 5′-UTR immediately upstream of the `HIS3` ATG. Confirm against the Seeliglab construct.
 - **`f` validation.** After the first run, check whether metric 2 separates from metric 1; if `f` is too weak, consider adding an in-frame-uAUG term or a CNN-derived translation component (keeping it translation-only).
-- **Native stratum.** Decide whether to include the 11,856 variable-length native fragments as a secondary run (needs variable-insert handling + a contamination flag).
+- **Native variable-length slot.** Confirm how sub-50 bp native fragments sit in the construct (does the slot shrink, or is the fragment padded to the ATG?) against the Seeliglab native construct (Methods: smaller fragments for UTRs < 50 bp).
 - **Scaffold reuse.** `_cuperus_scaffold.py` (build a fixed construct with one variable slot) is close to `_cassette_scaffold.py`; unify if the abstractions line up.

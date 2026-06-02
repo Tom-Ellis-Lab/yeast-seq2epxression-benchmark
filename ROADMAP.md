@@ -348,12 +348,12 @@ https://github.com/daftpunksss/YeIP.
   marginalization; two metrics (direct corr + partial-corr over Kozak
   features) defined.
 - [x] Source data acquisition — vendored at `archive/cuperus/` (random
-  489,348; top-5 % `t0` test set = 24,468; native 11,856 variable-length
-  secondary).
+  489,348, scored in full with 5 `t0` depth buckets; native 11,856
+  variable-length — a second primary eval, not a secondary).
 - [ ] Benchmark class — score the literal `CYC1`pr–`HIS3`–`CYC1`term
-  reporter (one forward per UTR, read out `HIS3` coverage); new
-  `FivePrimeUtrReporterExpressionPredictor` protocol. Metric 2 (Kozak
-  partial-corr) lives in the benchmark/eval layer.
+  reporter (one forward per UTR, read out `HIS3` coverage) for both the
+  random and native libraries; new `FivePrimeUtrReporterExpressionPredictor`
+  protocol. Metric 2 (Kozak partial-corr) lives in the benchmark/eval layer.
 - [ ] Shorkie + Yorzoi adapters
 - [ ] **ExoShorkie adapter** (same new protocol). Random 50 bp 5′
   UTRs in the CYC1-HIS3 plasmid construct are the same exogenous-in-

@@ -60,8 +60,9 @@ it from its native downstream context. Sequence-in / coverage-out, scored as a
 log-fold-change of CDS coverage against an unscrambled parental control, read
 against a leave-one-out reproducibility ceiling.
 
-**5′-UTR grammar — [Cuperus](cuperus_mpra_5utr.md).** ~500k random 50 bp 5′-UTRs
-in the native `CYC1`pr–`HIS3`–`CYC1`term reporter, selected by growth. Probes
+**5′-UTR grammar — [Cuperus](cuperus_mpra_5utr.md).** Random 50 bp 5′-UTRs (the full
+~489k library, stratified by read depth) and 11,856 native yeast 5′-UTR fragments,
+both in the `CYC1`pr–`HIS3`–`CYC1`term reporter and selected by growth. Probes
 translation-initiation / uORF / structure grammar. Scored zero-shot in the literal
 reporter context (no marginalization — the construct is native yeast sequence), with
 a second metric isolating the model's mRNA-channel signal beyond hand-crafted Kozak

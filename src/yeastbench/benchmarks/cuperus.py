@@ -89,9 +89,14 @@ class CuperusUTRBenchmark(
         random_path: Path,
         native_path: Path,
         info: BenchmarkInfo,
+        fasta_path: Path | None = None,
     ) -> None:
         self.random_path = Path(random_path)
         self.native_path = Path(native_path)
+        # Carried so the registry can forward it to the model adapter (which
+        # builds the construct against the genome); the benchmark itself is
+        # model-independent and never reads it.
+        self.fasta_path = Path(fasta_path) if fasta_path is not None else None
         self.info = info
         self._random = pd.read_csv(self.random_path, sep="\t")
         self._native = pd.read_csv(self.native_path, sep="\t")

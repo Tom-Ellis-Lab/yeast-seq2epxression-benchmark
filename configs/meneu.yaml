@@ -1,0 +1,49 @@
+# Meneu foreign-DNA RNA-seq coverage benchmark — Yorzoi + Shorkie.
+#
+# Far-OOD zero-shot stress test: tile two bacterial chromosomes integrated
+# into S. cerevisiae and predict their per-base RNA-seq coverage, scored per
+# contig against the measured RNA-seq (see benchmarks/meneu_foreign_dna.md).
+#
+# Two distribution files, one per model receptive field:
+#   - meneu_foreign_dna_v1.tsv         (4,992 bp window, Yorzoi)
+#   - meneu_foreign_dna_v1_w16384.tsv  (16,384 bp window, Shorkie)
+#
+#   uv run ybench run --config configs/meneu.yaml
+#   uv run ybench run --config configs/meneu.yaml --model shorkie
+
+out_dir: results/meneu
+device: cuda
+
+tasks_config:
+  meneu_foreign_dna:
+    data_path: data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1.tsv
+  meneu_foreign_dna_shorkie:
+    data_path: data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1_w16384.tsv
+
+runs:
+  - model: yorzoi
+    tasks: [meneu_foreign_dna]
+    model_config:
+      hf_repo: tom-ellis-lab/yorzoi
+      use_rc: true
+      # Bacterial strains have no matched experimental tracks; predictions
+      # do not vary by strain. The headline track config is the 10
+      # exogenous-human Illumina plus-tracks (the set ExoYorzoi used);
+      # Meneu is unstranded, so the adapter sums the + and − track axes
+      # and returns one unstranded per-base track per tile.
+      track_mode: illumina_exo
+
+  - model: shorkie
+    tasks: [meneu_foreign_dna_shorkie]
+    model_config:
+      params_path: data/models/shorkie/params.json
+      checkpoint_paths:
+        - data/models/shorkie/checkpoints/f0.h5
+        - data/models/shorkie/checkpoints/f1.h5
+        - data/models/shorkie/checkpoints/f2.h5
+        - data/models/shorkie/checkpoints/f3.h5
+        - data/models/shorkie/checkpoints/f4.h5
+        - data/models/shorkie/checkpoints/f5.h5
+        - data/models/shorkie/checkpoints/f6.h5
+        - data/models/shorkie/checkpoints/f7.h5
+      use_rc: true

@@ -562,6 +562,49 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   shared-cohort framework PR #2 set up. Reuses the Shorkie wrapper
   pattern; new thin adapter only.
 
+## Foreign-DNA integration
+
+### Meneu et al. (foreign-DNA chromosome integration)
+
+Tests whether yeast-trained models predict RNA-seq coverage **zero-shot**
+over whole bacterial chromosomes integrated into *S. cerevisiae* —
+*M. pneumoniae* (~818 kb, 40% GC, densely transcribed) and *M. mycoides*
+(~1.22 Mb, 24% GC, near-silent). Tile the foreign contig at each model's
+receptive field, stitch a per-base track, and score per chromosome on
+non-overlapping 5 kb windows: median raw Pearson + median JS divergence
+(shape) and per-window fold-change error after genome-wide depth-norm
+(magnitude). The far-OOD, leakage-by-construction end of the suite;
+mechanically Brooks coverage with the LFC machinery stripped.
+
+Source: Meneu et al. 2025, *Sequence-dependent activity and
+compartmentalization of foreign DNA in a eukaryotic nucleus*, Science
+387(6734):eadm9466 ([DOI](https://doi.org/10.1126/science.adm9466)).
+Genomes + processed RNA-seq coverage from the ExoShorkie figshare release
+(`10.6084/m9.figshare.31075375`). Spec: `benchmarks/meneu_foreign_dna.md`.
+
+**Implemented; Shorkie + Yorzoi run zero-shot (PR #21).**
+
+- [x] Spec, build script, `MeneuForeignDNABenchmark` +
+  `TiledCoverageTrackPredictor` protocol, Shorkie (T0) + Yorzoi
+  (`illumina_exo`) adapters, registry, tests. First zero-shot numbers in
+  the spec: shape Pearson Mpneumo 0.09–0.11 / Mmmyco 0.26–0.38.
+- [ ] **ExoShorkie adapter** (`TiledCoverageTrackPredictor`). This is the
+  exogenous-DNA-in-yeast task ExoShorkie was built for, so the most
+  in-distribution model for the benchmark. Reuses the Shorkie wrapper
+  pattern; thin adapter only.
+- [ ] **Check ExoShorkie performance and compare against the paper.** Once
+  the adapter lands, run it on this benchmark and compare its numbers to the
+  ExoShorkie paper's reported results (transfer-learned ~0.6–0.76; the
+  NatShorkie / ExoYorzoi zero-shot refs ~0.38–0.58). This doubles as the
+  check on *why* our zero-shot Shorkie/Yorzoi sit below those refs: first
+  reproduce the paper's exact metric (median Spearman over 16 bp bins of
+  14.3 kb windows) on our saved predictions, then alignment/scale, track
+  subsets, and NatShorkie's strand-adaptation. See the spec's Open
+  Questions #1.
+- [ ] **Yorzoi track-group sweep.** Only `illumina_exo` (10 exogenous-human
+  Illumina tracks) was run; add the Nanopore-63 and SRA-1 modes to
+  `_plus_axis_indices`, report each, name the best.
+
 ## Native-genome track prediction
 
 - [ ] Cross-model RNA-seq track-prediction benchmark on held-out yeast

@@ -22,6 +22,7 @@ from yeastbench.adapters.protocols import (
     LocalCodingVariantPredictor,
     MarginalizedSequenceExpressionPredictor,
     TerminatorMarginalizedExpressionPredictor,
+    TiledCoverageTrackPredictor,
     VariantEffectScorer,
 )
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
@@ -217,6 +218,18 @@ def _yorzoi_cuperus_adapter(device, fasta_path, **cfg):
     )
 
 
+def _yorzoi_meneu_adapter(device, **cfg):
+    from yeastbench.adapters.yorzoi_meneu import YorzoiMeneuPredictor
+
+    return YorzoiMeneuPredictor.from_pretrained(device=device, **cfg)
+
+
+def _shorkie_meneu_adapter(device, **cfg):
+    from yeastbench.adapters.shorkie_meneu import ShorkieMeneuPredictor
+
+    return ShorkieMeneuPredictor.from_checkpoints(device=device, **cfg)
+
+
 # protocol → (build_fn, task_fields) — each name in task_fields is read
 # from the constructed task object via getattr and forwarded to build_fn
 # as a keyword argument.
@@ -234,6 +247,7 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     IGRInsertionExpressionPredictor: (_shorkie_hong_adapter, FASTA_ONLY),
     FivePrimeUtrReporterExpressionPredictor: (_shorkie_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_shorkie_brooks_adapter, ()),
+    TiledCoverageTrackPredictor: (_shorkie_meneu_adapter, ()),
     LocalCodingVariantPredictor: (_shorkie_chen_adapter, CHEN_FIELDS),
 }
 
@@ -245,6 +259,7 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     IGRInsertionExpressionPredictor: (_yorzoi_hong_adapter, FASTA_ONLY),
     FivePrimeUtrReporterExpressionPredictor: (_yorzoi_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_yorzoi_brooks_adapter, ()),
+    TiledCoverageTrackPredictor: (_yorzoi_meneu_adapter, ()),
     LocalCodingVariantPredictor: (_yorzoi_chen_adapter, CHEN_FIELDS),
 }
 
@@ -456,6 +471,43 @@ def _build_brooks_scramble_shorkie(data_path: str | Path) -> Benchmark:
     )
 
 
+def _build_meneu(
+    data_path: str | Path =
+        "data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1.tsv",
+) -> Benchmark:
+    from yeastbench.benchmarks.meneu import MeneuForeignDNABenchmark
+
+    return MeneuForeignDNABenchmark(
+        data_path=Path(data_path),
+        info=BenchmarkInfo(
+            name="meneu_foreign_dna",
+            version="v1",
+            description="Meneu et al. foreign-DNA zero-shot coverage (4992 bp window)",
+            distribution_uri="",
+        ),
+    )
+
+
+def _build_meneu_shorkie(
+    data_path: str | Path =
+        "data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1_w16384.tsv",
+) -> Benchmark:
+    """Same benchmark class, reads the 16,384 bp distribution for
+    Shorkie's receptive field. Separate task names route the right TSV
+    to the right model (mirrors the Brooks split)."""
+    from yeastbench.benchmarks.meneu import MeneuForeignDNABenchmark
+
+    return MeneuForeignDNABenchmark(
+        data_path=Path(data_path),
+        info=BenchmarkInfo(
+            name="meneu_foreign_dna_shorkie",
+            version="v1-shorkie",
+            description="Meneu et al. foreign-DNA — 16,384 bp window (Shorkie)",
+            distribution_uri="",
+        ),
+    )
+
+
 def _build_chen(
     library: str,
     data_path: str | Path,
@@ -512,6 +564,8 @@ TASKS: dict[str, TaskFactory] = {
     "hong_igr": _build_hong_igr,
     "brooks_scramble": _build_brooks_scramble,
     "brooks_scramble_shorkie": _build_brooks_scramble_shorkie,
+    "meneu_foreign_dna": _build_meneu,
+    "meneu_foreign_dna_shorkie": _build_meneu_shorkie,
     "chen_gfp_r1": _build_chen,
     "chen_gfp_r2": _build_chen,
     "chen_tdh3": _build_chen,

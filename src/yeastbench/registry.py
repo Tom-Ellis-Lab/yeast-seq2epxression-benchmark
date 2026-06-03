@@ -205,6 +205,63 @@ def _exoshorkie_brooks_adapter(device, **cfg):
     return ExoShorkieBrooksPredictor.from_students(device=device, **cfg)
 
 
+# ExoShorkie scalar/variant adapters: thin subclasses of the Shorkie adapters
+# with an ExoShorkie model injected (identical readout, only the model differs).
+def _exoshorkie_eqtl_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieVariantScorer
+
+    return ExoShorkieVariantScorer.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_mpra_marginalized_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import (
+        ExoShorkieMPRAMarginalizedPredictor,
+    )
+
+    return ExoShorkieMPRAMarginalizedPredictor.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_shalem_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieShalemPredictor
+
+    return ExoShorkieShalemPredictor.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_wu_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieWuPredictor
+
+    return ExoShorkieWuPredictor.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_hong_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieHongPredictor
+
+    return ExoShorkieHongPredictor.from_students(
+        fasta_path=fasta_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_chen_adapter(device, fasta_path, library, hosts_path, data_dir, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieChenPredictor
+
+    return ExoShorkieChenPredictor.from_students(
+        fasta_path=fasta_path,
+        library=library,
+        hosts_path=hosts_path,
+        data_dir=data_dir,
+        device=device,
+        **cfg,
+    )
+
+
 # protocol → (build_fn, task_fields) — each name in task_fields is read
 # from the constructed task object via getattr and forwarded to build_fn
 # as a keyword argument.
@@ -235,12 +292,17 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
 }
 
 
-# ExoShorkie: the 6-student distilled ensemble. Native task is coverage
-# (Brooks); the model predicts RNA-seq coverage directly. Scalar-readout tasks
-# (Wu/Hong/Chen/MPRA/Shalem) can be added here as their count-space adapters
-# land — until then those (model, task) pairs raise a clear "no adapter" error.
+# ExoShorkie: the 6-student distilled ensemble, benchmarked on every task
+# Shorkie runs (count-space coverage with the log-z inverse; scalar/variant
+# tasks reuse the Shorkie readouts via subclass adapters).
 EXOSHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
+    VariantEffectScorer: (_exoshorkie_eqtl_adapter, REFS_FIELDS),
+    MarginalizedSequenceExpressionPredictor: (_exoshorkie_mpra_marginalized_adapter, REFS_FIELDS),
+    TerminatorMarginalizedExpressionPredictor: (_exoshorkie_shalem_adapter, REFS_FIELDS),
+    CassetteExpressionPredictor: (_exoshorkie_wu_adapter, REFS_FIELDS),
+    IGRInsertionExpressionPredictor: (_exoshorkie_hong_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_exoshorkie_brooks_adapter, ()),
+    LocalCodingVariantPredictor: (_exoshorkie_chen_adapter, CHEN_FIELDS),
 }
 
 

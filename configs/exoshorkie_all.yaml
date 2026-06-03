@@ -1,0 +1,76 @@
+# Full ExoShorkie benchmark — every task Shorkie runs (+ Brooks coverage).
+#
+#   CUDA_VISIBLE_DEVICES=2 uv run ybench run --config configs/exoshorkie_all.yaml
+#
+# Tasks ordered cheap → expensive so all patterns validate early and most of
+# the comparison table lands within hours; rafi_mpra (71k seqs × ~22 hosts) is
+# the multi-hour long pole and runs last. Baselines (Shorkie/Yorzoi) live in
+# the sibling worktree's results/default for the head-to-head.
+out_dir: results/exoshorkie
+device: cuda
+
+tasks_config:
+  # NOTE: caudal_eqtl / kita_eqtl are intentionally omitted. The shared
+  # shorkie_eqtl adapter (which ExoShorkie inherits) rejects these distributions
+  # with a single-base REF check ("REF mismatch ... claimed=TC" — multi-base ref
+  # alleles), so Shorkie has no eqtl baseline either. This is a pre-existing
+  # eqtl-data/adapter issue, orthogonal to the ExoShorkie integration.
+  wu_rfpins:
+    cassette_seq: data/tasks/wu_rfpins/expression_cassette.fasta
+    labels_path: data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  hong_igr:
+    labels_path: data/tasks/hong/hong_igr_v1.tsv
+    cassette_seq: data/tasks/hong/expression_cassette.fasta
+    fasta_path: data/tasks/R64-5-1.fa
+  chen_tdh3:
+    library: tdh3
+    data_path: data/tasks/chen_synonymous/tdh3.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+    hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
+    data_dir: data/tasks/chen_synonymous
+    replicate_ceiling_pearson: 0.72
+  chen_gfp_r1:
+    library: gfp_r1
+    data_path: data/tasks/chen_synonymous/gfp_r1.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+    hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
+    data_dir: data/tasks/chen_synonymous
+    replicate_ceiling_pearson: 0.83
+    replicate_ceiling_spearman: 0.71
+  chen_gfp_r2:
+    library: gfp_r2
+    data_path: data/tasks/chen_synonymous/gfp_r2.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+    hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
+    data_dir: data/tasks/chen_synonymous
+    replicate_ceiling_pearson: 0.73
+    replicate_ceiling_spearman: 0.71
+  brooks_scramble_shorkie:
+    data_path: data/tasks/brooks_scramble/brooks_scramble_v1_w16384.tsv
+  shalem_mpra_marginalized:
+    data_path: data/tasks/shalem_mpra_terminator/segal_2015.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  rafi_mpra_marginalized:
+    data_dir: data/tasks/rafi_mpra
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+
+runs:
+  - model: exoshorkie
+    tasks:
+      [
+        wu_rfpins,
+        hong_igr,
+        chen_tdh3,
+        chen_gfp_r1,
+        chen_gfp_r2,
+        brooks_scramble_shorkie,
+        shalem_mpra_marginalized,
+        rafi_mpra_marginalized,
+      ]
+    model_config:
+      batch_size: 32
+      use_rc: true

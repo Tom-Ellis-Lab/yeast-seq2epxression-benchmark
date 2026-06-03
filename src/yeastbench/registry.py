@@ -199,6 +199,12 @@ def _shorkie_brooks_adapter(device, **cfg):
     return ShorkieBrooksPredictor.from_checkpoints(device=device, **cfg)
 
 
+def _exoshorkie_brooks_adapter(device, **cfg):
+    from yeastbench.adapters.exoshorkie_brooks import ExoShorkieBrooksPredictor
+
+    return ExoShorkieBrooksPredictor.from_students(device=device, **cfg)
+
+
 # protocol → (build_fn, task_fields) — each name in task_fields is read
 # from the constructed task object via getattr and forwarded to build_fn
 # as a keyword argument.
@@ -229,6 +235,15 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
 }
 
 
+# ExoShorkie: the 6-student distilled ensemble. Native task is coverage
+# (Brooks); the model predicts RNA-seq coverage directly. Scalar-readout tasks
+# (Wu/Hong/Chen/MPRA/Shalem) can be added here as their count-space adapters
+# land — until then those (model, task) pairs raise a clear "no adapter" error.
+EXOSHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
+    CoverageTrackPredictor: (_exoshorkie_brooks_adapter, ()),
+}
+
+
 def _dispatch(
     adapters: dict[type, tuple[Callable, tuple[str, ...]]],
     task: Benchmark,
@@ -252,6 +267,10 @@ def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
 
 def _build_yorzoi(task: Benchmark, device: str, **cfg: Any) -> Any:
     return _dispatch(YORZOI_ADAPTERS, task, device, **cfg)
+
+
+def _build_exoshorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
+    return _dispatch(EXOSHORKIE_ADAPTERS, task, device, **cfg)
 
 
 def _build_cai_baseline(task: Benchmark, device: str, **cfg: Any) -> Any:
@@ -283,6 +302,7 @@ def _build_codon_transformer_baseline(task: Benchmark, device: str, **cfg: Any) 
 
 MODELS: dict[str, ModelFactory] = {
     "shorkie": _build_shorkie,
+    "exoshorkie": _build_exoshorkie,
     "yorzoi": _build_yorzoi,
     "cai": _build_cai_baseline,
     "codon_transformer": _build_codon_transformer_baseline,

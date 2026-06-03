@@ -3,7 +3,7 @@
 > **Status:** implemented; **v1 GPU run done (2026-06-02)** — see *Results*.
 > Headline: Shorkie clean-bucket Spearman **0.28**, Yorzoi **0.11**; both
 > metrics behaved as designed (per-bucket ρ climbs monotonically with depth for
-> Shorkie; metric 2 + the depth split show Shorkie carries genuine mRNA signal
+> Shorkie; the partial correlation + the depth split show Shorkie carries genuine mRNA signal
 > while Yorzoi is near-noise on the clean data). Scoring is in the **natural
 > HIS3 reporter context** — no marginalization; a divergence check over diverse
 > backgrounds confirmed this is immaterial for the rank metrics (see *Why no
@@ -17,8 +17,8 @@
 | **Source** | Cuperus *et al.* 2017, *Deep learning of the regulatory grammar of yeast 5′ UTRs from 500,000 random sequences*, Genome Research 27:2015–2024. DOI: [10.1101/gr.224964.117](https://doi.org/10.1101/gr.224964.117). PMC: [PMC5741052](https://pmc.ncbi.nlm.nih.gov/articles/PMC5741052/). Code/data: [Seeliglab/2017---Deep-learning-yeast-UTRs](https://github.com/Seeliglab/2017---Deep-learning-yeast-UTRs). PDF in `papers/`. |
 | **Assay** | Massively parallel growth-based selection. ~500 k 50 bp random 5′-UTRs cloned into a single-copy `p415-CYC1` CEN plasmid, replacing the native 56-bp `CYC1` 5′-UTR immediately upstream of the `HIS3` ATG (`CYC1` promoter + `CYC1` terminator). Pool grown in SD-His + 1.5 mM 3-AT (His3 inhibitor) for ~6.2 doublings; pre/post-selection plasmid DNA deep-sequenced. Growth ∝ His3 protein ∝ 5′-UTR translational efficiency + mRNA level. |
 | **Expression label** | Scalar per sequence: **`growth_rate`** (the committed column), a depth-normalized, +1-pseudocounted **natural-log** enrichment — see *Data → Label*. Higher = better 5′-UTR (more His3 → faster growth). Not normalized to any reference sequence; absolute values differ between experiments. |
-| **Eval set** | Two libraries, both primary, scored and reported separately. **(1) Random** — all 489,348 sequences, scored in full (zero-shot, no train/test split); metric 1 reported **overall** and **stratified into 5 input-read-depth (`t0`) buckets** (clean bucket `t0 ≥ 101`, ~5 % ≈ the paper's top-5 %). **(2) Native** — 11,856 real yeast 5′-UTR fragments in the same reporter (its own selection experiment). See *Read-depth strata* and *Native library*. |
-| **Primary metric** | **Metric 1:** Spearman ρ (headline) + Pearson *r* between the model's predicted `HIS3` coverage and `growth_rate`, reported overall and per depth bucket. **Metric 2:** the model's partial correlation / incremental R² over translation-only (Kozak) features. See *Metrics*. |
+| **Eval set** | Two libraries, both primary, scored and reported separately. **(1) Random** — all 489,348 sequences, scored in full (zero-shot, no train/test split); the zero-shot correlation reported **overall** and **stratified into 5 input-read-depth (`t0`) buckets** (clean bucket `t0 ≥ 101`, ~5 % ≈ the paper's top-5 %). **(2) Native** — 11,856 real yeast 5′-UTR fragments in the same reporter (its own selection experiment). See *Read-depth strata* and *Native library*. |
+| **Primary metric** | **Zero-shot correlation:** Spearman ρ (headline) + Pearson *r* between the model's predicted `HIS3` coverage and `growth_rate`, reported overall and per depth bucket. **Partial correlation:** the model's signal beyond translation-only (Kozak) features — partial correlation + incremental R². See *Metrics*. |
 | **Adapter protocol** | `FivePrimeUtrReporterExpressionPredictor` (new): given a list of 50 bp UTRs, return one scalar per UTR = predicted `HIS3` expression in the reporter construct. Distinct from the marginalized-logSED protocols (Rafi/Shalem) — Cuperus scores a single fixed reporter, not a marginalization over host genes. |
 
 ## Why this benchmark exists
@@ -33,13 +33,13 @@ The label reflects **protein level** (His3 activity → growth). 5′-UTR change
 - **Secondary structure → mRNA stability** → mRNA shifts (partly visible).
 - **TSS / 5′-end effects** → abundance shifts (visible).
 
-Pure translational-efficiency differences (e.g. a better Kozak that raises protein without changing mRNA) are **invisible** to an mRNA model. So the achievable correlation is bounded by the RNA-visible fraction of enrichment, and this benchmark is expected to correlate more weakly than Rafi/Shalem. A near-zero result is a legitimate finding ("RNA-seq-trained models don't see translation"); a moderate positive would reflect the NMD + stability channels making it through. Metric 2 is built to separate "model sees the mRNA channel" from "model is just re-deriving the Kozak context a hand feature already has."
+Pure translational-efficiency differences (e.g. a better Kozak that raises protein without changing mRNA) are **invisible** to an mRNA model. So the achievable correlation is bounded by the RNA-visible fraction of enrichment, and this benchmark is expected to correlate more weakly than Rafi/Shalem. A near-zero result is a legitimate finding ("RNA-seq-trained models don't see translation"); a moderate positive would reflect the NMD + stability channels making it through. The partial correlation is built to separate "model sees the mRNA channel" from "model is just re-deriving the Kozak context a hand feature already has."
 
 ### Why no marginalization
 
 Rafi/Shalem/Chen marginalize a designed insert across many native host genes for two reasons: (a) to put an *unnatural* insert (a heterologous GFP CDS, a designed terminator oligo) into in-distribution genomic context, and (b) to cancel the model's absolute miscalibration by averaging logSED over contexts. Cuperus needs neither. The reporter is built from native yeast sequence the model saw in training (`CYC1` promoter, `HIS3` CDS, `CYC1` terminator), and the measured quantity is tied to `HIS3` specifically — marginalizing over 22 random hosts would measure a *different* quantity ("the insert's average effect across contexts") than what Cuperus assayed. And with the 50 bp UTR as the only thing varying, a fixed-reference logSED is just a constant offset from the raw log-coverage, so it's rank-identical — there is nothing to gain from a per-context REF. So v1 scores the literal construct, one forward pass per UTR. This is also ~22× cheaper (24,468 forwards, not ~538 k).
 
-**Empirical confirmation (divergence check, 2026-06-03).** We re-scored the full clean bucket + native library against five diverse genomic backgrounds (within- and cross-chromosome, both strands, gene-dense and gene-sparse) plus a synthetic random-flank control, and compared single-`HIS3` to the background-marginalized score. The background shifts the readout *magnitude* near-uniformly across UTRs (per-UTR CV ≈ 0.10) but preserves rankings: Spearman(g_HIS3, g_marg) = 0.996, clean-bucket Spearman Δ = −0.0068, metric-2 partial Δ = −0.006 — all well inside any reasonable tolerance, and the shipped numbers are unchanged because production already scores single-`HIS3`. The effect is small-but-real and statistically resolvable (paired bootstrap CIs exclude zero; it is mildly *negative* for Shorkie and, on the native library, *positive* and sign-flipping for Yorzoi — a genuine flank×context interaction), so "no effect" would overstate it; the honest statement is **immaterial for the rank-based metrics this benchmark reports.** The marginalization machinery was therefore removed rather than shipped.
+**Empirical confirmation (divergence check, 2026-06-03).** We re-scored the full clean bucket + native library against five diverse genomic backgrounds (within- and cross-chromosome, both strands, gene-dense and gene-sparse) plus a synthetic random-flank control, and compared single-`HIS3` to the background-marginalized score. The background shifts the readout *magnitude* near-uniformly across UTRs (per-UTR CV ≈ 0.10) but preserves rankings: Spearman(g_HIS3, g_marg) = 0.996, clean-bucket Spearman Δ = −0.0068, partial-correlation Δ = −0.006 — all well inside any reasonable tolerance, and the shipped numbers are unchanged because production already scores single-`HIS3`. The effect is small-but-real and statistically resolvable (paired bootstrap CIs exclude zero; it is mildly *negative* for Shorkie and, on the native library, *positive* and sign-flipping for Yorzoi — a genuine flank×context interaction), so "no effect" would overstate it; the honest statement is **immaterial for the rank-based metrics this benchmark reports.** The marginalization machinery was therefore removed rather than shipped.
 
 ## The construct
 
@@ -90,7 +90,7 @@ i.e. the **natural-log** enrichment of **+1-pseudocounted, depth-normalized** fr
 
 ### Read-depth strata
 
-We're zero-shot, so there is no train/test split — score **all 489,348** random sequences and report metric 1 both overall and stratified by **input read depth `t0`** (pre-selection depth). `t0` is the right stratifying axis because it is fixed before selection, so it is independent of the UTR's effect; bucketing by post-selection depth or by the label itself would bias the strata toward high/low expression.
+We're zero-shot, so there is no train/test split — score **all 489,348** random sequences and report the zero-shot correlation both overall and stratified by **input read depth `t0`** (pre-selection depth). `t0` is the right stratifying axis because it is fixed before selection, so it is independent of the UTR's effect; bucketing by post-selection depth or by the label itself would bias the strata toward high/low expression.
 
 Why stratify: the label is a ratio of two read counts, so its sampling noise scales with depth. A per-construct first-order proxy for the label's noise SD (counts modeled as Poisson, propagated through the label by the delta method) is
 
@@ -113,7 +113,7 @@ Buckets (edges on `t0`; the partition is exact — every sequence lands in exact
 Bucket 5 (`t0 ≥ 101`) ≈ the paper's top-5 % test set. The paper's exact split takes 24,468 rows (it breaks the 1,128 ties at `t0 = 101` by sort order, as the Seeliglab `Notebook_1` does):
 
 ```python
-sorted_inds = df.sort_values("t0").index
+sorted_inds = df.sort_values("t0", kind="stable").index  # stable tie-break (matches build_distribution.py)
 top5 = sorted_inds[int(0.95 * len(df)):]   # N = 489,348 → 24,468 rows
 ```
 
@@ -123,9 +123,9 @@ Use that exact 24,468-row cohort for the CNN R²=0.62 comparison (see *Ceiling a
 
 The 11,856 native fragments are scored in the **same `HIS3` reporter**, the variable slot holding each native 5′-UTR fragment in place of the 50 bp random insert. What shapes the eval:
 
-- **Variable length ≤ 50 bp** (tiled from real yeast 5′-UTRs with 25 bp overlap; 81 % are 50 bp, min 2 bp). The construct slot and the metric-2 Kozak window (−5…−1 before the ATG) must handle this; for the 0.3 % of fragments < 5 bp the window spills into the fixed construct sequence upstream of the slot — immaterial at that frequency, but note it.
+- **Variable length ≤ 50 bp** (tiled from real yeast 5′-UTRs with 25 bp overlap; 81 % are 50 bp, min 2 bp). The construct slot and the partial-correlation Kozak window (−5…−1 before the ATG) must handle this; for the 0.3 % of fragments < 5 bp the window spills into the fixed construct sequence upstream of the slot — immaterial at that frequency, but note it.
 - **Its own experiment.** `growth_rate` uses the same closed form (verified, residual 5e-12) but with the native library's own depth normalizers, so its absolute scale differs from random (native range ≈ [−2.6, 2.4], sd ≈ 0.48 vs random ≈ 1.1). **Don't pool the two** — report each library's metrics separately.
-- **Deeply sequenced.** Median `t0` = 131 (vs 42 for random), so most native measurements are clean and the 5-bucket scheme doesn't fit. Report metric 1 **overall** (headline) plus a robustness check on the `t0 ≥ 10` subset, which drops the noisy ~14 % tail (including the ~10 % of rows with `t0 = 0`, finite only via the pseudocount).
+- **Deeply sequenced.** Median `t0` = 131 (vs 42 for random), so most native measurements are clean and the 5-bucket scheme doesn't fit. Report the zero-shot correlation **overall** (headline) plus a robustness check on the `t0 ≥ 10` subset, which drops the noisy ~14 % tail (including the ~10 % of rows with `t0 = 0`, finite only via the pseudocount).
 - **Generalization test, not leakage.** These are real genomic UTR sequences the models saw during training — but scored here in the synthetic `HIS3` reporter, not at their native loci, so it's a generalization test with a mild memorization caveat, not direct label leakage.
 
 Metrics 1 and 2 and the feature set `f` are identical to the random library; the native ceiling anchor is the Cuperus CNN's **R²=0.60** on native UTRs (Fig 3B).
@@ -138,11 +138,11 @@ In-silico optimization trajectories with only Round0 measured — model predicti
 
 Let `E` = `growth_rate`, `g` = the model's predicted `HIS3` coverage, `f` = the translation-only features below. Both metrics are computed **per library** (random and native) and reported separately — the two labels come from different selection experiments and aren't comparable in absolute scale.
 
-### Metric 1 — direct, zero-shot
+### Zero-shot correlation
 
 **Spearman ρ (headline)** and **Pearson *r* (secondary)** between `g` and `E`, reported **overall (all 489,348)** and **per depth bucket** (see *Read-depth strata*). Spearman leads: it is robust to the pseudocount shrinkage and the nonlinear enrichment→protein→mRNA chain. For Pearson, correlate `log g` with `E` (both on a log scale). Expect the correlation to climb monotonically from bucket 1 (noise-limited) to bucket 5 (clean ≈ paper top-5 %); its ceiling is the RNA-visible fraction (see *Caveat*).
 
-### Metric 2 — the model's signal beyond hand-crafted translation
+### Partial correlation — signal beyond hand-crafted translation
 
 Quantifies whether `g` carries mRNA-channel signal *beyond* what a pure translation-initiation feature already explains. Fit `E ~ f + g` and report:
 
@@ -152,7 +152,7 @@ Quantifies whether `g` carries mRNA-channel signal *beyond* what a pure translat
 Rules:
 - **Scope.** K-fold CV **within the clean bucket** (`t0 ≥ 101`, ≈ 24.5k rows) — fit `f` and evaluate the partial correlation on the same low-noise, in-distribution data. That bucket keeps ~80 % of the full `growth_rate` variance (sd 1.02 vs 1.14) at the lowest label noise, and ≈ 24.5k rows is ample for the 15-column `f` (~1.6k rows/parameter). Fitting `f` on the noisier low-depth bulk is deliberately avoided: the pseudocount shrinks `growth_rate` there, attenuating the Kozak coefficients, so they would under-remove Kozak on the clean set and hand the model spurious credit for it. Full-library CV is a secondary diagnostic only.
 - **Cross-validated.** Fit the `f`-regressions on train folds, evaluate the residual correlation out-of-fold. Use the **same folds and the same `f`** across every model compared, so the only thing that varies is `g`.
-- **Interpretation caveat.** Metric 2 *understates* a model that already captures the same mechanism `f` encodes (a model that has learned Kozak gets no credit for it here) — by design, since we want credit only for the mRNA channel `f` cannot reach. The screen below shows `f` is small, so this understatement is small.
+- **Interpretation caveat.** The partial correlation *understates* a model that already captures the same mechanism `f` encodes (a model that has learned Kozak gets no credit for it here) — by design, since we want credit only for the mRNA channel `f` cannot reach. The screen below shows `f` is small, so this understatement is small.
 
 #### The translation-only features `f`
 
@@ -163,7 +163,7 @@ Rules:
 - **Exclude — secondary structure (MFE).** Weak (ρ ≈ 0.23, R² ≈ 0.06, matching the paper's 0.078) and partly mRNA-stability-mediated; construct-dependent. Not cleanly translation-only.
 - **Exclude — in-frame uAUG extension.** Its sign flips between the random (+) and native (−) libraries — confounded (with uORF-absence) rather than a stable translation feature. Dropped.
 
-**What this means for metric 2.** Because `f` (Kozak) removes only ~4 % of the variance and is orthogonal to the dominant uORF channel (~40 %), the partial correlation sits close to the raw metric-1 correlation. So metric 2 is not a large reweighting — it is a **validity check**: it confirms a model's metric-1 score is not merely re-derived Kozak context (which `f` already holds). Equivalently, metric 1 is already a fairly clean read of the mRNA channel, because the only clean translation-only feature is small. If a later run wants `f` to carry more, the principled additions stay translation-only and non-mRNA (e.g. a ribosome-load or CNN-derived translation component), never uORF/structure.
+**What this means for the partial correlation.** Because `f` (Kozak) removes only ~4 % of the variance and is orthogonal to the dominant uORF channel (~40 %), the partial correlation sits close to the raw zero-shot correlation. So it is not a large reweighting — it is a **validity check**: it confirms a model's zero-shot-correlation score is not merely re-derived Kozak context (which `f` already holds). Equivalently, the zero-shot correlation is already a fairly clean read of the mRNA channel, because the only clean translation-only feature is small. If a later run wants `f` to carry more, the principled additions stay translation-only and non-mRNA (e.g. a ribosome-load or CNN-derived translation component), never uORF/structure.
 
 ### Ceiling anchor
 
@@ -171,7 +171,7 @@ Report the Cuperus CNN as a fixed reference (sequence→enrichment, captures bot
 
 ### Optional secondaries (not in the v1 headline)
 
-Carry as diagnostics; include only if metric 2 needs backup:
+Carry as diagnostics; include only if the partial correlation needs backup:
 - **uORF sign test** — is `g` lower for uORF-containing inserts than for matched non-uORF inserts? (Known NMD direction; no fitting.) A direct probe of the mRNA channel.
 - **Top/bottom-decile AUROC** — rank-only, robust to the noisy label tail.
 
@@ -183,12 +183,12 @@ Both models scored zero-shot over the full library (489,348 random + 11,856 nati
 | --- | ---: | ---: |
 | random — overall | 0.252 | 0.117 |
 | random — clean bucket (`t0 ≥ 101`) | **0.280** | 0.114 |
-| random — metric 2 partial (beyond Kozak) | 0.270 | 0.092 |
-| random — metric 2 incremental R² | 0.072 | 0.009 |
+| random — partial correlation (beyond Kozak) | 0.270 | 0.092 |
+| random — partial-corr incremental R² | 0.071 | 0.009 |
 | native — overall | 0.201 | 0.164 |
 | native — clean-bucket raw (`t0 ≥ 101`) | 0.373 | −0.010 |
-| native — metric 2 partial (clean) | **0.259** | **0.005** |
-| native — metric 2 incremental R² | 0.058 | 0.002 |
+| native — partial correlation (clean) | **0.261** | **0.000** |
+| native — partial-corr incremental R² | 0.060 | 0.003 |
 
 Depth stratification — random-library Spearman ρ by `t0` bucket:
 
@@ -202,7 +202,7 @@ Depth stratification — random-library Spearman ρ by `t0` bucket:
 
 1. **Shorkie ≫ Yorzoi** — ~2.5× the correlation on the clean random bucket (0.280 vs 0.114). A per-track-group check ruled out a Yorzoi readout artifact: all 81 plus-strand track groups (extra-chromosome strains, Illumina, JS Nanopore) give ρ ≈ 0.09–0.12, so the gap is genuine, not track selection.
 2. **Depth stratification validated.** Shorkie's per-bucket ρ climbs monotonically with read depth (0.152 → 0.280) exactly as predicted — the low-`t0` bucket is measurement-noise-limited, the clean bucket is the cleanest read, and it reproduces an independent 2k sanity sample (0.279) to three decimals. Yorzoi's is flat (~0.11–0.12): its signal sits near the noise floor everywhere.
-3. **Metric 2 + the depth split separate genuine signal from artifact.** On the clean random bucket both models' correlation survives residualizing out Kozak (Shorkie partial 0.270 vs raw 0.280; Yorzoi 0.092 vs 0.114) — neither wins via Kozak; Shorkie just has ~3× more real mRNA-channel signal. Native is starker: Shorkie's clean-bucket native correlation is strong and survives Kozak (raw ρ 0.37 → partial 0.26), while **Yorzoi has essentially no native signal on the clean bucket** (raw ρ ≈ 0, partial 0.005) — its all-depth native 0.164 *reverses* with read depth (0.164 → 0.108 at `t0 ≥ 10` → ≈ 0 at `t0 ≥ 101`), marking it a low-depth confound rather than expression signal. Net: Shorkie carries genuine 5′-UTR→mRNA signal on both libraries; Yorzoi does not on native.
+3. **The partial correlation + the depth split separate genuine signal from artifact.** On the clean random bucket both models' correlation survives residualizing out Kozak (Shorkie partial 0.270 vs raw 0.280; Yorzoi 0.092 vs 0.114) — neither wins via Kozak; Shorkie just has ~3× more real mRNA-channel signal. Native is starker: Shorkie's clean-bucket native correlation is strong and survives Kozak (raw ρ 0.37 → partial 0.26), while **Yorzoi has essentially no native signal on the clean bucket** (raw ρ ≈ 0, partial 0.000) — its all-depth native 0.164 *reverses* with read depth (0.164 → 0.108 at `t0 ≥ 10` → ≈ 0 at `t0 ≥ 101`), marking it a low-depth confound rather than expression signal. Net: Shorkie carries genuine 5′-UTR→mRNA signal on both libraries; Yorzoi does not on native.
 
 **Sign:** positive for both, as expected (higher predicted `HIS3` coverage → higher `growth_rate`).
 
@@ -231,7 +231,7 @@ Higher `growth_rate` = better 5′-UTR = more His3 protein. A 5′-UTR that rais
 
 ## Open questions / TODO
 
-- **`f` validation (after the first GPU run).** Check whether metric 2 separates from metric 1; if `f` is too weak, consider adding an in-frame-uAUG term or a CNN-derived translation component (keeping it translation-only).
+- **`f` validation (after the first GPU run).** Check whether the partial correlation separates from the zero-shot correlation; if `f` is too weak, consider adding an in-frame-uAUG term or a CNN-derived translation component (keeping it translation-only).
 - **Native sub-50 bp fragments.** The scaffold assembles `promoter + fragment + HIS3`, so the slot length follows the fragment; revisit whether very short native fragments should carry their flanking native UTR context (minor — 0.3 % are < 5 bp).
 
 *Resolved:* the construct sequences are pinned + verified (`scripts/cuperus/build_construct.py` reconstructs them from the genome; junctions match the paper's cloning overhangs), and the scaffold reuses `_cassette_scaffold.py`. The single-`HIS3`-vs-marginalized divergence check ran 2026-06-03 and confirmed marginalization is immaterial for the rank metrics (see *Why no marginalization*); the `backgrounds=` machinery was removed.

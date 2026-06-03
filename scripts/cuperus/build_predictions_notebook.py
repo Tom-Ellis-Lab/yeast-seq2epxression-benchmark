@@ -1,6 +1,6 @@
 """Generate notebooks/cuperus_predictions.ipynb — inspect the v1 Cuperus
 Shorkie/Yorzoi predictions: uORF mechanism, clean-bucket scatters, the native
-Kozak-vs-mRNA contrast (why Yorzoi's native ρ collapses under metric 2), and
+Kozak-vs-mRNA contrast (why Yorzoi's native ρ collapses under the partial correlation), and
 worked examples. Reads results/default/{shorkie,yorzoi}__cuperus_utr/. Not part
 of scoring; investigation only (see ROADMAP pre-release cleanup).
 """
@@ -28,7 +28,7 @@ notebook looks under those numbers:
    lower `HIS3` coverage for uORF-containing UTRs? (the mRNA channel they *can* see)
 2. **Clean-bucket scatters** — predicted coverage vs `growth_rate`, per model.
 3. **Native Kozak contrast** — why Yorzoi's native ρ (0.164) collapses to ~0
-   under metric 2 (it's Kozak context, not mRNA signal) while Shorkie's survives.
+   under the partial correlation (it's Kozak context, not mRNA signal) while Shorkie's survives.
 4. **Worked examples.**
 """)
 
@@ -37,7 +37,7 @@ import json
 import numpy as np, pandas as pd
 import matplotlib.pyplot as plt, seaborn as sns
 from scipy import stats
-from yeastbench.benchmarks._cuperus_metrics import kozak_design, metric2
+from yeastbench.benchmarks._cuperus_metrics import kozak_design, partial_correlation
 sns.set_theme(style="whitegrid", context="notebook")
 
 
@@ -66,8 +66,8 @@ print("random:", rand.shape, "| native:", nat.shape)
 for m in ("shorkie", "yorzoi"):
     s = json.load(open(RES / f"{m}__cuperus_utr" / "summary.json"))
     print(f"{m}: random ρ={s['random_spearman']:.3f} (clean {s['random_bucket5_spearman']:.3f}), "
-          f"native ρ={s['native_spearman']:.3f}, metric2 partial ρ "
-          f"rand={s['random_metric2_partial_spearman']:.3f} nat={s['native_metric2_partial_spearman']:.3f}")
+          f"native ρ={s['native_spearman']:.3f}, partial-corr ρ "
+          f"rand={s['random_partial_spearman']:.3f} nat={s['native_partial_spearman']:.3f}")
 rand.head()''')
 
 md(r"""## 1. uORF mechanism
@@ -127,9 +127,9 @@ for axi, m in zip(ax, ["shorkie", "yorzoi"]):
     fig.colorbar(hb, ax=axi, label="count")
 fig.tight_layout(); plt.show()''')
 
-md(r"""## 3. Native Kozak contrast — what metric 2 catches
+md(r"""## 3. Native Kozak contrast — what the partial correlation catches
 
-On native, Yorzoi's overall ρ (0.164) is decent but its metric-2 partial ρ ≈ 0:
+On native, Yorzoi's overall ρ (0.164) is decent but its partial-correlation ρ ≈ 0:
 its correlation is the **Kozak start-context**, not mRNA signal. Residualize each
 model's native `g` and `growth_rate` on the Kozak features `f` (cross-validated)
 and recompute the correlation — Yorzoi's drops to ~0, Shorkie's survives.""")
@@ -140,11 +140,11 @@ E = nat_clean.growth_rate.values
 rows = []
 for m in ("shorkie", "yorzoi"):
     g = nat_clean[f"g_{m}"].values
-    raw = stats.spearmanr(g, E).statistic
-    m2 = metric2(g, E, f)
+    raw = stats.spearmanr(g, E).statistic       # rank, scale-free
+    m2 = partial_correlation(np.log(g), E, f)   # log g, matching the benchmark
     rows.append({"model": m, "native raw ρ (clean)": round(raw, 3),
-                 "metric2 partial ρ": round(m2["partial_spearman"], 3),
-                 "metric2 incr R²": round(m2["incremental_r2"], 3)})
+                 "partial-corr ρ": round(m2["partial_spearman"], 3),
+                 "partial-corr incr R²": round(m2["incremental_r2"], 3)})
 pd.DataFrame(rows).set_index("model")''')
 
 md("""Yorzoi: raw ρ collapses to ~0 once Kozak is removed → its native signal *is*
@@ -162,7 +162,7 @@ print(ex[cols].tail(6).to_string(index=False))''')
 md("""## Takeaways (regenerate to refresh)
 
 - Shorkie tracks the uORF→NMD drop and correlates ~2.5× better than Yorzoi.
-- Yorzoi's native correlation is Kozak start-context, not mRNA signal (metric 2 → 0).
+- Yorzoi's native correlation is Kozak start-context, not mRNA signal (the partial correlation → 0).
 - Both signs positive; the achievable ceiling is the RNA-visible fraction of a
   protein-level assay (CNN R²=0.62 on the clean split; Shorkie r²≈0.078).""")
 

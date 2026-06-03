@@ -5,10 +5,12 @@ This is the benchmark/eval-layer core, independent of any model. It computes:
 - ``kozak_design`` — the translation-only features `f`: a drop-first one-hot of
   the 5 nt immediately 5' of the ATG (Kozak positions -1..-5). See the spec's
   "translation-only features `f`" section.
-- ``metric1`` — direct correlation of the model score `g` with `growth_rate`
-  `E`, overall and per depth bucket (Spearman headline, Pearson alongside).
-- ``metric2`` — the model's signal beyond `f`: cross-validated partial
-  correlation ``corr(E_r, g_r)`` and incremental R² ``R²(E~f+g) - R²(E~f)``.
+- ``zero_shot_correlation`` — correlation of the model score `g` with
+  `growth_rate` `E`, overall and per depth bucket (Spearman headline, Pearson
+  alongside).
+- ``partial_correlation`` — the model's signal beyond the translation-only
+  features `f`: cross-validated partial correlation ``corr(E_r, g_r)`` and
+  incremental R² ``R²(E~f+g) - R²(E~f)``.
 
 The metric primitives are scale-agnostic: pass `g` already on the scale you
 want (Spearman is invariant; for Pearson the benchmark passes ``log g``).
@@ -61,7 +63,7 @@ def _corr(x: np.ndarray, y: np.ndarray) -> dict:
     return {"n": n, "spearman": spearman, "pearson": pearson}
 
 
-def metric1(g, E, buckets=None) -> dict:
+def zero_shot_correlation(g, E, buckets=None) -> dict:
     """Direct correlation of model score `g` with `growth_rate` `E`, overall
     and (if `buckets` given) per depth bucket. Returns
     ``{"overall": {...}, "by_bucket": {b: {...}}}``."""
@@ -99,7 +101,7 @@ def _oof_r2(y: np.ndarray, X: np.ndarray, folds) -> float:
     return 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
 
-def metric2(g, E, f, n_folds: int = 5, seed: int = 0) -> dict:
+def partial_correlation(g, E, f, n_folds: int = 5, seed: int = 0) -> dict:
     """The model's signal beyond the translation-only features `f`.
 
     Cross-validated (same folds for everything): partial correlation

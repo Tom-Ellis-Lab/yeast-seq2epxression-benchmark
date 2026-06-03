@@ -65,6 +65,16 @@ class _NaNAdapter:
         return out
 
 
+class _NaNCleanAdapter:
+    """Strictly-positive scores (so the log transform never drops a row on its
+    own), but NaNs the 3 highest-index rows — which are in the clean bucket
+    (t0>=101) — to exercise partial_correlation's in-bucket NaN mask."""
+    def predict_utr_expressions(self, utrs: Sequence[str]) -> np.ndarray:
+        out = np.array([float(s.count("G")) + 1.0 for s in utrs])
+        out[-3:] = np.nan
+        return out
+
+
 def _bench(dist) -> CuperusUTRBenchmark:
     rpath, npath = dist
     return CuperusUTRBenchmark(
@@ -82,25 +92,32 @@ class TestEvaluate:
     def test_perfect_random(self, dist):
         b = _bench(dist)
         res = b.evaluate(_PerfectRandomAdapter())
-        assert res.random.metric1["overall"]["spearman"] == pytest.approx(1.0)
+        assert res.random.zero_shot_correlation["overall"]["spearman"] == pytest.approx(1.0)
         # depth buckets present and the clean bucket (5) is populated
-        assert 5 in res.random.metric1["by_bucket"]
-        assert res.random.metric1["by_bucket"][5]["n"] > 0
-        # metric 2 ran on the clean bucket
-        assert res.random.metric2["n"] > 0
-        assert np.isfinite(res.random.metric2["partial_spearman"])
+        assert 5 in res.random.zero_shot_correlation["by_bucket"]
+        assert res.random.zero_shot_correlation["by_bucket"][5]["n"] > 0
+        # the partial correlation ran on the clean bucket
+        assert res.random.partial_correlation["n"] > 0
+        assert np.isfinite(res.random.partial_correlation["partial_spearman"])
 
     def test_native_split_and_variable_length(self, dist):
         b = _bench(dist)
         res = b.evaluate(_PerfectNativeAdapter())
-        assert res.native.metric1["overall"]["spearman"] == pytest.approx(1.0)
+        assert res.native.zero_shot_correlation["overall"]["spearman"] == pytest.approx(1.0)
         # noisy (1) and rest (2) split both present
-        assert set(res.native.metric1["by_bucket"]) == {1, 2}
+        assert set(res.native.zero_shot_correlation["by_bucket"]) == {1, 2}
 
     def test_nan_scores_dropped(self, dist):
         b = _bench(dist)
         res = b.evaluate(_NaNAdapter())
-        assert res.random.metric1["overall"]["n"] < len(res.random.scores)
+        assert res.random.zero_shot_correlation["overall"]["n"] < len(res.random.scores)
+
+    def test_partial_correlation_drops_nan_in_clean_bucket(self, dist):
+        # clean bucket = t0>=101 = 30 rows (fixture t0=5+5i, i in 20..49);
+        # _NaNCleanAdapter NaNs the 3 highest-index rows, all clean -> 27 used.
+        b = _bench(dist)
+        res = b.evaluate(_NaNCleanAdapter())
+        assert res.random.partial_correlation["n"] == 27
 
 
 class TestPersistence:
@@ -117,8 +134,8 @@ class TestPersistence:
             loaded.random.labels, res.random.labels, equal_nan=True
         )
         assert (
-            loaded.random.metric1["overall"]["spearman"]
-            == pytest.approx(res.random.metric1["overall"]["spearman"])
+            loaded.random.zero_shot_correlation["overall"]["spearman"]
+            == pytest.approx(res.random.zero_shot_correlation["overall"]["spearman"])
         )
 
 
@@ -126,7 +143,7 @@ class TestSummaryHeadlinePlot:
     def test_summary_keys(self, dist):
         b = _bench(dist)
         s = b.summary_dict(b.evaluate(_PerfectRandomAdapter()))
-        for k in ("random_spearman", "random_metric2_partial_spearman",
+        for k in ("random_spearman", "random_partial_spearman",
                   "native_spearman", "random_bucket5_spearman"):
             assert k in s
 
@@ -139,3 +156,9 @@ class TestSummaryHeadlinePlot:
         res = b.evaluate(_PerfectRandomAdapter())
         b.plot(res, tmp_path / "p")
         assert (tmp_path / "p" / "cuperus.png").exists()
+
+
+def test_native_bucket_edge_t0_equals_10():
+    # NATIVE_NOISY_MAX_T0 = 10, split on t0 < 10: exactly-10 must be 'rest' (2).
+    from yeastbench.benchmarks.cuperus import _native_buckets
+    assert list(_native_buckets(np.array([9, 10, 11, 3]))) == [1, 2, 2, 1]

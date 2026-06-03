@@ -6,15 +6,15 @@ marginalization — the construct is native yeast sequence). Two libraries
 are scored separately (their labels are from different selection
 experiments and aren't comparable in absolute scale):
 
-- **random** — all 489,348 sequences; metric 1 reported overall and per
-  input-read-depth bucket (1-5).
-- **native** — 11,856 real yeast 5'-UTR fragments; metric 1 overall + a
-  ``t0 >= 10`` robustness split.
+- **random** — all 489,348 sequences; the zero-shot correlation reported
+  overall and per input-read-depth bucket (1-5).
+- **native** — 11,856 real yeast 5'-UTR fragments; zero-shot correlation
+  overall + a ``t0 >= 10`` robustness split.
 
-Metric 1: Spearman ρ (headline) + Pearson r between the model's score and
-``growth_rate``. Metric 2: the model's signal beyond translation-only
-(Kozak) features — cross-validated partial correlation + incremental R²,
-computed within the clean depth bucket (``t0 >= 101``).
+Zero-shot correlation: Spearman ρ (headline) + Pearson r between the model's
+score and ``growth_rate``. Partial correlation: the model's signal beyond
+translation-only (Kozak) features — cross-validated partial correlation +
+incremental R², computed within the clean depth bucket (``t0 >= 101``).
 
 See ``benchmarks/cuperus_mpra_5utr.md``.
 """
@@ -28,10 +28,14 @@ import numpy as np
 import pandas as pd
 
 from yeastbench.adapters.protocols import FivePrimeUtrReporterExpressionPredictor
-from yeastbench.benchmarks._cuperus_metrics import kozak_design, metric1, metric2
+from yeastbench.benchmarks._cuperus_metrics import (
+    zero_shot_correlation,
+    kozak_design,
+    partial_correlation,
+)
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 
-CLEAN_MIN_T0 = 101         # clean bucket (= paper top-5% threshold); metric-2 home
+CLEAN_MIN_T0 = 101         # clean bucket (= paper top-5% threshold); partial-correlation home
 NATIVE_NOISY_MAX_T0 = 10   # native robustness split: t0<10 (noisy) vs t0>=10
 
 
@@ -43,14 +47,27 @@ class CuperusLibraryResult:
     labels: np.ndarray        # (N,) growth_rate
     t0: np.ndarray            # (N,) input read depth
     buckets: np.ndarray       # (N,) depth bucket (random: 1-5; native: 1=noisy/2=rest)
-    metric1: dict[str, Any]   # {"overall": {...}, "by_bucket": {b: {...}}}
-    metric2: dict[str, Any]   # clean-bucket CV partial corr + incremental R²
+    zero_shot_correlation: dict[str, Any]    # {"overall": {...}, "by_bucket": {b: {...}}}
+    partial_correlation: dict[str, Any]   # clean-bucket CV partial corr + incremental R²
 
 
 @dataclass(frozen=True)
 class CuperusResults:
     random: CuperusLibraryResult
     native: CuperusLibraryResult
+
+
+def _log_score(scores: np.ndarray) -> np.ndarray:
+    """Model score `g` (raw-count HIS3-CDS coverage) on a natural-log scale, for
+    the linear metrics. `g` is multiplicative; `growth_rate` is an ln-enrichment,
+    so logging `g` puts both on the same scale (`growth_rate ∝ log expression`).
+    Non-positive / NaN → NaN (dropped by each metric's finite mask). Spearman is
+    rank-invariant, so the rank headline is unchanged vs raw `g`."""
+    scores = np.asarray(scores, dtype=float)
+    out = np.full_like(scores, np.nan)
+    pos = scores > 0
+    out[pos] = np.log(scores[pos])
+    return out
 
 
 def _eval_library(
@@ -65,13 +82,15 @@ def _eval_library(
     labels = np.asarray(labels, dtype=float)
     t0 = np.asarray(t0)
     buckets = np.asarray(buckets)
-    m1 = metric1(scores, labels, buckets=buckets)
+    log_g = _log_score(scores)  # raw `g` persisted; metrics see log `g`
+    direct = zero_shot_correlation(log_g, labels, buckets=buckets)
     clean = t0 >= CLEAN_MIN_T0
     f = kozak_design(utrs)
-    m2 = metric2(scores[clean], labels[clean], f[clean])
+    beyond = partial_correlation(log_g[clean], labels[clean], f[clean])
     return CuperusLibraryResult(
         name=name, utrs=list(utrs), scores=scores, labels=labels,
-        t0=t0, buckets=buckets, metric1=m1, metric2=m2,
+        t0=t0, buckets=buckets,
+        zero_shot_correlation=direct, partial_correlation=beyond,
     )
 
 
@@ -148,7 +167,7 @@ class CuperusUTRBenchmark(
             "growth_rate": lib.labels,
             "t0": lib.t0,
             "bucket": lib.buckets,
-        }).to_csv(path, sep="\t", index=False)
+        }).to_csv(path, sep="\t", index=False, float_format="%.17g")  # bit-exact round-trip
 
     @staticmethod
     def _load_lib(path: Path, name: str) -> CuperusLibraryResult:
@@ -176,17 +195,17 @@ class CuperusUTRBenchmark(
     # ── summary / headline ───────────────────────────────────────────────
     @staticmethod
     def _lib_summary(lib: CuperusLibraryResult, prefix: str) -> dict[str, Any]:
-        o = lib.metric1["overall"]
+        o = lib.zero_shot_correlation["overall"]
         d: dict[str, Any] = {
             f"{prefix}_n": o["n"],
             f"{prefix}_spearman": o["spearman"],
             f"{prefix}_pearson": o["pearson"],
-            f"{prefix}_metric2_n": lib.metric2["n"],
-            f"{prefix}_metric2_partial_spearman": lib.metric2["partial_spearman"],
-            f"{prefix}_metric2_partial_pearson": lib.metric2["partial_pearson"],
-            f"{prefix}_metric2_incremental_r2": lib.metric2["incremental_r2"],
+            f"{prefix}_partial_n": lib.partial_correlation["n"],
+            f"{prefix}_partial_spearman": lib.partial_correlation["partial_spearman"],
+            f"{prefix}_partial_pearson": lib.partial_correlation["partial_pearson"],
+            f"{prefix}_partial_incremental_r2": lib.partial_correlation["incremental_r2"],
         }
-        for b, r in lib.metric1.get("by_bucket", {}).items():
+        for b, r in lib.zero_shot_correlation.get("by_bucket", {}).items():
             d[f"{prefix}_bucket{b}_spearman"] = r["spearman"]
             d[f"{prefix}_bucket{b}_n"] = r["n"]
         return d
@@ -199,21 +218,21 @@ class CuperusUTRBenchmark(
 
     def headline(self, results: CuperusResults) -> str:
         r, n = results.random, results.native
-        r_clean = r.metric1.get("by_bucket", {}).get(5, {}).get("spearman", float("nan"))
-        n_rest = n.metric1.get("by_bucket", {}).get(2, {}).get("spearman", float("nan"))
+        r_clean = r.zero_shot_correlation.get("by_bucket", {}).get(5, {}).get("spearman", float("nan"))
+        n_rest = n.zero_shot_correlation.get("by_bucket", {}).get(2, {}).get("spearman", float("nan"))
         return (
-            f"random: ρ={r.metric1['overall']['spearman']:.4f} "
-            f"(clean ρ={r_clean:.4f}, metric2 partial ρ={r.metric2['partial_spearman']:.4f}) "
-            f"| native: ρ={n.metric1['overall']['spearman']:.4f} "
-            f"(t0≥10 ρ={n_rest:.4f}, metric2 partial ρ={n.metric2['partial_spearman']:.4f})"
+            f"random: ρ={r.zero_shot_correlation['overall']['spearman']:.4f} "
+            f"(clean ρ={r_clean:.4f}, partial-corr ρ={r.partial_correlation['partial_spearman']:.4f}) "
+            f"| native: ρ={n.zero_shot_correlation['overall']['spearman']:.4f} "
+            f"(t0≥10 ρ={n_rest:.4f}, partial-corr ρ={n.partial_correlation['partial_spearman']:.4f})"
         )
 
     def headline_metric_labels(self) -> dict[str, str]:
         return {
             "random_bucket5_spearman": "random clean ρ",
-            "random_metric2_partial_spearman": "random metric2 ρ",
+            "random_partial_spearman": "random partial-corr ρ",
             "native_spearman": "native ρ",
-            "native_metric2_partial_spearman": "native metric2 ρ",
+            "native_partial_spearman": "native partial-corr ρ",
         }
 
     def compare_plot_title(self) -> str:
@@ -242,11 +261,11 @@ class CuperusUTRBenchmark(
 
     @staticmethod
     def _scatter(ax, lib: CuperusLibraryResult, clean_only: bool, title: str) -> None:
-        mask = np.isfinite(lib.scores) & np.isfinite(lib.labels)
+        mask = np.isfinite(lib.scores) & np.isfinite(lib.labels) & (lib.scores > 0)
         if clean_only:
             mask &= lib.t0 >= CLEAN_MIN_T0
         x = lib.labels[mask]
-        y = lib.scores[mask]
+        y = np.log(lib.scores[mask])  # scored on a log scale (see _log_score)
         ax.scatter(x, y, s=6, alpha=0.3, rasterized=True)
         if mask.sum() > 1 and np.std(x) > 0:
             a, b = np.polyfit(x, y, 1)
@@ -255,13 +274,13 @@ class CuperusUTRBenchmark(
         from yeastbench.benchmarks._cuperus_metrics import _corr
         c = _corr(y, x)
         ax.set_xlabel("growth_rate")
-        ax.set_ylabel("model score g")
+        ax.set_ylabel("log model score g")
         ax.set_title(f"{title}\nn={c['n']}  ρ={c['spearman']:.3f}  r={c['pearson']:.3f}",
                      fontsize=10)
 
     @staticmethod
     def _bucket_bar(ax, lib: CuperusLibraryResult, title: str) -> None:
-        bb = lib.metric1.get("by_bucket", {})
+        bb = lib.zero_shot_correlation.get("by_bucket", {})
         keys = sorted(bb)
         vals = [bb[k]["spearman"] for k in keys]
         ax.bar([str(k) for k in keys], vals, color="steelblue")

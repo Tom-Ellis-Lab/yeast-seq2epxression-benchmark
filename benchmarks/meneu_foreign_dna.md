@@ -29,7 +29,7 @@
 | **Assay** | Stranded directional mRNA RNA-seq (rRNA-depleted, PE150, 3 biological replicates), CPM-normalized per-base coverage. On bacterial DNA the signal follows bacterial gene orientation. |
 | **Expression label** | Per-base **CPM coverage**, unstranded (forward + reverse summed). Scale-free — Pearson/Spearman only need monotone correspondence. |
 | **Eval set** | **Mpneumo** (*M. pneumoniae* M129, ~818 kb, 40% GC — yeast-like, transcribed) and **Mmyco** (*M. mycoides* PG1, ~1,222 kb, 24% GC — AT-rich, near-silent). Scored **per chromosome, never pooled.** |
-| **Primary metric** | Per chromosome, 1 bp, over 5 kb windows: **median raw Pearson** + **median JS divergence** of normalized profiles (*within-region shape*) + **per-window-total fold-change error** `log2(Σpred+1)−log2(Σtrue+1)` after genome-wide depth-normalization (*across-region magnitude*, adapting the Yorzoi paper). Low-signal-window floor; whole contig scored (no masking in v1). See *Metrics*. |
+| **Primary metric** | Per chromosome, 1 bp, over 5 kb windows: **median raw Pearson** + **median JS divergence** of normalized profiles (*within-region shape*) + **per-window-total fold-change error** `log2(Σpred+1)−log2(Σtrue+1)` after genome-wide depth-normalization (*across-region magnitude*, adapting the Yorzoi paper). Low-signal floor on the shape metrics only (magnitude over all windows); whole contig scored (no masking in v1). See *Metrics*. |
 | **Adapter protocol** | `TiledCoverageTrackPredictor` — new protocol, identical surface to `CoverageTrackPredictor`, so the registry dispatches Meneu to its own adapters without colliding with Brooks. Reused via thin adapter subclasses. |
 
 ## Why this benchmark exists
@@ -190,12 +190,18 @@ Three metrics per chromosome (shape co-variation, shape mass-placement, magnitud
   fold-change error (Schneider et al. 2025, `papers/2025.09.20.677345v1.full.pdf`,
   "Pearson Correlation and Fold-Change Error") to a per-window form. First
   **depth-normalize genome-wide**: scale the predicted track by
-  `sum(true)/sum(pred)` over scored positions so the totals match — this removes
+  `sum(true)/sum(pred)` over the whole contig so the totals match — this removes
   the model's arbitrary global scale, so the error measures *regional allocation*
   rather than global mis-calibration. Then per 5 kb window take the fold-change
   error of the **window totals**, `log2((Σ_window pred + 1) / (Σ_window true + 1))`
-  (their `log2(Ŷ/Y)`, +1 for finiteness), and summarize across surviving windows as
-  mean ± spread. It asks: did the model allocate the right *amount* of signal to
+  (their `log2(Ŷ/Y)`, +1 for finiteness), and summarize across **all** windows as
+  mean ± spread. Unlike the two shape metrics, magnitude does **not** apply the
+  low-signal floor: a window that is silent in truth but where the model predicts
+  coverage is a genuine mis-allocation that must register, and correctly predicting
+  silence (`Σpred ≈ Σtrue ≈ 0 → FC ≈ 0`) is credited. Because every model is scored
+  on the identical window set, the shared "easy zeros" don't bias the cross-model
+  comparison — and it keeps the rule simple (one window set for magnitude, no floor
+  to reason about). It asks: did the model allocate the right *amount* of signal to
   each region? — the level dimension the scale-invariant shape metrics are blind
   to. Together: *right shape within regions?* (Pearson + JS) vs *right level across
   regions?* (fold-change error).
@@ -338,7 +344,10 @@ strand)` block is stale — this batched API is the live one.)
    Pearson is scale-invariant; JS reuses `brooks.py:_js_divergence`). Magnitude =
    per-window-total fold-change error `log2((Σpred+1)/(Σtrue+1))` **after genome-wide
    depth-normalization** (`pred *= sum(true)/sum(pred)`), summarized mean ± spread
-   across windows (regional-allocation accuracy, controlling for global scale).
+   across **all** windows — no shape floor (a true-silent / pred-loud window is a
+   real error that must register; the shared "easy zeros" are fair across models
+   and keep the rule simple) — measuring regional-allocation accuracy controlling
+   for global scale.
    Rejected: global
    whole-chromosome Pearson (large-scale structure inflates), Spearman (low-coverage
    rank noise), per-gene (no genes), `log1p` within-window (raw chosen), **KL

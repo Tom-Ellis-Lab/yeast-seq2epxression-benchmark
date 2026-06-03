@@ -9,9 +9,10 @@ contig-length profile. Predicted coverage is then scored against the
 measured unstranded coverage (``fwd + rev``) in non-overlapping
 ``EVAL_WINDOW``-bp evaluation windows.
 
-Three metrics per contig, all on the windows whose *true* signal clears
-a small variance floor (near-flat true windows are uninformative for
-shape):
+Three metrics per contig. The two **shape** metrics use only the windows
+whose *true* signal clears a small variance floor (near-flat true windows
+are uninformative for shape); the **magnitude** metric uses *all* windows
+(a true-silent window where the model predicts coverage is a real error):
 
   * ``shape_pearson`` — median over kept windows of the RAW (scale-
     invariant) Pearson correlation between true and predicted per-base
@@ -22,9 +23,10 @@ shape):
   * ``shape_js`` — median over kept windows of the Jensen-Shannon
     divergence (bits) between the sum-1-normalised true and predicted
     profiles.
-  * ``mag_fc_mean`` / ``mag_fc_sd`` — mean and SD of the per-window
-    log2 fold-change error of the (genome-wide depth-normalised)
-    predicted window total vs the true window total.
+  * ``mag_fc_mean`` / ``mag_fc_sd`` — mean and SD over ALL windows (the
+    shape floor does NOT gate magnitude) of the per-window log2 fold-change
+    error of the (genome-wide depth-normalised) predicted window total vs
+    the true window total.
 
 **Units.** Adapters return raw per-base predicted-count units (any
 model-specific training transform inverted inside the adapter) and
@@ -170,8 +172,14 @@ class MeneuForeignDNABenchmark(
         shape_pearson = (float(np.nanmedian(pear))
                          if n_windows_pearson else float("nan"))
         shape_js = float(np.median(jsd)) if len(idx) else float("nan")
-        if len(idx):
-            fc = np.log2((pdn[idx].sum(axis=1) + 1) / (t[idx].sum(axis=1) + 1))
+        # Magnitude runs over ALL windows, NOT just the shape-floored ones:
+        # a true-silent window where the model predicts coverage is a real
+        # mis-allocation that must register, and getting silence right
+        # (Σpred ≈ Σtrue ≈ 0 → FC ≈ 0) is credited. The +1 pseudocount keeps
+        # true=0 windows finite. Every model is scored on the identical
+        # window set, so the shared "easy zeros" don't bias the comparison.
+        if n:
+            fc = np.log2((pdn.sum(axis=1) + 1) / (t.sum(axis=1) + 1))
             mag_fc_mean = float(fc.mean())
             mag_fc_sd = float(fc.std())
         else:

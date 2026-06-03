@@ -177,6 +177,33 @@ class TestMeneuBenchmark:
             # Mock shape co-varies with truth → high raw Pearson.
             assert pc["shape_pearson"] > 0.9
 
+    def test_fold_change_runs_over_all_windows(self, meneu_tsv):
+        """Magnitude FC must cover ALL eval windows (option A), including a
+        true-silent window where the model predicts coverage — that is a real
+        mis-allocation and must register. The shape floor gates only the shape
+        metrics; it must NOT shrink the magnitude window set."""
+        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+        W = b.EVAL_WINDOW
+        rng = np.random.default_rng(1)
+        # Window 0: genuine non-flat signal. Window 1: true all-zero (floored
+        # out of the shape metrics) but the model hallucinates flat coverage.
+        true = np.concatenate([rng.uniform(1.0, 10.0, W), np.zeros(W)])
+        pred = np.concatenate([rng.uniform(1.0, 10.0, W), np.full(W, 5.0)])
+        sc = b._score_contig(true, pred)
+        assert sc["n_windows_total"] == 2
+        assert sc["n_windows_kept"] == 1          # silent-true window not kept for shape
+        # Recompute the per-window FC; the metric must average BOTH windows
+        # (the old kept-only behaviour would have used window 0 alone).
+        scale = true.sum() / pred.sum()
+        pdn = (pred * scale).reshape(2, W)
+        t = true.reshape(2, W)
+        fc = np.log2((pdn.sum(axis=1) + 1) / (t.sum(axis=1) + 1))
+        assert fc[1] > 0                          # hallucination on silent truth penalised
+        assert sc["mag_fc_mean"] == pytest.approx(float(fc.mean()))
+        assert sc["mag_fc_sd"] == pytest.approx(float(fc.std()))
+        # The all-window mean differs from the kept-only (window-0) value.
+        assert sc["mag_fc_mean"] != pytest.approx(float(fc[0]))
+
     def test_tiling_covers_every_base(self, meneu_tsv):
         b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
         res = b.evaluate(_MockAdapter())

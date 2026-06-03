@@ -167,7 +167,13 @@ Three metrics per chromosome (shape co-variation, shape mass-placement, magnitud
   *true* coverage is near-flat (variance/mean below ε — frequent on near-silent
   Mmyco, ~48% zero-coverage, where per-window Pearson is otherwise undefined noise;
   windows where the model fails on real signal are kept), and report the
-  scored-window count per chromosome. (A global whole-chromosome Pearson is
+  scored-window count per chromosome (`n_windows_kept` / `n_windows_total`). Among
+  kept windows, a flat or all-zero *prediction* makes Pearson undefined (NaN) and is
+  excluded from the median; the count that actually contributes is reported
+  separately as **`n_windows_pearson`** so this drop is explicit, never silent
+  (`n_windows_kept − n_windows_pearson` = windows dropped to a NaN Pearson). On the
+  first runs this was 0 for both models on both chromosomes. (A global
+  whole-chromosome Pearson is
   rejected — dominated by large-scale structure; per-base Spearman is rejected —
   low-coverage ranks are arbitrary.)
 - **Shape, mass-placement — Jensen–Shannon divergence of the normalized profiles.**

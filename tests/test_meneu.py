@@ -129,7 +129,7 @@ def _contig_len(tsv: Path, chrom: str) -> int:
 
 _METRIC_KEYS = (
     "shape_pearson", "shape_js", "mag_fc_mean", "mag_fc_sd",
-    "n_windows_kept", "n_windows_total",
+    "n_windows_kept", "n_windows_pearson", "n_windows_total",
 )
 
 
@@ -171,6 +171,9 @@ class TestMeneuBenchmark:
             assert np.isfinite(pc["mag_fc_sd"])
             assert pc["n_windows_total"] == 1
             assert pc["n_windows_kept"] >= 1
+            # The mock prediction is always non-constant and non-zero, so
+            # every kept window yields a finite Pearson — none dropped.
+            assert pc["n_windows_pearson"] == pc["n_windows_kept"]
             # Mock shape co-varies with truth → high raw Pearson.
             assert pc["shape_pearson"] > 0.9
 

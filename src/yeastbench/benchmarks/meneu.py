@@ -15,7 +15,10 @@ shape):
 
   * ``shape_pearson`` — median over kept windows of the RAW (scale-
     invariant) Pearson correlation between true and predicted per-base
-    coverage.
+    coverage. Within a kept window a flat/all-zero prediction makes
+    Pearson undefined (NaN) and is excluded from the median; the count
+    that actually contributes is reported as ``n_windows_pearson`` (so
+    the drop is explicit, never silent).
   * ``shape_js`` — median over kept windows of the Jensen-Shannon
     divergence (bits) between the sum-1-normalised true and predicted
     profiles.
@@ -51,7 +54,7 @@ COV_PREFIX = "meneu_cov_"
 
 _PER_CONTIG_KEYS = (
     "shape_pearson", "shape_js", "mag_fc_mean", "mag_fc_sd",
-    "n_windows_kept", "n_windows_total",
+    "n_windows_kept", "n_windows_pearson", "n_windows_total",
 )
 
 
@@ -60,7 +63,7 @@ class MeneuResults:
     window_len: int
     contigs: list[str]
     # contig -> {shape_pearson, shape_js, mag_fc_mean, mag_fc_sd,
-    #            n_windows_kept, n_windows_total}
+    #            n_windows_kept, n_windows_pearson, n_windows_total}
     per_contig: dict[str, dict]
     # contig -> per-base float64 stitched prediction, length == contig L
     stitched_pred: dict[str, np.ndarray]
@@ -159,9 +162,13 @@ class MeneuForeignDNABenchmark(
             pear[j] = float(pearsonr(t[i], p[i]).statistic)
             jsd[j] = _js_divergence(_normalize(t[i]), _normalize(p[i]))
 
+        # Count windows that actually contribute a finite Pearson to the
+        # median; the rest (all-zero or constant prediction -> NaN) are
+        # dropped by nanmedian. Reporting this makes the drop explicit:
+        # n_windows_kept - n_windows_pearson windows had an undefined Pearson.
+        n_windows_pearson = int(np.isfinite(pear).sum())
         shape_pearson = (float(np.nanmedian(pear))
-                         if len(idx) and np.any(np.isfinite(pear))
-                         else float("nan"))
+                         if n_windows_pearson else float("nan"))
         shape_js = float(np.median(jsd)) if len(idx) else float("nan")
         if len(idx):
             fc = np.log2((pdn[idx].sum(axis=1) + 1) / (t[idx].sum(axis=1) + 1))
@@ -175,6 +182,7 @@ class MeneuForeignDNABenchmark(
             "mag_fc_mean": mag_fc_mean,
             "mag_fc_sd": mag_fc_sd,
             "n_windows_kept": int(len(idx)),
+            "n_windows_pearson": n_windows_pearson,
             "n_windows_total": int(n),
         }
 
@@ -261,7 +269,8 @@ class MeneuForeignDNABenchmark(
                 + f"   shape r={pc['shape_pearson']:.3f}  "
                 f"JS={pc['shape_js']:.3f}  "
                 f"mag_fc={pc['mag_fc_mean']:+.3f}±{pc['mag_fc_sd']:.3f}  "
-                f"(kept {pc['n_windows_kept']}/{pc['n_windows_total']})"
+                f"(Pearson on {pc['n_windows_pearson']}/"
+                f"{pc['n_windows_kept']} kept, {pc['n_windows_total']} total)"
             )
 
             # (2) Per-window Pearson histogram over the kept windows.
@@ -324,6 +333,7 @@ class MeneuForeignDNABenchmark(
             out[f"{c}_mag_fc_mean"] = pc["mag_fc_mean"]
             out[f"{c}_mag_fc_sd"] = pc["mag_fc_sd"]
             out[f"{c}_n_windows_kept"] = pc["n_windows_kept"]
+            out[f"{c}_n_windows_pearson"] = pc["n_windows_pearson"]
             out[f"{c}_n_windows_total"] = pc["n_windows_total"]
         return out
 

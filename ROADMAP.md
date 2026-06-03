@@ -344,15 +344,23 @@ https://github.com/daftpunksss/YeIP.
 
 ### Cuperus et al. (5′ UTR)
 
-- [x] Spec drafted (`benchmarks/cuperus_mpra_5utr.md`, draft v0;
-  open questions remain)
-- [ ] Source data acquisition (top-5 % ~24,474-sequence test set + native
-  11,962-sequence secondary eval)
-- [ ] Marginalized benchmark (analogous to Rafi, upstream of TSS;
-  new `FivePrimeUtrMarginalizedExpressionPredictor` protocol)
-- [ ] Shorkie + Yorzoi adapters
+- [x] Spec (`benchmarks/cuperus_mpra_5utr.md`) — HIS3-reporter, no
+  marginalization; two metrics (direct corr + partial-corr over Kozak
+  features) defined.
+- [x] Source data acquisition — vendored at `archive/cuperus/` (random
+  489,348, scored in full with 5 `t0` depth buckets; native 11,856
+  variable-length — a second primary eval, not a secondary).
+- [x] Benchmark class — `CuperusUTRBenchmark` + `_cuperus_scaffold.py` score the
+  literal `CYC1`pr–`HIS3`–`CYC1`term reporter (one forward per UTR, read out
+  `HIS3` coverage) for both libraries; new `FivePrimeUtrReporterExpressionPredictor`
+  protocol; metric 2 (Kozak partial-corr) in the eval layer. Metrics + scaffold tested.
+- [x] Shorkie + Yorzoi adapters (+ registry + `configs/default.yaml` wiring).
+- [x] GPU run — headline numbers recorded (metric 1 overall + buckets, metric 2 per
+  library) for Shorkie/Yorzoi; sign confirmed positive; single-`HIS3`-vs-marginalized
+  divergence check done (2026-06-03) — immaterial for the rank metrics, so the
+  `backgrounds=` machinery was removed (scored single-`HIS3` only).
 - [ ] **ExoShorkie adapter** (same new protocol). Random 50 bp 5′
-  UTRs in the CYC1-YFP plasmid construct are the same exogenous-in-
+  UTRs in the CYC1-HIS3 plasmid construct are the same exogenous-in-
   yeast flavour as Rafi and Wu — should benefit from ExoShorkie's
   training distribution. Reuses the wrapper from Rafi.
 
@@ -865,6 +873,10 @@ way they do, not part of the benchmark itself.
 - `scripts/chen/build_investigation_notebooks.py` — generates the
   Shorkie / Yorzoi PGAL1-investigation ipynbs and their per-host
   prediction caches. Has no role in scoring any benchmark.
+- `scripts/cuperus/build_investigation_notebooks.py` and
+  `build_predictions_notebook.py` — generate the Cuperus translation-feature
+  screen (the `f`=Kozak analysis) and the v1 prediction-inspection notebook
+  (uORF mechanism, worked examples). No role in scoring.
 
 **Notebooks under `notebooks/` (already gitignored; remove from local
 checkouts too):**

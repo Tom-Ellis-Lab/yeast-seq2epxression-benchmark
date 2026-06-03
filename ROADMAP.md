@@ -355,9 +355,10 @@ https://github.com/daftpunksss/YeIP.
   `HIS3` coverage) for both libraries; new `FivePrimeUtrReporterExpressionPredictor`
   protocol; metric 2 (Kozak partial-corr) in the eval layer. Metrics + scaffold tested.
 - [x] Shorkie + Yorzoi adapters (+ registry + `configs/default.yaml` wiring).
-- [ ] GPU run — record headline numbers (metric 1 overall + buckets, metric 2 per
-  library) for Shorkie/Yorzoi; confirm the sign convention; run the single-`HIS3`
-  vs marginalized divergence check (adapters take `backgrounds=`).
+- [x] GPU run — headline numbers recorded (metric 1 overall + buckets, metric 2 per
+  library) for Shorkie/Yorzoi; sign confirmed positive; single-`HIS3`-vs-marginalized
+  divergence check done (2026-06-03) — immaterial for the rank metrics, so the
+  `backgrounds=` machinery was removed (scored single-`HIS3` only).
 - [ ] **ExoShorkie adapter** (same new protocol). Random 50 bp 5′
   UTRs in the CYC1-HIS3 plasmid construct are the same exogenous-in-
   yeast flavour as Rafi and Wu — should benefit from ExoShorkie's

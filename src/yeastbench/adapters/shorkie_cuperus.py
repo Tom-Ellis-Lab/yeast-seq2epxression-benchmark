@@ -7,10 +7,9 @@ over the T0 RNA-seq tracks, and sum over the ``HIS3``-ORF per-base positions.
 Absolute readout — no REF baseline (Spearman is the scale-free headline).
 
 Contexts are built and forwarded in streaming batches: the random library is
-~489k UTRs, so materializing every 16 kb window upfront would blow memory. If
-``backgrounds`` holds more than one locus the per-UTR score is the mean over
-backgrounds (the marginalization-divergence check). See
-``benchmarks/cuperus_mpra_5utr.md``.
+~489k UTRs, so materializing every 16 kb window upfront would blow memory. The
+construct is scored in the single fixed ``HIS3`` context (no marginalization).
+See ``benchmarks/cuperus_mpra_5utr.md``.
 """
 from __future__ import annotations
 
@@ -23,7 +22,6 @@ from tqdm import tqdm
 
 from yeastbench.adapters._cuperus_scaffold import (
     HIS3_BACKGROUND,
-    CuperusBackground,
     CuperusConstruct,
     build_context,
 )
@@ -47,7 +45,6 @@ class ShorkieCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
         model: Shorkie,
         fasta_path: str | Path,
         construct_json: str | Path | None = None,
-        backgrounds: Sequence[CuperusBackground] | None = None,
         track_subset: list[int] = SHORKIE_T0_RNA_SEQ_TRACK_IDS,
         batch_size: int = 16,
     ) -> None:
@@ -57,7 +54,6 @@ class ShorkieCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
         self.model = model
         self.fasta = pysam.FastaFile(str(fasta_path))
         self.construct = CuperusConstruct.from_json(construct_json) if construct_json else CuperusConstruct.from_json()
-        self.backgrounds = list(backgrounds) if backgrounds is not None else [HIS3_BACKGROUND]
         self.track_subset = list(track_subset)
         self.batch_size = batch_size
         self._track_idx_t = _torch.tensor(
@@ -71,7 +67,6 @@ class ShorkieCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
         checkpoint_paths: Sequence[str | Path],
         fasta_path: str | Path,
         construct_json: str | Path | None = None,
-        backgrounds: Sequence[CuperusBackground] | None = None,
         track_subset: list[int] = SHORKIE_T0_RNA_SEQ_TRACK_IDS,
         device: str = "cuda",
         batch_size: int = 16,
@@ -83,52 +78,44 @@ class ShorkieCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
             ),
             fasta_path=fasta_path,
             construct_json=construct_json,
-            backgrounds=backgrounds,
             track_subset=list(track_subset),
             batch_size=batch_size,
         )
 
-    def _contexts(self, utrs: Sequence[str]) -> Iterator[tuple[int, int, object]]:
+    def _contexts(self, utrs: Sequence[str]) -> Iterator[tuple[int, object]]:
         for ui, utr in enumerate(utrs):
-            for bi, bg in enumerate(self.backgrounds):
-                ctx = build_context(
-                    self.construct, utr, bg, self.fasta,
-                    seq_len=SEQ_LEN, crop_bp_each_side=CROP_BP_EACH_SIDE,
-                    bin_width=BIN_WIDTH, output_bins=OUTPUT_BINS,
-                )
-                if ctx is not None and ctx.readout_base_positions.size:
-                    yield ui, bi, ctx
+            ctx = build_context(
+                self.construct, utr, HIS3_BACKGROUND, self.fasta,
+                seq_len=SEQ_LEN, crop_bp_each_side=CROP_BP_EACH_SIDE,
+                bin_width=BIN_WIDTH, output_bins=OUTPUT_BINS,
+            )
+            if ctx is not None and ctx.readout_base_positions.size:
+                yield ui, ctx
 
     def predict_utr_expressions(self, utrs: Sequence[str]) -> np.ndarray:
         import torch as _torch
 
         n = len(utrs)
-        acc = np.full((n, len(self.backgrounds)), np.nan, dtype=np.float64)
+        out = np.full(n, np.nan, dtype=np.float64)  # UTRs with no usable context stay NaN
 
         def flush(buf: list) -> None:
             x = _torch.from_numpy(
-                np.stack([one_hot_encode_channels_first(c.window_seq) for _, _, c in buf])
+                np.stack([one_hot_encode_channels_first(c.window_seq) for _, c in buf])
             ).to(self.model.device)
             with _torch.no_grad():
                 cov = self.model.forward_track_mean_perbase(x, self._track_idx_t)
-            for j, (ui, bi, ctx) in enumerate(buf):
+            for j, (ui, ctx) in enumerate(buf):
                 base_t = _torch.as_tensor(
                     ctx.readout_base_positions, device=self.model.device, dtype=_torch.long
                 )
-                acc[ui, bi] = float(cov[j].index_select(0, base_t).sum().item())
+                out[ui] = float(cov[j].index_select(0, base_t).sum().item())
 
         buf: list = []
-        for item in tqdm(self._contexts(utrs), total=n * len(self.backgrounds),
-                         desc="Shorkie Cuperus"):
+        for item in tqdm(self._contexts(utrs), total=n, desc="Shorkie Cuperus"):
             buf.append(item)
             if len(buf) >= self.batch_size:
                 flush(buf)
                 buf = []
         if buf:
             flush(buf)
-
-        # mean over backgrounds; rows with no usable context stay NaN
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)  # all-NaN row -> NaN
-            return np.nanmean(acc, axis=1)
+        return out

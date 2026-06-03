@@ -5,9 +5,11 @@ varies the **50 bp UTR** inside a *fixed* reporter construct
 (``CYC1`` promoter + UTR + ``HIS3`` ORF + ``CYC1`` terminator) and reads out the
 ``HIS3`` ORF. The construct is a plasmid, so it has no genomic locus; to fill the
 model's receptive window with in-distribution sequence we **embed the whole
-construct at a background genomic locus** (default: ``HIS3``'s own locus) and let
-the real genomic flanks surround it. Marginalizing over several backgrounds is
-supported (pass a list) for the single-vs-marginalized divergence check.
+construct at a background genomic locus** (``HIS3``'s own) and let the real
+genomic flanks surround it. The construct is scored in this single fixed context:
+a divergence check over diverse backgrounds (incl. a random-flank control)
+confirmed the flanks shift the readout magnitude near-uniformly across UTRs, so
+the rank-based metrics are unchanged (clean-bucket Spearman Δ ≤ 0.007).
 
 This reuses ``_cassette_scaffold.build_insertion_context``: the *payload* is the
 assembled construct and the *readout* is its ``HIS3`` sub-region. The background
@@ -27,7 +29,6 @@ from yeastbench.adapters._cassette_scaffold import (
     InsertionSite,
     build_insertion_context,
 )
-from yeastbench.adapters._genome import Gene
 
 if TYPE_CHECKING:
     import pysam
@@ -71,8 +72,8 @@ class CuperusConstruct:
 @dataclass(frozen=True)
 class CuperusBackground:
     """A genomic locus whose native span the construct replaces, supplying the
-    flanking sequence that fills the model window. Default is ``HIS3``'s own
-    locus; marginalization uses several diverse loci."""
+    flanking sequence that fills the model window. ``HIS3``'s own locus
+    (``HIS3_BACKGROUND``) is the single fixed context the benchmark scores in."""
     name: str
     chrom: str            # roman
     replace_start: int    # 1-based inclusive
@@ -91,20 +92,6 @@ class CuperusBackground:
 # Default single background: HIS3's own R64-1-1 locus (YOR202W), so the
 # construct's HIS3 sits in roughly its native neighbourhood.
 HIS3_BACKGROUND = CuperusBackground("HIS3", "XV", 721946, 722608)
-
-
-def backgrounds_from_genes(
-    gene_ids: list[str], gtf_genes: dict[str, Gene]
-) -> list[CuperusBackground]:
-    """Build marginalization backgrounds from gene systematic names (the
-    construct replaces each gene's span). Unresolved names are skipped."""
-    out: list[CuperusBackground] = []
-    for gid in gene_ids:
-        g = gtf_genes.get(gid)
-        if g is None:
-            continue
-        out.append(CuperusBackground(gid, g.chrom_roman, g.gene_start, g.gene_end))
-    return out
 
 
 def build_context(
@@ -134,6 +121,5 @@ __all__ = [
     "CuperusBackground",
     "HIS3_BACKGROUND",
     "DEFAULT_CONSTRUCT_JSON",
-    "backgrounds_from_genes",
     "build_context",
 ]

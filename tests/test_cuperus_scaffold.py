@@ -5,11 +5,9 @@ import numpy as np
 import pysam
 import pytest
 
-from yeastbench.adapters._genome import Gene
 from yeastbench.adapters._cuperus_scaffold import (
     CuperusBackground,
     CuperusConstruct,
-    backgrounds_from_genes,
     build_context,
 )
 
@@ -93,14 +91,3 @@ class TestBuildContext:
         g = pysam.FastaFile(str(fa))
         bg = CuperusBackground("t", "I", 2_500, 2_800)
         assert build_context(CONSTRUCT, "A" * 50, bg, g, **PARAMS) is None
-
-
-class TestBackgroundsFromGenes:
-    def test_builds_and_skips_unresolved(self):
-        genes = {
-            "YAL001C": Gene("I", "+", 100, 100, 763, ((100, 763),)),
-            "YBR002W": Gene("II", "-", 500, 500, 1200, ((500, 1200),)),
-        }
-        bgs = backgrounds_from_genes(["YAL001C", "MISSING", "YBR002W"], genes)
-        assert [b.name for b in bgs] == ["YAL001C", "YBR002W"]
-        assert bgs[0].chrom == "I" and bgs[0].replace_start == 100 and bgs[0].replace_end == 763

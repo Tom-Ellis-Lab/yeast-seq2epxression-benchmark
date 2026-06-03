@@ -4,9 +4,10 @@
 > Headline: Shorkie clean-bucket Spearman **0.28**, Yorzoi **0.11**; both
 > metrics behaved as designed (per-bucket ρ climbs monotonically with depth for
 > Shorkie; metric 2 + the depth split show Shorkie carries genuine mRNA signal
-> while Yorzoi is near-noise on the clean data). Still open: the
-> single-`HIS3`-vs-marginalized divergence check. v1 scores in the **natural
-> HIS3 reporter context** — no marginalization (see *Why no marginalization*).
+> while Yorzoi is near-noise on the clean data). Scoring is in the **natural
+> HIS3 reporter context** — no marginalization; a divergence check over diverse
+> backgrounds confirmed this is immaterial for the rank metrics (see *Why no
+> marginalization*).
 
 ## At a glance
 
@@ -37,6 +38,8 @@ Pure translational-efficiency differences (e.g. a better Kozak that raises prote
 ### Why no marginalization
 
 Rafi/Shalem/Chen marginalize a designed insert across many native host genes for two reasons: (a) to put an *unnatural* insert (a heterologous GFP CDS, a designed terminator oligo) into in-distribution genomic context, and (b) to cancel the model's absolute miscalibration by averaging logSED over contexts. Cuperus needs neither. The reporter is built from native yeast sequence the model saw in training (`CYC1` promoter, `HIS3` CDS, `CYC1` terminator), and the measured quantity is tied to `HIS3` specifically — marginalizing over 22 random hosts would measure a *different* quantity ("the insert's average effect across contexts") than what Cuperus assayed. And with the 50 bp UTR as the only thing varying, a fixed-reference logSED is just a constant offset from the raw log-coverage, so it's rank-identical — there is nothing to gain from a per-context REF. So v1 scores the literal construct, one forward pass per UTR. This is also ~22× cheaper (24,468 forwards, not ~538 k).
+
+**Empirical confirmation (divergence check, 2026-06-03).** We re-scored the full clean bucket + native library against five diverse genomic backgrounds (within- and cross-chromosome, both strands, gene-dense and gene-sparse) plus a synthetic random-flank control, and compared single-`HIS3` to the background-marginalized score. The background shifts the readout *magnitude* near-uniformly across UTRs (per-UTR CV ≈ 0.10) but preserves rankings: Spearman(g_HIS3, g_marg) = 0.996, clean-bucket Spearman Δ = −0.0068, metric-2 partial Δ = −0.006 — all well inside any reasonable tolerance, and the shipped numbers are unchanged because production already scores single-`HIS3`. The effect is small-but-real and statistically resolvable (paired bootstrap CIs exclude zero; it is mildly *negative* for Shorkie and, on the native library, *positive* and sign-flipping for Yorzoi — a genuine flank×context interaction), so "no effect" would overstate it; the honest statement is **immaterial for the rank-based metrics this benchmark reports.** The marginalization machinery was therefore removed rather than shipped.
 
 ## The construct
 
@@ -229,7 +232,6 @@ Higher `growth_rate` = better 5′-UTR = more His3 protein. A 5′-UTR that rais
 ## Open questions / TODO
 
 - **`f` validation (after the first GPU run).** Check whether metric 2 separates from metric 1; if `f` is too weak, consider adding an in-frame-uAUG term or a CNN-derived translation component (keeping it translation-only).
-- **GPU run + sign convention.** Record headline numbers for Shorkie/Yorzoi (metric 1 overall + per bucket, metric 2 per library), confirm the predicted-coverage→`growth_rate` sign is positive, and run the single-`HIS3`-vs-marginalized divergence check (the adapters take `backgrounds=`).
 - **Native sub-50 bp fragments.** The scaffold assembles `promoter + fragment + HIS3`, so the slot length follows the fragment; revisit whether very short native fragments should carry their flanking native UTR context (minor — 0.3 % are < 5 bp).
 
-*Resolved:* the construct sequences are pinned + verified (`scripts/cuperus/build_construct.py` reconstructs them from the genome; junctions match the paper's cloning overhangs), and the scaffold reuses `_cassette_scaffold.py`.
+*Resolved:* the construct sequences are pinned + verified (`scripts/cuperus/build_construct.py` reconstructs them from the genome; junctions match the paper's cloning overhangs), and the scaffold reuses `_cassette_scaffold.py`. The single-`HIS3`-vs-marginalized divergence check ran 2026-06-03 and confirmed marginalization is immaterial for the rank metrics (see *Why no marginalization*); the `backgrounds=` machinery was removed.

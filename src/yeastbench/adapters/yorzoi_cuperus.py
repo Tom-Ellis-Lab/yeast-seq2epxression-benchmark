@@ -6,6 +6,7 @@ baseline) but with Yorzoi's 4992 bp input, 300 output bins, and strand-matched
 track aggregation. The construct is always built on the + strand, so the readout
 uses the plus-strand tracks (0–80); RC averaging swaps strand tracks inside the
 wrapper. Contexts are streamed in batches (the random library is ~489k UTRs).
+The construct is scored in the single fixed ``HIS3`` context (no marginalization).
 See ``benchmarks/cuperus_mpra_5utr.md``.
 """
 from __future__ import annotations
@@ -19,7 +20,6 @@ from tqdm import tqdm
 
 from yeastbench.adapters._cuperus_scaffold import (
     HIS3_BACKGROUND,
-    CuperusBackground,
     CuperusConstruct,
     build_context,
 )
@@ -45,7 +45,6 @@ class YorzoiCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
         model: Yorzoi,
         fasta_path: str | Path,
         construct_json: str | Path | None = None,
-        backgrounds: Sequence[CuperusBackground] | None = None,
         batch_size: int = 32,
     ) -> None:
         import pysam
@@ -53,7 +52,6 @@ class YorzoiCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
         self.model = model
         self.fasta = pysam.FastaFile(str(fasta_path))
         self.construct = CuperusConstruct.from_json(construct_json) if construct_json else CuperusConstruct.from_json()
-        self.backgrounds = list(backgrounds) if backgrounds is not None else [HIS3_BACKGROUND]
         self.batch_size = batch_size
 
     @classmethod
@@ -62,7 +60,6 @@ class YorzoiCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
         hf_repo: str,
         fasta_path: str | Path,
         construct_json: str | Path | None = None,
-        backgrounds: Sequence[CuperusBackground] | None = None,
         device: str = "cuda",
         batch_size: int = 32,
         use_rc: bool = True,
@@ -74,52 +71,45 @@ class YorzoiCuperusPredictor(FivePrimeUtrReporterExpressionPredictor):
             ),
             fasta_path=fasta_path,
             construct_json=construct_json,
-            backgrounds=backgrounds,
             batch_size=batch_size,
         )
 
-    def _contexts(self, utrs: Sequence[str]) -> Iterator[tuple[int, int, object]]:
+    def _contexts(self, utrs: Sequence[str]) -> Iterator[tuple[int, object]]:
         for ui, utr in enumerate(utrs):
-            for bi, bg in enumerate(self.backgrounds):
-                ctx = build_context(
-                    self.construct, utr, bg, self.fasta,
-                    seq_len=SEQ_LEN, crop_bp_each_side=CROP_BP_EACH_SIDE,
-                    bin_width=BIN_WIDTH, output_bins=OUTPUT_BINS,
-                )
-                if ctx is not None and ctx.readout_base_positions.size:
-                    yield ui, bi, ctx
+            ctx = build_context(
+                self.construct, utr, HIS3_BACKGROUND, self.fasta,
+                seq_len=SEQ_LEN, crop_bp_each_side=CROP_BP_EACH_SIDE,
+                bin_width=BIN_WIDTH, output_bins=OUTPUT_BINS,
+            )
+            if ctx is not None and ctx.readout_base_positions.size:
+                yield ui, ctx
 
     def predict_utr_expressions(self, utrs: Sequence[str]) -> np.ndarray:
         import torch as _torch
 
         n = len(utrs)
-        acc = np.full((n, len(self.backgrounds)), np.nan, dtype=np.float64)
+        out = np.full(n, np.nan, dtype=np.float64)  # UTRs with no usable context stay NaN
         ts, te = PLUS_TRACKS
 
         def flush(buf: list) -> None:
             x = _torch.from_numpy(
-                np.stack([one_hot_encode_channels_first(c.window_seq).T for _, _, c in buf])
+                np.stack([one_hot_encode_channels_first(c.window_seq).T for _, c in buf])
             ).to(self.model.device)
             with _torch.no_grad():
                 perbase = self.model.forward_tracks_perbase(x)  # (B, 162, OUT_LEN)
-            for j, (ui, bi, ctx) in enumerate(buf):
+            for j, (ui, ctx) in enumerate(buf):
                 base_t = _torch.as_tensor(
                     ctx.readout_base_positions, device=self.model.device, dtype=_torch.long
                 )
                 per_track = perbase[j].index_select(1, base_t).sum(dim=1)  # (162,)
-                acc[ui, bi] = float(per_track[ts:te].mean().item())
+                out[ui] = float(per_track[ts:te].mean().item())
 
         buf: list = []
-        for item in tqdm(self._contexts(utrs), total=n * len(self.backgrounds),
-                         desc="Yorzoi Cuperus"):
+        for item in tqdm(self._contexts(utrs), total=n, desc="Yorzoi Cuperus"):
             buf.append(item)
             if len(buf) >= self.batch_size:
                 flush(buf)
                 buf = []
         if buf:
             flush(buf)
-
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)  # all-NaN row -> NaN
-            return np.nanmean(acc, axis=1)
+        return out

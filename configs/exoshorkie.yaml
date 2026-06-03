@@ -1,0 +1,22 @@
+# ExoShorkie on the Brooks SCRaMBLE benchmark (its native task — the model
+# predicts RNA-seq coverage directly).
+#
+#   uv run ybench run --config configs/exoshorkie.yaml
+#
+# ExoShorkie = the mean over the 6 distilled per-genome students, with the
+# log-z normalization inverted to count space (count = expm1(z*sigma + mu)).
+# Uses the 16,384 bp Brooks distribution (same receptive field as Shorkie).
+
+out_dir: results/exoshorkie_brooks
+device: cuda
+
+tasks_config:
+  brooks_scramble_shorkie:
+    data_path: data/tasks/brooks_scramble/brooks_scramble_v1_w16384.tsv
+
+runs:
+  - model: exoshorkie
+    tasks: [brooks_scramble_shorkie]
+    model_config:
+      use_rc: true
+      batch_size: 4

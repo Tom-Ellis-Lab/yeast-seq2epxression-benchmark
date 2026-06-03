@@ -202,6 +202,83 @@ def _shorkie_brooks_adapter(device, **cfg):
     return ShorkieBrooksPredictor.from_checkpoints(device=device, **cfg)
 
 
+def _exoshorkie_brooks_adapter(device, **cfg):
+    from yeastbench.adapters.exoshorkie_brooks import ExoShorkieBrooksPredictor
+
+    return ExoShorkieBrooksPredictor.from_students(device=device, **cfg)
+
+
+# ExoShorkie scalar/variant adapters: thin subclasses of the Shorkie adapters
+# with an ExoShorkie model injected (identical readout, only the model differs).
+def _exoshorkie_eqtl_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieVariantScorer
+
+    return ExoShorkieVariantScorer.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_mpra_marginalized_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import (
+        ExoShorkieMPRAMarginalizedPredictor,
+    )
+
+    return ExoShorkieMPRAMarginalizedPredictor.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_shalem_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieShalemPredictor
+
+    return ExoShorkieShalemPredictor.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_wu_adapter(device, fasta_path, gtf_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieWuPredictor
+
+    return ExoShorkieWuPredictor.from_students(
+        fasta_path=fasta_path, gtf_path=gtf_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_hong_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieHongPredictor
+
+    return ExoShorkieHongPredictor.from_students(
+        fasta_path=fasta_path, device=device, **cfg
+    )
+
+
+def _exoshorkie_chen_adapter(device, fasta_path, library, hosts_path, data_dir, **cfg):
+    from yeastbench.adapters.exoshorkie_adapters import ExoShorkieChenPredictor
+
+    return ExoShorkieChenPredictor.from_students(
+        fasta_path=fasta_path,
+        library=library,
+        hosts_path=hosts_path,
+        data_dir=data_dir,
+        device=device,
+        **cfg,
+    )
+
+
+def _exoshorkie_meneu_adapter(device, **cfg):
+    from yeastbench.adapters.exoshorkie_meneu import ExoShorkieMeneuPredictor
+
+    return ExoShorkieMeneuPredictor.from_students(device=device, **cfg)
+
+
+def _exoshorkie_cuperus_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.exoshorkie_cuperus import ExoShorkieCuperusPredictor
+
+    return ExoShorkieCuperusPredictor.from_students(
+        fasta_path=fasta_path, device=device, **cfg,
+    )
+
+
 def _shorkie_cuperus_adapter(device, fasta_path, **cfg):
     from yeastbench.adapters.shorkie_cuperus import ShorkieCuperusPredictor
 
@@ -264,6 +341,22 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
 }
 
 
+# ExoShorkie: the 6-student distilled ensemble, benchmarked on every task
+# Shorkie runs (count-space coverage with the log-z inverse; scalar/variant
+# tasks reuse the Shorkie readouts via subclass adapters).
+EXOSHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
+    VariantEffectScorer: (_exoshorkie_eqtl_adapter, REFS_FIELDS),
+    MarginalizedSequenceExpressionPredictor: (_exoshorkie_mpra_marginalized_adapter, REFS_FIELDS),
+    TerminatorMarginalizedExpressionPredictor: (_exoshorkie_shalem_adapter, REFS_FIELDS),
+    CassetteExpressionPredictor: (_exoshorkie_wu_adapter, REFS_FIELDS),
+    IGRInsertionExpressionPredictor: (_exoshorkie_hong_adapter, FASTA_ONLY),
+    FivePrimeUtrReporterExpressionPredictor: (_exoshorkie_cuperus_adapter, FASTA_ONLY),
+    CoverageTrackPredictor: (_exoshorkie_brooks_adapter, ()),
+    TiledCoverageTrackPredictor: (_exoshorkie_meneu_adapter, ()),
+    LocalCodingVariantPredictor: (_exoshorkie_chen_adapter, CHEN_FIELDS),
+}
+
+
 def _dispatch(
     adapters: dict[type, tuple[Callable, tuple[str, ...]]],
     task: Benchmark,
@@ -287,6 +380,10 @@ def _build_shorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
 
 def _build_yorzoi(task: Benchmark, device: str, **cfg: Any) -> Any:
     return _dispatch(YORZOI_ADAPTERS, task, device, **cfg)
+
+
+def _build_exoshorkie(task: Benchmark, device: str, **cfg: Any) -> Any:
+    return _dispatch(EXOSHORKIE_ADAPTERS, task, device, **cfg)
 
 
 def _build_cai_baseline(task: Benchmark, device: str, **cfg: Any) -> Any:
@@ -318,6 +415,7 @@ def _build_codon_transformer_baseline(task: Benchmark, device: str, **cfg: Any) 
 
 MODELS: dict[str, ModelFactory] = {
     "shorkie": _build_shorkie,
+    "exoshorkie": _build_exoshorkie,
     "yorzoi": _build_yorzoi,
     "cai": _build_cai_baseline,
     "codon_transformer": _build_codon_transformer_baseline,

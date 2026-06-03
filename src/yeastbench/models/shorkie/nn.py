@@ -1,3 +1,4 @@
+import copy
 import json
 
 import h5py
@@ -570,23 +571,43 @@ class ShorkieModule(nn.Module):
         # ── Final activation (applied after trunk, before head) ──
         self.final_gelu = nn.GELU(approximate="tanh")
 
+        # Input encoding (config-driven; defaults reproduce Shorkie bit-for-bit).
+        # Shorkie (calico/shorkie-paper process_sequence): 4-wide dna_1hot
+        # (N = all-zeros), channel 4 reserved, host one-hot at global column
+        # SPECIES_OFFSET + R64_SPECIES_INDEX = 114. ExoShorkie's loader
+        # (build_shorkie_features) instead uses an explicit N channel at col 4
+        # and the host at global column 119 — a consistent reimplementation we
+        # must match to run its published weights faithfully.
+        self._species_channel = config.get(
+            "species_channel", SPECIES_OFFSET + R64_SPECIES_INDEX
+        )
+        self._encode_n_channel = config.get("encode_n_channel", False)
+
         # ── Head ──
         head_cfg = config["head"]
         self.head = nn.Linear(out_channels, head_cfg["units"])
+        # Shorkie: 5215-track softplus head. ExoShorkie: linear Dense(1)
+        # per-bin coverage head, squeezed to (B, T_out). Both are driven
+        # by the head config so the trunk stays a single implementation.
+        self._head_activation = head_cfg.get("activation", "softplus")
+        self._squeeze_head = head_cfg.get("squeeze_output", head_cfg["units"] == 1)
 
     def _expand_species_encoding(self, x: torch.Tensor) -> torch.Tensor:
         """Expand (B, 4, T) one-hot DNA to (B, 170, T) with species encoding.
 
-        Matches baskerville's dna_1hot_mask_species_encoding:
         - Channels 0-3: nucleotide one-hot (copied from input)
-        - Channel 4: reserved (zeros)
-        - Channels 5-169: one-hot species indicator (channel 5+R64_SPECIES_INDEX=114 set to 1)
+        - Channel 4: reserved (Shorkie) / explicit N indicator (ExoShorkie,
+          when ``_encode_n_channel``; N = positions with no A/C/G/T set)
+        - Channels 5-169: species block; ``_species_channel`` set to 1
+          (Shorkie default = global 114; ExoShorkie = 119)
         """
         B, C, T = x.shape
         total_channels = SPECIES_OFFSET + NUM_SPECIES  # 170
         x_expanded = x.new_zeros(B, total_channels, T)
         x_expanded[:, :DNA_CHANNELS, :] = x
-        x_expanded[:, SPECIES_OFFSET + R64_SPECIES_INDEX, :] = 1.0
+        if self._encode_n_channel:
+            x_expanded[:, DNA_CHANNELS, :] = (x.sum(dim=1) == 0).to(x_expanded.dtype)
+        x_expanded[:, self._species_channel, :] = 1.0
         return x_expanded
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -619,9 +640,16 @@ class ShorkieModule(nn.Module):
         # Final activation + head
         x = self.final_gelu(x)
         x = self.head(x)
-        x = F.softplus(x)
+        if self._head_activation == "softplus":
+            x = F.softplus(x)
+        elif self._head_activation not in ("linear", "identity", None):
+            raise ValueError(
+                f"Unsupported head activation: {self._head_activation!r}"
+            )
+        if self._squeeze_head:
+            x = x.squeeze(-1)
 
-        return x  # (B, T_out, 5215)
+        return x  # Shorkie: (B, T_out, 5215); ExoShorkie: (B, T_out)
 
     @staticmethod
     def from_tf_checkpoint(config: dict, h5_path: str) -> "ShorkieModule":
@@ -629,10 +657,34 @@ class ShorkieModule(nn.Module):
 
         The checkpoint must contain the full 170-channel conv_dna kernel
         (4 nucleotide + 1 reserved + 165 species channels).
+
+        Works for both Shorkie (5215-track softplus head, named
+        ``dense_<N>`` in the checkpoint) and ExoShorkie (single linear
+        ``per_bin_f<F>`` head): the head layer is auto-detected from the
+        checkpoint, so pass an ExoShorkie config (``exoshorkie_config``)
+        to load an ExoShorkie ``.h5``.
         """
         model = ShorkieModule(config)
         _load_tf_weights(model, h5_path)
         return model
+
+    @staticmethod
+    def exoshorkie_config(shorkie_config: dict) -> dict:
+        """Derive an ExoShorkie model config from a Shorkie model config.
+
+        ExoShorkie reuses the Shorkie trunk verbatim and replaces the
+        5215-track softplus head with a single linear per-bin coverage
+        head (Dense(1), no activation), squeezed to (B, T_out). It also
+        uses ExoShorkie's input convention (build_shorkie_features): an
+        explicit N channel and the host one-hot at global column 119, which
+        the published weights were trained and run with. Pass the ``"model"``
+        sub-dict of ``params.json`` (the trunk/head/bn config).
+        """
+        cfg = copy.deepcopy(shorkie_config)
+        cfg["head"] = {"name": "per_bin", "units": 1, "activation": "linear"}
+        cfg["species_channel"] = 119  # global col: 5 DNA channels + species[114]
+        cfg["encode_n_channel"] = True
+        return cfg
 
 
 # ──────────────────────────────────────────────────────────────
@@ -798,9 +850,22 @@ def _load_tf_weights(model: ShorkieModule, h5_path: str):
             )
             unet.sep_conv.pointwise.bias.data = torch.from_numpy(sp["bias:0"])
 
-        # ── Head (final dense) ──
-        _load_linear(model.head, _get_tf_layer(root, _dense_name(dense_i)))
-        dense_i += 1
+        # ── Head ──
+        # ExoShorkie checkpoints replace Shorkie's 5215-track ``dense_<N>``
+        # head with a single linear head named ``per_bin_f<F>``. Match the
+        # head by name: the last trunk dense (``dense_21``) is a real
+        # 256→384 projection, so grabbing "the last dense" would silently
+        # load the wrong weights. Auto-detect so one loader serves both.
+        per_bin_groups = [k for k in root.keys() if k.startswith("per_bin")]
+        if per_bin_groups:
+            if len(per_bin_groups) != 1:
+                raise ValueError(
+                    f"Expected exactly one per_bin head group, found {per_bin_groups}"
+                )
+            _load_linear(model.head, _get_tf_layer(root, per_bin_groups[0]))
+        else:
+            _load_linear(model.head, _get_tf_layer(root, _dense_name(dense_i)))
+            dense_i += 1
 
 
 def _load_conv1d(conv: nn.Conv1d, params: dict):

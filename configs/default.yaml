@@ -121,6 +121,27 @@ runs:
       batch_size: 64
       use_rc: true
 
+  # ExoShorkie = mean over the 6 distilled per-genome students, log-z inverse
+  # to count space. Benchmarked on every task Shorkie runs (same readouts; only
+  # the model differs). Students default to data/models/exoshorkie/students/.
+  - model: exoshorkie
+    tasks:
+      [
+        caudal_eqtl,
+        kita_eqtl,
+        rafi_mpra_marginalized,
+        shalem_mpra_marginalized,
+        wu_rfpins,
+        hong_igr,
+        chen_gfp_r1,
+        chen_gfp_r2,
+        chen_tdh3,
+        cuperus_utr,
+      ]
+    model_config:
+      batch_size: 32
+      use_rc: true
+
   - model: cai
     tasks: [chen_gfp_r1, chen_gfp_r2, chen_tdh3]
     model_config: {}

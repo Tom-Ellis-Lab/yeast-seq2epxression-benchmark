@@ -47,3 +47,11 @@ runs:
         - data/models/shorkie/checkpoints/f6.h5
         - data/models/shorkie/checkpoints/f7.h5
       use_rc: true
+
+  # ExoShorkie's most in-distribution task — foreign-DNA coverage is exactly
+  # what it was trained on. Same 16,384 bp window as Shorkie.
+  - model: exoshorkie
+    tasks: [meneu_foreign_dna_shorkie]
+    model_config:
+      batch_size: 32
+      use_rc: true

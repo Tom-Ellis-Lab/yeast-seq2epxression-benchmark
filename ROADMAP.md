@@ -579,7 +579,7 @@ Genomes + processed RNA-seq coverage from the ExoShorkie figshare release
 - [x] Spec, build script, `MeneuForeignDNABenchmark` +
   `TiledCoverageTrackPredictor` protocol, Shorkie (T0) + Yorzoi
   (`illumina_exo`) adapters, registry, tests. First zero-shot numbers in
-  the spec: shape Pearson Mpneumo 0.09–0.11 / Mmyco 0.26–0.38.
+  the spec: shape Pearson Mpneumo 0.09–0.11 / Mmmyco 0.26–0.38.
 - [ ] **ExoShorkie adapter** (`TiledCoverageTrackPredictor`). This is the
   exogenous-DNA-in-yeast task ExoShorkie was built for, so the most
   in-distribution model for the benchmark. Reuses the Shorkie wrapper
@@ -594,7 +594,7 @@ Genomes + processed RNA-seq coverage from the ExoShorkie figshare release
   subsets, and NatShorkie's strand-adaptation. See the spec's Open
   Questions #1.
 - [ ] **Yorzoi track-group sweep.** Only `illumina_exo` (10 exogenous-human
-  Illumina tracks) was run; add the Nanopore-70 and SRA-1 modes to
+  Illumina tracks) was run; add the Nanopore-63 and SRA-1 modes to
   `_plus_axis_indices`, report each, name the best.
 
 ## Native-genome track prediction

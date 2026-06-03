@@ -1,6 +1,6 @@
 # Meneu et al. — foreign-DNA RNA-seq coverage-track prediction
 
-> **Status:** implemented + unit-tested (12 tests); first GPU runs done.
+> **Status:** implemented + unit-tested; first GPU runs done.
 > Far-OOD **zero-shot** stress test — yeast-trained sequence-to-expression models
 > tile two whole bacterial chromosomes integrated into *S. cerevisiae* and predict
 > their RNA-seq coverage, scored per chromosome against the measured RNA-seq.
@@ -28,7 +28,7 @@
 | **Data** | Genome FASTAs + per-base normalized RNA-seq coverage (`.npz`, fwd/rev per contig) from the **ExoShorkie figshare** ([10.6084/m9.figshare.31075375](https://doi.org/10.6084/m9.figshare.31075375)) — no bigwig / pyBigWig; the coverage array is keyed by contig and matches the FASTA length. Provenance: GEO **GSE217022**, Zenodo **14024599** / **7198985**. |
 | **Assay** | Stranded directional mRNA RNA-seq (rRNA-depleted, PE150, 3 biological replicates), CPM-normalized per-base coverage. On bacterial DNA the signal follows bacterial gene orientation. |
 | **Expression label** | Per-base **CPM coverage**, unstranded (forward + reverse summed). Scale-free — Pearson/Spearman only need monotone correspondence. |
-| **Eval set** | **Mpneumo** (*M. pneumoniae* M129, ~818 kb, 40% GC — yeast-like, transcribed) and **Mmyco** (*M. mycoides* PG1, ~1,222 kb, 24% GC — AT-rich, near-silent). Scored **per chromosome, never pooled.** |
+| **Eval set** | **Mpneumo** (*M. pneumoniae* M129, ~818 kb, 40% GC — yeast-like, transcribed) and **Mmmyco** (*M. mycoides* PG1, ~1,222 kb, 24% GC — AT-rich, near-silent). Scored **per chromosome, never pooled.** |
 | **Primary metric** | Per chromosome, 1 bp, over 5 kb windows: **median raw Pearson** + **median JS divergence** of normalized profiles (*within-region shape*) + **per-window-total fold-change error** `log2(Σpred+1)−log2(Σtrue+1)` after genome-wide depth-normalization (*across-region magnitude*, adapting the Yorzoi paper). Low-signal floor on the shape metrics only (magnitude over all windows); whole contig scored (no masking in v1). See *Metrics*. |
 | **Adapter protocol** | `TiledCoverageTrackPredictor` — new protocol, identical surface to `CoverageTrackPredictor`, so the registry dispatches Meneu to its own adapters without colliding with Brooks. Reused via thin adapter subclasses. |
 
@@ -58,7 +58,7 @@ Meneu paper itself has no RNA-seq model, so it offers no comparison here.) Read
 every result against these as *rough* orientation — different processing, metric,
 and training regime, not exact targets:
 
-| Reference | Regime | ~Mpneumo | ~Mmyco |
+| Reference | Regime | ~Mpneumo | ~Mmmyco |
 | --- | --- | --- | --- |
 | **ExoShorkie** | Shorkie *transfer-learned* on exogenous RNA-seq | ~0.60–0.68 | ~0.62–0.76 |
 | **NatShorkie** | native-trained Shorkie, **zero-shot** (≈ our Shorkie) | ~0.46 | ~0.58 |
@@ -70,10 +70,10 @@ native-trained models already capture a meaningful zero-shot fraction
 (NatShorkie / ExoYorzoi). Our benchmark measures **that zero-shot fraction** as a
 portable, model-agnostic eval.
 
-### GC gradient — informative, but Mmyco is not the worst case
+### GC gradient — informative, but Mmmyco is not the worst case
 
-Order results by GC distance from yeast (Mmyco 24% → Mpneumo 40% ≈ yeast 38%).
-But note ExoShorkie scores **Mmyco higher than Mpneumo** despite its 24% GC and
+Order results by GC distance from yeast (Mmmyco 24% → Mpneumo 40% ≈ yeast 38%).
+But note ExoShorkie scores **Mmmyco higher than Mpneumo** despite its 24% GC and
 near-silent transcription — sparse signal can still rank well. So "AT-rich =
 hardest" is *not* assumed; the GC axis is reported, not editorialized.
 
@@ -92,7 +92,7 @@ The integrated reference per strain is a chimeric contig:
 The bacterial chromosome was cloned circular with a yeast CEN6/ARS-HIS3 selection
 cassette, then CRISPR-linearized and capped with yeast telomere seeds — so the
 deposited contig (~818 kb Mpneumo ≈ native M129 + ~1.5 kb cassette; ~1,222 kb
-Mmyco ≈ native PG1 + ~10.5 kb cassette) contains a small **internal** non-bacterial
+Mmmyco ≈ native PG1 + ~10.5 kb cassette) contains a small **internal** non-bacterial
 insert plus telomere ends.
 
 - **Tile the whole deposited contig.** Step a `seq_len`-wide window by its
@@ -163,11 +163,12 @@ Three metrics per chromosome (shape co-variation, shape mass-placement, magnitud
   capturing the coarse transcribed-vs-silent landscape — it forces local profile
   reconstruction. Raw Pearson is scale-invariant, so **no depth-normalization is
   needed** for this metric (it would be a no-op; the magnitude metric below *does*
-  depth-normalize). **Low-signal floor:** skip windows whose
-  *true* coverage is near-flat (variance/mean below ε — frequent on near-silent
-  Mmyco, ~48% zero-coverage, where per-window Pearson is otherwise undefined noise;
-  windows where the model fails on real signal are kept), and report the
-  scored-window count per chromosome (`n_windows_kept` / `n_windows_total`). Among
+  depth-normalize). **Zero-variance floor:** skip windows whose *true* coverage is
+  essentially flat (variance ≤ `FLOOR_EPS` = 1e-9 — in practice only the fully-silent
+  windows, where per-window Pearson is undefined; windows with real but low signal
+  are kept, so this guards against undefined correlations, it is not a low-coverage
+  filter), and report the scored-window count per chromosome (`n_windows_kept` /
+  `n_windows_total`). Among
   kept windows, a flat or all-zero *prediction* makes Pearson undefined (NaN) and is
   excluded from the median; the count that actually contributes is reported
   separately as **`n_windows_pearson`** so this drop is explicit, never silent
@@ -204,7 +205,11 @@ Three metrics per chromosome (shape co-variation, shape mass-placement, magnitud
   to reason about). It asks: did the model allocate the right *amount* of signal to
   each region? — the level dimension the scale-invariant shape metrics are blind
   to. Together: *right shape within regions?* (Pearson + JS) vs *right level across
-  regions?* (fold-change error).
+  regions?* (fold-change error). Read the **spread** as the primary magnitude
+  signal: because per-window errors are averaged in log space while the depth-norm
+  matches *linear* totals, a perfectly-calibrated model with dispersed regional
+  errors gets a slightly *negative* `mag_fc_mean` (Jensen's inequality), so a nonzero
+  mean is not on its own evidence of global over- or under-prediction.
 
 v1 fixes **5 kb windows + raw Pearson** (decided). A per-gene metric is *not* used
 — no meaningful genes on the artificial chromosome. The argument against raw
@@ -287,7 +292,7 @@ strand)` block is stale — this batched API is the live one.)
   81 plus-tracks are ~70 Brooks Nanopore direct-RNA, ~10 exogenous-human Illumina,
   1 SRA Illumina). The headline config is the **10 exogenous-human Illumina
   tracks** (the set ExoYorzoi used). Record metrics under each group
-  (Illumina-10 / Nanopore-70 / SRA-1), report the table, and document the best in
+  (Illumina-10 / Nanopore-63 / SRA-1), report the table, and document the best in
   prose. Set `varies_by_strain=False` (bacterial strains have no matched tracks).
 - Both adapters average forward + RC internally; the Yorzoi adapter additionally
   sums its + and − track axes so it returns one unstranded track per tile.
@@ -320,11 +325,11 @@ strand)` block is stale — this batched API is the live one.)
    (e) **Unstranded fwd+rev summing** vs ExoShorkie's per-strand handling; the
    depth-norm and the +1 pseudocount. Reproduce one NatShorkie / ExoYorzoi figure
    with their pipeline before trusting our absolute values.
-2. **Yorzoi track-group sweep — only `illumina_exo` run in v1.** Add Nanopore-70 and
+2. **Yorzoi track-group sweep — only `illumina_exo` run in v1.** Add Nanopore-63 and
    SRA-1 modes to `YorzoiMeneuPredictor._plus_axis_indices`, run all three (seconds
    each), and report the best (per #5).
 3. **Reproducibility ceiling — v2 unless figshare makes it trivial.** The honest
-   denominator for low OOD numbers (especially near-silent Mmyco): rep↔rep
+   denominator for low OOD numbers (especially near-silent Mmmyco): rep↔rep
    test-retest Pearson/Spearman per chromosome. ExoShorkie appears to deposit
    *replicate-merged* tracks (Picard-merged per its methods), so this would need
    the 3 per-replicate bigwigs from `GSE217022` (`GSM6703670-675`). Confirm at

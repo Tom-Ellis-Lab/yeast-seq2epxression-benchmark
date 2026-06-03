@@ -210,10 +210,15 @@ class TestMeneuBenchmark:
         for c, L in CONTIGS.items():
             pred = res.stitched_pred[c]
             assert pred.shape == (L,)
-            # The mock never emits a 0 in the interior, so any unwritten
-            # position would stay at the init value — assert the stitched
-            # track is fully populated (no NaN, finite everywhere).
-            assert np.all(np.isfinite(pred))
+            # The stitched track inits to np.zeros(L), so an unwritten
+            # ("hole") position stays 0.0 — which np.isfinite would NOT
+            # catch. The mock never emits 0 in the interior (min value 3.5),
+            # so requiring every position > 0 actually catches a base the
+            # tiling failed to cover.
+            assert np.all(pred > 0), (
+                f"{c}: stitching left an unwritten 0.0 hole at indices "
+                f"{np.flatnonzero(pred == 0).tolist()[:5]}"
+            )
             assert L == _contig_len(meneu_tsv, c)
 
     def test_save_load_roundtrip_exact(self, meneu_tsv, tmp_path):

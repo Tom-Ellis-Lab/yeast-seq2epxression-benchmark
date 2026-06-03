@@ -22,7 +22,7 @@ not in the individual specs. The forward-looking task list lives in
 | [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on IntProp | implemented, GPU runs done |
 | [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | implemented, GPU runs done |
 | [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression | under design | spec only |
-| [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) | spec only |
+| [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) | implemented, GPU runs done |
 
 "Implemented" means the benchmark class + both model adapters are registered
 ([`src/yeastbench/registry.py`](../src/yeastbench/registry.py)) and covered by

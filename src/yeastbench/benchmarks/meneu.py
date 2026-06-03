@@ -10,8 +10,8 @@ measured unstranded coverage (``fwd + rev``) in non-overlapping
 ``EVAL_WINDOW``-bp evaluation windows.
 
 Three metrics per contig. The two **shape** metrics use only the windows
-whose *true* signal clears a small variance floor (near-flat true windows
-are uninformative for shape); the **magnitude** metric uses *all* windows
+whose *true* signal clears a small variance floor (a flat true window has
+no profile to correlate); the **magnitude** metric uses *all* windows
 (a true-silent window where the model predicts coverage is a real error):
 
   * ``shape_pearson`` — median over kept windows of the RAW (scale-
@@ -26,7 +26,9 @@ are uninformative for shape); the **magnitude** metric uses *all* windows
   * ``mag_fc_mean`` / ``mag_fc_sd`` — mean and SD over ALL windows (the
     shape floor does NOT gate magnitude) of the per-window log2 fold-change
     error of the (genome-wide depth-normalised) predicted window total vs
-    the true window total.
+    the true window total. ``mag_fc_mean`` skews slightly negative for a
+    well-calibrated but regionally-dispersed model (log-space mean vs linear
+    depth-norm; Jensen), so ``mag_fc_sd`` is the cleaner magnitude signal.
 
 **Units.** Adapters return raw per-base predicted-count units (any
 model-specific training transform inverted inside the adapter) and

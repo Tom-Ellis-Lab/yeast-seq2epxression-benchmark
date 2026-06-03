@@ -44,6 +44,13 @@
       ensemble forward is prohibitively expensive. Leaning toward training
       a **distilled single PyTorch ExoShorkie** that matches the
       ensemble's predictions, rather than running all 40 at inference.
+- [ ] **(v2) Pull the ExoShorkie distillation code out into its own repo.** The
+  benchmark should benchmark ready-to-use models, not train/distill them — having
+  the whole teacher-download → target-gen → student-training pipeline
+  (`scripts/exoshorkie/{distill_all.sh,gen_targets.py,train_student.py,compute_logz_stats.py}`)
+  living in here is unclean. Move it to a separate repo that just produces the
+  distilled student weights; the benchmark keeps only the inference side
+  (`models/exoshorkie/`, `adapters/exoshorkie_*`) + the students it loads.
 
 ## eQTL
 

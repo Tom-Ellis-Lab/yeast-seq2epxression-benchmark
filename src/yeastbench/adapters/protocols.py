@@ -199,3 +199,24 @@ class LocalCodingVariantPredictor(Protocol):
         library_ids: Sequence[str],
         variant_seqs: Sequence[str],
     ) -> np.ndarray: ...
+
+
+@runtime_checkable
+class FivePrimeUtrReporterExpressionPredictor(Protocol):
+    """Predict expression of a 5'-UTR in the fixed Cuperus reporter construct
+    (``CYC1`` promoter - [50 bp UTR] - ``HIS3`` CDS - ``CYC1`` terminator).
+    Only the UTR varies; the construct is constant, so — unlike the
+    marginalized/cassette protocols — this takes raw UTR **strings** (not
+    genomic loci) and scores one fixed reporter rather than marginalizing
+    over host genes.
+
+    Given a list of UTR strings, return one scalar per UTR = the model's
+    predicted ``HIS3`` expression (e.g. summed ``HIS3``-CDS coverage),
+    aligned to input order. NaN is allowed for any UTR the model can't
+    score. Spearman is the scale-free headline, so adapters may return the
+    readout in any monotone-faithful units.
+
+    Used by the Cuperus et al. 2017 5'-UTR MPRA benchmark.
+    See ``benchmarks/cuperus_mpra_5utr.md``."""
+
+    def predict_utr_expressions(self, utrs: Sequence[str]) -> np.ndarray: ...

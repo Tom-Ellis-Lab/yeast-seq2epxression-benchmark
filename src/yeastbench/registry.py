@@ -17,6 +17,7 @@ from typing import Any, Callable
 from yeastbench.adapters.protocols import (
     CassetteExpressionPredictor,
     CoverageTrackPredictor,
+    FivePrimeUtrReporterExpressionPredictor,
     IGRInsertionExpressionPredictor,
     LocalCodingVariantPredictor,
     MarginalizedSequenceExpressionPredictor,
@@ -31,6 +32,7 @@ from yeastbench.benchmarks.hong_igr import HongIGRInsertionBenchmark
 from yeastbench.benchmarks.mpra import MPRAMarginalizedBenchmark
 from yeastbench.benchmarks.shalem import ShalemMPRAMarginalizedBenchmark
 from yeastbench.benchmarks.rfpins import RFPInsertionBenchmark
+from yeastbench.benchmarks.cuperus import CuperusUTRBenchmark
 
 ModelFactory = Callable[..., Any]
 TaskFactory = Callable[..., Benchmark]
@@ -269,6 +271,30 @@ def _exoshorkie_meneu_adapter(device, **cfg):
     return ExoShorkieMeneuPredictor.from_students(device=device, **cfg)
 
 
+def _exoshorkie_cuperus_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.exoshorkie_cuperus import ExoShorkieCuperusPredictor
+
+    return ExoShorkieCuperusPredictor.from_students(
+        fasta_path=fasta_path, device=device, **cfg,
+    )
+
+
+def _shorkie_cuperus_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.shorkie_cuperus import ShorkieCuperusPredictor
+
+    return ShorkieCuperusPredictor.from_checkpoints(
+        fasta_path=fasta_path, device=device, **cfg,
+    )
+
+
+def _yorzoi_cuperus_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.yorzoi_cuperus import YorzoiCuperusPredictor
+
+    return YorzoiCuperusPredictor.from_pretrained(
+        fasta_path=fasta_path, device=device, **cfg,
+    )
+
+
 def _yorzoi_meneu_adapter(device, **cfg):
     from yeastbench.adapters.yorzoi_meneu import YorzoiMeneuPredictor
 
@@ -296,6 +322,7 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_shorkie_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_shorkie_hong_adapter, FASTA_ONLY),
+    FivePrimeUtrReporterExpressionPredictor: (_shorkie_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_shorkie_brooks_adapter, ()),
     TiledCoverageTrackPredictor: (_shorkie_meneu_adapter, ()),
     LocalCodingVariantPredictor: (_shorkie_chen_adapter, CHEN_FIELDS),
@@ -307,6 +334,7 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_yorzoi_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_yorzoi_hong_adapter, FASTA_ONLY),
+    FivePrimeUtrReporterExpressionPredictor: (_yorzoi_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_yorzoi_brooks_adapter, ()),
     TiledCoverageTrackPredictor: (_yorzoi_meneu_adapter, ()),
     LocalCodingVariantPredictor: (_yorzoi_chen_adapter, CHEN_FIELDS),
@@ -322,6 +350,7 @@ EXOSHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     TerminatorMarginalizedExpressionPredictor: (_exoshorkie_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_exoshorkie_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_exoshorkie_hong_adapter, FASTA_ONLY),
+    FivePrimeUtrReporterExpressionPredictor: (_exoshorkie_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_exoshorkie_brooks_adapter, ()),
     TiledCoverageTrackPredictor: (_exoshorkie_meneu_adapter, ()),
     LocalCodingVariantPredictor: (_exoshorkie_chen_adapter, CHEN_FIELDS),
@@ -606,6 +635,24 @@ def _build_chen(
     )
 
 
+def _build_cuperus_utr(
+    random_path: str | Path,
+    native_path: str | Path,
+    fasta_path: str | Path,
+) -> Benchmark:
+    return CuperusUTRBenchmark(
+        random_path=Path(random_path),
+        native_path=Path(native_path),
+        fasta_path=Path(fasta_path),
+        info=BenchmarkInfo(
+            name="cuperus_utr",
+            version="v1",
+            description="Cuperus et al. 2017 5'-UTR reporter expression",
+            distribution_uri="",
+        ),
+    )
+
+
 TASKS: dict[str, TaskFactory] = {
     "caudal_eqtl": _build_caudal_eqtl,
     "kita_eqtl": _build_kita_eqtl,
@@ -620,4 +667,5 @@ TASKS: dict[str, TaskFactory] = {
     "chen_gfp_r1": _build_chen,
     "chen_gfp_r2": _build_chen,
     "chen_tdh3": _build_chen,
+    "cuperus_utr": _build_cuperus_utr,
 }

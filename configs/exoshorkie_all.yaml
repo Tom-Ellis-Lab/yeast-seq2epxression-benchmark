@@ -51,6 +51,10 @@ tasks_config:
     data_path: data/tasks/brooks_scramble/brooks_scramble_v1_w16384.tsv
   meneu_foreign_dna_shorkie:
     data_path: data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1_w16384.tsv
+  cuperus_utr:
+    random_path: data/tasks/cuperus_mpra_5utr/random_utrs.tsv
+    native_path: data/tasks/cuperus_mpra_5utr/native_utrs.tsv
+    fasta_path: data/tasks/R64-1-1.fa
   shalem_mpra_marginalized:
     data_path: data/tasks/shalem_mpra_terminator/segal_2015.tsv
     fasta_path: data/tasks/R64-1-1.fa
@@ -71,6 +75,7 @@ runs:
         chen_gfp_r2,
         brooks_scramble_shorkie,
         meneu_foreign_dna_shorkie,
+        cuperus_utr,
         shalem_mpra_marginalized,
         rafi_mpra_marginalized,
       ]

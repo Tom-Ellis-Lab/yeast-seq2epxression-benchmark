@@ -49,6 +49,8 @@ tasks_config:
     replicate_ceiling_spearman: 0.71
   brooks_scramble_shorkie:
     data_path: data/tasks/brooks_scramble/brooks_scramble_v1_w16384.tsv
+  meneu_foreign_dna_shorkie:
+    data_path: data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1_w16384.tsv
   shalem_mpra_marginalized:
     data_path: data/tasks/shalem_mpra_terminator/segal_2015.tsv
     fasta_path: data/tasks/R64-1-1.fa
@@ -68,6 +70,7 @@ runs:
         chen_gfp_r1,
         chen_gfp_r2,
         brooks_scramble_shorkie,
+        meneu_foreign_dna_shorkie,
         shalem_mpra_marginalized,
         rafi_mpra_marginalized,
       ]

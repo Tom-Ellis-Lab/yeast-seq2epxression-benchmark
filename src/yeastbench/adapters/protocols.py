@@ -121,6 +121,46 @@ class CoverageTrackPredictor(Protocol):
 
 
 @runtime_checkable
+class TiledCoverageTrackPredictor(Protocol):
+    """Predict an RNA-seq-like coverage profile for a batch of windows
+    that **tile a whole contig** (Meneu foreign-DNA benchmark). The
+    benchmark slides fixed-stride windows across each contig, calls
+    ``predict_coverage_batch`` per window, and stitches each window's
+    central ``seq_len - 2 * crop_bp_each_side`` prediction into one
+    per-base contig-length profile.
+
+    **Output contract:** ``predict_coverage_batch`` returns a 2D numpy
+    array of shape ``(B, seq_len - 2 * crop_bp_each_side)``, in **raw
+    per-base predicted-count units** and **unstranded** (fwd + rev) —
+    adapters invert any model-specific training transform and sum the
+    forward and reverse strands before returning so the benchmark can
+    compare directly against the unstranded ``fwd + rev`` truth.
+
+    Distinct from ``CoverageTrackPredictor`` (same method surface) purely
+    so the registry dispatches whole-contig tiled-coverage tasks (Meneu)
+    to their own adapters, separate from the isolated-construct Brooks
+    SCRaMBLE adapters — mirroring the precedent on
+    ``TerminatorMarginalizedExpressionPredictor`` (same signature as
+    ``MarginalizedSequenceExpressionPredictor`` but a different assay).
+
+    ``varies_by_strain`` is part of the surface for parity with
+    ``CoverageTrackPredictor``; Meneu adapters set it ``False`` (their
+    track subset does not depend on the strain)."""
+
+    seq_len: int
+    crop_bp_each_side: int
+    batch_size: int
+    varies_by_strain: bool
+
+    def predict_coverage_batch(
+        self,
+        seqs: Sequence[str],
+        strands: Sequence[str],
+        strains: Sequence[str | None] | None = None,
+    ) -> np.ndarray: ...
+
+
+@runtime_checkable
 class TerminatorMarginalizedExpressionPredictor(Protocol):
     """Predict the marginalized effect of each input sequence across native
     host-gene contexts, inserted **downstream** of the host-gene stop codon

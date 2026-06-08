@@ -143,7 +143,10 @@ ARTIFACTS: tuple[Artifact, ...] = (
         id=_REFS,
         kind=Kind.SHARED_REFERENCE,
         dest="data/tasks",
-        include=("R64-1-1.fa", "R64-1-1.115.gtf", "R64-5-1.fa"),
+        include=(
+            "R64-1-1.fa", "R64-1-1.fa.fai", "R64-1-1.115.gtf",
+            "R64-5-1.fa", "R64-5-1.fa.fai",
+        ),
         mirrors=_task_mirrors(_REFS),
         license=License.PUBLIC,  # SGD reference genome
         redistributable=True,
@@ -223,7 +226,8 @@ ARTIFACTS: tuple[Artifact, ...] = (
         needed_by=("shorkie",),
         include=("checkpoints/f0.h5", "checkpoints/f1.h5", "checkpoints/f2.h5",
                  "checkpoints/f3.h5", "checkpoints/f4.h5", "checkpoints/f5.h5",
-                 "checkpoints/f6.h5", "checkpoints/f7.h5", "params.json"),
+                 "checkpoints/f6.h5", "checkpoints/f7.h5", "params.json",
+                 "targets.txt"),  # read at runtime by shorkie_hong
         license=License.PUBLIC,
         redistributable=False,  # upstream's to host; we point at their bucket
         mirrors=(

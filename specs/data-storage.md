@@ -181,6 +181,42 @@ are set now so the v2 `publish` step can refuse to mirror anything it shouldn't.
 Publishing to the HF/GCS mirrors and the v2 raw/build/reproduce path are
 separate, later PRs.
 
+## Publishing (maintainer runbook)
+
+Both mirrors are populated from the same locked local bytes. After (re)building
+any distribution, re-freeze the lock, then publish to each backend:
+
+```bash
+uv sync --extra data
+uv run ybench data lock                     # checksums from local files → lock
+uv run ybench data publish --to hf          # dry run: prints the plan
+uv run ybench data publish --to hf  --yes   # needs `huggingface-cli login` / HF_TOKEN
+uv run ybench data publish --to gcs --yes   # needs gcloud auth
+```
+
+`publish` re-checks every file against the lock before uploading and refuses to
+push anything marked non-redistributable (Shorkie weights stay on the authors'
+public bucket; raw GEO/1002genomes inputs are v2 source-only). Commit the lock
+whenever it changes — it's the contract the download + the published bytes both
+honor.
+
+## Fresh-install acceptance test
+
+The release gate before `dev` → `main`: a fresh checkout with an empty `data/`
+must pull everything and run the full matrix. It's GPU-heavy and needs the
+published mirror, so it's opt-in (`tests/test_fresh_install.py`, skipped unless
+`YBENCH_FRESH_INSTALL=1`):
+
+```bash
+# on a GPU box, fresh checkout, mirror published:
+uv sync --extra all
+YBENCH_FRESH_INSTALL=1 uv run pytest -m integration tests/test_fresh_install.py
+```
+
+It pulls all artifacts, verifies checksums, then runs `configs/default.yaml`,
+`configs/brooks.yaml`, and `configs/meneu.yaml` and asserts a `summary.json`
+landed for every `(model, task)` pair.
+
 ## v2 sketch (planned, not built)
 
 - `raw` tier per artifact: upstream URIs (GEO/figshare/Zenodo/buckets) +

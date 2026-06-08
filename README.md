@@ -26,6 +26,40 @@ uv sync --extra yorzoi    # yorzoi + flash-attn, for the Yorzoi adapter
 uv sync --extra all       # both models
 ```
 
+## Getting the data
+
+Task data and model weights are **not** in git. `ybench data` downloads them
+from a mirror (HuggingFace or GCS) and checksum-verifies every file against a
+committed lock (`src/yeastbench/data/manifest.lock.json`). See
+[`specs/data-storage.md`](specs/data-storage.md) for the design.
+
+```bash
+uv sync --extra data            # adds huggingface_hub (HF backend)
+
+# Pull everything a config's runs need (recommended — same selection as `run`)
+uv run ybench data get --config configs/default.yaml
+
+# Or pull explicit subsets / everything
+uv run ybench data get --tasks cuperus_utr,caudal_eqtl --models shorkie
+uv run ybench data get                     # all artifacts
+uv run ybench data get --dry-run           # show the plan, fetch nothing
+
+# Inspect and check
+uv run ybench data list                    # every artifact, its mirrors, license
+uv run ybench data status                  # what's present locally vs declared
+uv run ybench data verify                  # checksum local files against the lock
+```
+
+`get` is idempotent (skips files already present and valid), picks the first
+reachable mirror (HF first, then GCS; override with `--from hf|gcs`), and writes
+atomically. Shorkie weights, Yorzoi, and CodonTransformer resolve from their
+public homes; the per-task processed data comes from the project mirror. Add
+`--json` to `list`/`status` for machine-readable output.
+
+> Maintainers: `ybench data lock` re-freezes the checksum lock from a local
+> copy, and `ybench data publish --to hf|gcs` uploads the redistributable
+> artifacts to a mirror (dry-run unless `--yes`).
+
 ## Running the benchmark
 
 The repo ships a unified CLI, `ybench`, driven by a YAML run-spec. The

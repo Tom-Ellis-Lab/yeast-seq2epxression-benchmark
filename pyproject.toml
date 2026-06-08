@@ -31,8 +31,11 @@ yorzoi = [
     "flash-attn",
     "yorzoi>=0.0.3",
 ]
+data = [
+    "huggingface_hub>=0.25",
+]
 all = [
-    "yeast-seq2epxression-benchmark[shorkie,yorzoi]",
+    "yeast-seq2epxression-benchmark[shorkie,yorzoi,data]",
 ]
 dev = [
     "ipykernel>=7.2.0",

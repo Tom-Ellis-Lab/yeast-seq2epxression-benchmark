@@ -13,10 +13,12 @@ from typing import Annotated, Optional
 import typer
 
 from yeastbench.config import Config, load_config
+from yeastbench.data.cli import app as data_app
 from yeastbench.registry import MODELS, TASKS
 
 
 app = typer.Typer(add_completion=False, help="yeast-seq2expression benchmark runner")
+app.add_typer(data_app, name="data")
 
 
 def _echo(msg: str) -> None:

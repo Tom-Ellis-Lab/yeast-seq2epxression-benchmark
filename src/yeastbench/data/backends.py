@@ -131,6 +131,30 @@ class HfBackend:
         except RepositoryNotFoundError as e:
             raise BackendError(f"HF repo '{mirror.base}' not found") from e
 
+    def upload(
+        self, mirror: Mirror, items: list[tuple[Path, str]], message: str
+    ) -> None:
+        """Publish ``items`` (local file, remote path) in one commit, creating
+        the repo if needed. Maintainer-only."""
+        try:
+            from huggingface_hub import CommitOperationAdd, HfApi
+        except ImportError as e:
+            raise BackendError(
+                "huggingface_hub not installed; run `uv sync --extra data`"
+            ) from e
+        api = HfApi()
+        api.create_repo(mirror.base, repo_type=mirror.repo_type, exist_ok=True)
+        ops = [
+            CommitOperationAdd(path_in_repo=remote, path_or_fileobj=str(local))
+            for local, remote in items
+        ]
+        api.create_commit(
+            repo_id=mirror.base,
+            repo_type=mirror.repo_type,
+            operations=ops,
+            commit_message=message,
+        )
+
 
 # ──────────────────────────────────────────────────────────────
 # Google Cloud Storage (via gcloud / gsutil)
@@ -154,10 +178,22 @@ class GcsBackend:
             )
         src = f"{mirror.base}{remote}"
         _ensure_parent(out_path)
+        self._cp(src, str(out_path))
+
+    def upload(self, mirror: Mirror, local: Path, remote: str) -> None:
+        """Publish a single file to ``mirror``. Maintainer-only."""
+        self._cp(str(local), f"{mirror.base}{remote}")
+
+    def _cp(self, src: str, dst: str) -> None:
+        if self._cli is None:
+            raise BackendError(
+                "neither `gcloud` nor `gsutil` found on PATH; "
+                "install the Google Cloud SDK or use `--from hf`"
+            )
         if self._cli.endswith("gcloud"):
-            cmd = [self._cli, "storage", "cp", src, str(out_path)]
+            cmd = [self._cli, "storage", "cp", src, dst]
         else:
-            cmd = [self._cli, "cp", src, str(out_path)]
+            cmd = [self._cli, "cp", src, dst]
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             raise BackendError(

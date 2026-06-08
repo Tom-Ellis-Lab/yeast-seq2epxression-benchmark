@@ -18,6 +18,7 @@ from yeastbench.data.fetch import (
     build_plans,
     default_data_root,
     run_get,
+    run_publish,
     run_status,
     run_verify,
     selection_from_config,
@@ -286,6 +287,49 @@ def lock_cmd(
     missing = [a.id for a in artifacts if not a.cache_only and a.id not in fresh]
     if missing:
         _echo("no local files found for: " + ", ".join(missing))
+
+
+# ──────────────────────────────────────────────────────────────
+# publish (maintainer)
+# ──────────────────────────────────────────────────────────────
+
+
+@app.command("publish")
+def publish_cmd(
+    to: Annotated[str, typer.Option("--to", help="Mirror to publish to: hf | gcs")],
+    tasks: Annotated[Optional[str], typer.Option("--tasks", help="Only these artifact ids (default: all redistributable)")] = None,
+    data_root: Annotated[Optional[Path], typer.Option("--data-root")] = None,
+    message: Annotated[str, typer.Option("--message", "-M", help="Commit message (HF)")] = "publish benchmark data",
+    yes: Annotated[bool, typer.Option("--yes", help="Actually upload (without this it's a dry run)")] = False,
+) -> None:
+    """[maintainer] Upload redistributable artifacts to a mirror, exactly as
+    locked. Re-checks every file against the lock before uploading; refuses to
+    publish anything marked non-redistributable. Dry-runs unless --yes."""
+    kind = _backend_kind(to)
+    if kind == BackendKind.HTTP:
+        raise typer.Exit("--to must be hf or gcs (http is read-only)")
+    root = (data_root or default_data_root()).resolve()
+    ids = _split(tasks)
+    artifacts = [artifact_by_id(i) for i in ids] if ids else list(ARTIFACTS)
+    lock = read_lock()
+
+    dry_run = not yes
+    _echo(f"{'DRY RUN — ' if dry_run else ''}publish to {kind.value}  (data root: {root})")
+    summary = run_publish(artifacts, lock, kind, root, message, dry_run, log=_echo)
+    _echo("")
+    verb = "would upload" if dry_run else "uploaded"
+    _echo(f"{verb} {summary.files} files across {summary.artifacts} artifact(s)")
+    if summary.skipped:
+        _echo(f"skipped: {len(summary.skipped)}")
+        for m in summary.skipped:
+            _echo(f"  · {m}")
+    if summary.failures:
+        _echo(f"FAILURES: {len(summary.failures)}")
+        for m in summary.failures:
+            _echo(f"  ! {m}")
+        raise typer.Exit(code=1)
+    if dry_run:
+        _echo("\nre-run with --yes to upload.")
 
 
 # ──────────────────────────────────────────────────────────────

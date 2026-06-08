@@ -9,14 +9,6 @@
         "brooks_scramble_v1_w16384.tsv": {
           "sha256": "2404cd5db73e073eab7a777d56c0d7ac7c32dba77506079835fa2bdf4b8f89e7",
           "size": 115177128
-        },
-        "build_all.log": {
-          "sha256": "98982f48d3ebab314d9827ceba1af925616d75d8e192dc47eea3c7d83f812abd",
-          "size": 2918
-        },
-        "build_shorkie.log": {
-          "sha256": "6ce103b2716f500d5cf57f30e233094d58fb8e6df810ca5cbd5b32b331dcd8a1",
-          "size": 2935
         }
       }
     },
@@ -198,10 +190,6 @@
     },
     "hong": {
       "files": {
-        "YeIP_supp_table_R2_20260411.xlsx": {
-          "sha256": "99dea2fc5c7a89a8c0ea2bcc438352310e62408dfb7e724aa80c69a21130f631",
-          "size": 170417
-        },
         "expression_cassette.fasta": {
           "sha256": "967cc25505d46d6959a1162c316700f1cd2977bada9ad7d3631c8db281f0e7d9",
           "size": 1729
@@ -418,10 +406,6 @@
     },
     "wu_rfpins": {
       "files": {
-        "cassette_reconstruction.gb": {
-          "sha256": "74f3fee0845a05ba719cc31eac721c5e4849d75d4259045187fae266aee28d4b",
-          "size": 10082
-        },
         "expression_cassette.fasta": {
           "sha256": "c71179260324a001f11ac4861631e7ae1e62594f5edb1e9e205d6e2260bbdf67",
           "size": 3858

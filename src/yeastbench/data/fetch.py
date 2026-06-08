@@ -225,6 +225,90 @@ def run_get(plans: list[ArtifactPlan], log: Log = _noop) -> GetSummary:
 
 
 @dataclass
+class PublishSummary:
+    artifacts: int = 0
+    files: int = 0
+    skipped: list[str] = field(default_factory=list)   # cache-only / not redistributable
+    failures: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+
+def run_publish(
+    artifacts: list[Artifact],
+    lock: dict,
+    to_kind: BackendKind,
+    data_root: Path,
+    message: str,
+    dry_run: bool,
+    log: Log = _noop,
+) -> PublishSummary:
+    """Upload redistributable artifacts to their ``to_kind`` mirror, exactly as
+    locked. Maintainer-only; the caller is responsible for the --yes guard."""
+    summary = PublishSummary()
+    backend = get_backend(to_kind)
+    for art in artifacts:
+        if art.cache_only:
+            summary.skipped.append(f"{art.id}: hf-hub model (nothing to publish)")
+            continue
+        if not art.redistributable:
+            summary.skipped.append(
+                f"{art.id}: not redistributable (license={art.license.value})"
+            )
+            log(f"  · {art.id}: not redistributable — skipping")
+            continue
+        mirror = next((m for m in art.mirrors if m.backend == to_kind), None)
+        if mirror is None:
+            summary.skipped.append(f"{art.id}: no {to_kind.value} mirror declared")
+            continue
+        files = locked_files(lock, art.id)
+        if not files:
+            summary.skipped.append(f"{art.id}: not in lock (run `ybench data lock`)")
+            continue
+
+        items: list[tuple[Path, str]] = []
+        bad = False
+        for lf in files:
+            p = data_root / art.dest / lf.relpath
+            if not p.exists():
+                summary.failures.append(f"{art.id}/{lf.relpath}: missing locally")
+                bad = True
+                continue
+            if sha256_file(p) != lf.sha256:
+                summary.failures.append(
+                    f"{art.id}/{lf.relpath}: local differs from lock (run `data lock`)"
+                )
+                bad = True
+                continue
+            items.append((p, mirror.remote_for(lf.relpath)))
+        if bad:
+            continue
+
+        log(f"  {art.id} → {to_kind.value}:{mirror.base}  ({len(items)} files)")
+        if dry_run:
+            for local, remote in items:
+                log(f"      {local.relative_to(data_root)} → {remote}")
+            summary.artifacts += 1
+            summary.files += len(items)
+            continue
+
+        try:
+            if to_kind == BackendKind.HF:
+                backend.upload(mirror, items, f"{message}: {art.id}")
+            else:  # GCS, per-file
+                for local, remote in items:
+                    backend.upload(mirror, local, remote)
+            summary.artifacts += 1
+            summary.files += len(items)
+        except BackendError as e:
+            summary.failures.append(f"{art.id}: {e}")
+            log(f"  ! {art.id}: {e}")
+    return summary
+
+
+@dataclass
 class VerifyRow:
     artifact_id: str
     relpath: str

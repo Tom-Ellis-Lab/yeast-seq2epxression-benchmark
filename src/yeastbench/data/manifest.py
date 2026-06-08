@@ -83,7 +83,12 @@ class Artifact:
     needed_by: tuple[str, ...] = ()     # registry task/model names
     requires: tuple[str, ...] = ()      # other artifact ids (e.g. shared refs)
     include: tuple[str, ...] = ("**/*",)
-    exclude: tuple[str, ...] = ("**/_cache/**",)
+    # Keep the published distribution to runtime files: drop the raw-download
+    # cache, build logs, and raw source formats (spreadsheets, GenBank) that the
+    # benchmarks don't read at run time.
+    exclude: tuple[str, ...] = (
+        "**/_cache/**", "*.log", "*.xlsx", "*.xls", "*.gb", "*.gbk",
+    )
     license: License = License.UNKNOWN
     redistributable: bool = False
     cache_only: bool = False           # HF-hub model loaded at runtime; warm cache, nothing under dest
@@ -158,7 +163,8 @@ ARTIFACTS: tuple[Artifact, ...] = (
         dest="data/tasks/cuperus_mpra_5utr",
         needed_by=("cuperus_utr",),
         requires=(_REFS,),
-        license=License.GEO_TERMS,  # built from GEO GSE104252
+        # Our processed TSVs (License.OWN, publishable). The underlying raw is
+        # GEO GSE104252 (public); that raw belongs to the v2 raw tier.
     ),
     _task(
         "caudal_eqtl",

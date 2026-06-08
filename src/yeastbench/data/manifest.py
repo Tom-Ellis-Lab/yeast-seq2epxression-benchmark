@@ -158,67 +158,88 @@ ARTIFACTS: tuple[Artifact, ...] = (
     ),
 
     # ── Task-processed data ────────────────────────────────────
+    # `include` is an allowlist of exactly the files each benchmark reads at run
+    # time (verified against the benchmark/adapter code) — NOT the whole task
+    # dir. Raw inputs, build intermediates (_intermediates_*), and provenance
+    # (README, build manifests) stay out of the v1 distribution; they belong to
+    # the v2 raw tier.
     _task(
         "cuperus_mpra_5utr",
         dest="data/tasks/cuperus_mpra_5utr",
         needed_by=("cuperus_utr",),
         requires=(_REFS,),
-        # Our processed TSVs (License.OWN, publishable). The underlying raw is
-        # GEO GSE104252 (public); that raw belongs to the v2 raw tier.
+        include=("random_utrs.tsv", "native_utrs.tsv"),
     ),
     _task(
         "caudal_eqtl",
         dest="data/tasks/caudal_eqtl",
         needed_by=("caudal_eqtl",),
         requires=(_REFS,),
+        include=("negset_*.tsv",),  # benchmark globs negset_*.tsv (root only)
     ),
     _task(
         "kita_eqtl",
         dest="data/tasks/kita_eqtl",
         needed_by=("kita_eqtl",),
         requires=(_REFS,),
+        include=("negset_*.tsv",),
     ),
     _task(
         "rafi_mpra",
         dest="data/tasks/rafi_mpra",
         needed_by=("rafi_mpra_marginalized",),
         requires=(_REFS,),
+        include=(
+            "filtered_test_data_with_MAUDE_expression.txt",
+            "test_subset_ids/*.csv",
+        ),
     ),
     _task(
         "shalem_mpra_terminator",
         dest="data/tasks/shalem_mpra_terminator",
         needed_by=("shalem_mpra_marginalized",),
         requires=(_REFS,),
+        include=("segal_2015.tsv", "host_genes.json"),
     ),
     _task(
         "wu_rfpins",
         dest="data/tasks/wu_rfpins",
         needed_by=("wu_rfpins",),
         requires=(_REFS,),
+        include=("table_s2_fluorescence_1044_loci.csv", "expression_cassette.fasta"),
     ),
     _task(
         "hong",
         dest="data/tasks/hong",
         needed_by=("hong_igr",),
         requires=(_REFS,),
+        include=("hong_igr_v1.tsv", "expression_cassette.fasta"),
     ),
     _task(
         "chen_synonymous",
         dest="data/tasks/chen_synonymous",
         needed_by=("chen_gfp_r1", "chen_gfp_r2", "chen_tdh3"),
         requires=(_REFS,),
+        # gfp_r1/gfp_r2 read for cassette synthesis even by the tdh3 run; hosts
+        # json read by the adapter. construct_*.fa/.gtf + library_loci are build.
+        include=("gfp_r1.tsv", "gfp_r2.tsv", "tdh3.tsv", "marginalized_hosts.json"),
     ),
     _task(
         "brooks_scramble",
         dest="data/tasks/brooks_scramble",
         needed_by=("brooks_scramble", "brooks_scramble_shorkie"),
         license=License.OWN,  # Brooks lab Nanopore data, our processing
+        include=("brooks_scramble_v1.tsv", "brooks_scramble_v1_w16384.tsv"),
     ),
     _task(
         "meneu_foreign_dna",
         dest="data/tasks/meneu_foreign_dna",
         needed_by=("meneu_foreign_dna", "meneu_foreign_dna_shorkie"),
         license=License.CC_BY_4_0,  # ExoShorkie figshare
+        include=(
+            "meneu_foreign_dna_v1.tsv", "meneu_foreign_dna_v1_w16384.tsv",
+            "meneu_cov_Mpneumo.npz", "meneu_cov_Mmmyco.npz",
+        ),
     ),
 
     # ── Model weights ──────────────────────────────────────────

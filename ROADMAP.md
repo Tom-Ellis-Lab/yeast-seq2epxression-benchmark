@@ -20,8 +20,6 @@
 - [x] 282-test pytest suite (eQTL, marginalized + Shalem + Chen MPRA, Wu,
   Hong, Brooks, Cuperus, Meneu, data manifest/backends + fresh-install,
   compare, per-base wrappers, registry, config, CLI persistence)
-- [ ] Refactor MPRA / Shalem benchmark classes to share an abstract
-  `RegressionBenchmark` base (data-source-agnostic)
 - [x] **Automated cross-model comparison runner (`ybench compare`).**
   `src/yeastbench/compare.py` walks `<out_dir>/<model>__<task>/summary.json`,
   groups by task, and for every task with ≥ 2 models writes a per-task
@@ -32,15 +30,6 @@
   intersection) plus a cross-task `summary.csv` (long) and `summary.md`
   (wide tables). Auto-triggers at the end of every `ybench run`
   (`cli.py`); also a standalone `ybench compare --config …` command.
-- [ ] **ExoShorkie integration** — prerequisite for the per-task
-  ExoShorkie adapter bullets under each benchmark below. Two open
-  questions to resolve first:
-    - *PyTorch port:* check whether our existing Shorkie PyTorch port runs
-      ExoShorkie weights as-is, or needs architecture modifications.
-    - *Ensemble bundling:* ExoShorkie ships as ~40 models, so a full
-      ensemble forward is prohibitively expensive. Leaning toward training
-      a **distilled single PyTorch ExoShorkie** that matches the
-      ensemble's predictions, rather than running all 40 at inference.
 
 ## eQTL
 
@@ -828,6 +817,20 @@ model in the suite.
 
 *Empty by design — anything that doesn't make the v1 cut goes here so
 the v1 scope stays bounded. Move items in once v1 is locked.*
+
+### ExoShorkie integration
+
+Deferred from v1 (2026-06-09). ExoShorkie is a transfer-learning extension
+of Shorkie on exogenous-RNA-seq-in-yeast; integrating it is the
+prerequisite for the per-task **ExoShorkie adapter** bullets that remain
+under each benchmark section above. Two open questions to resolve first:
+
+- *PyTorch port:* check whether our existing Shorkie PyTorch port runs
+  ExoShorkie weights as-is, or needs architecture modifications.
+- *Ensemble bundling:* ExoShorkie ships as ~40 models, so a full ensemble
+  forward is prohibitively expensive. Leaning toward training a
+  **distilled single PyTorch ExoShorkie** that matches the ensemble's
+  predictions, rather than running all 40 at inference.
 
 ### Species LM (Keren et al.)
 

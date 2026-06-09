@@ -101,6 +101,30 @@ uv run ybench run --config configs/default.yaml --task  caudal_eqtl
 uv run ybench replot results/default/shorkie__caudal_eqtl
 ```
 
+### Progress, hardware, and GPU selection
+
+`run` opens with a banner — config hash, resolved device (GPU name + free
+VRAM + `CUDA_VISIBLE_DEVICES` when CUDA is available), a data-readiness check,
+and the planned pairs — then prints a `[i/N]` line per pair with a running
+mean-pair-time **ETA** so you can see at a glance what's done and how long is
+left:
+
+```
+hardware:      cuda:0  NVIDIA A100-80GB  (79.2/80.0 GB free)
+data:          ✓ ready  19/19 files (474.0MB)
+runs:          12 pair(s)
+
+[ 1/12] shorkie × caudal_eqtl → results/default/shorkie__caudal_eqtl
+  …
+  ✓ done in 41s · elapsed 41s · mean 41s/pair · ETA ~7m32s
+```
+
+Before executing, `run` pre-flights the data: a real run **stops** if any
+required file is missing or stale (with the `ybench data get` command to fix
+it); `--no-data-check` skips that. Pick the GPU with `--gpu 2` (shorthand for
+`--device cuda:2`) or `--device cpu`. Runs are sequential — one GPU at a time;
+to isolate a physical GPU on a shared box use `CUDA_VISIBLE_DEVICES`.
+
 ### Output layout
 
 One directory per `(model, task)` pair, under the config's `out_dir`:

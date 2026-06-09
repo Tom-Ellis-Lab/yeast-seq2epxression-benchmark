@@ -20,8 +20,8 @@ This module:
 - Loads the curated 20-host JSON (``data/tasks/chen_synonymous/
   marginalized_hosts.json``) — see spec for selection criteria.
 - Builds the per-library cassette (variant gene CDS + TADH1):
-    GFP libraries → preferred-yeast-codon GFP with row-0 variants at
-                     codons 41-52 and 156-167, + TADH1
+    GFP libraries → wild-type avGFP CDS (GFP_CDS_WT) with row-0 variants
+                     at codons 41-52 and 156-167, + TADH1
     TDH3 library  → native R64-1-1 TDH3 CDS + TADH1
 - For each host, computes the modified chromosome (host CDS replaced
   by cassette, strand-aware), the model-input window centred on the
@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from yeastbench.adapters._chen_gfp_reference import GFP_CDS_WT, GFP_PROTEIN
 from yeastbench.adapters._genome import one_hot_encode_channels_first, place_window
 
 if TYPE_CHECKING:
@@ -67,22 +68,6 @@ CODON_TABLE = {
     "AGT": "S", "AGC": "S", "AGA": "R", "AGG": "R",
     "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G",
 }
-
-PREFERRED_CODON = {
-    "A": "GCT", "C": "TGT", "D": "GAC", "E": "GAA", "F": "TTC",
-    "G": "GGT", "H": "CAC", "I": "ATC", "K": "AAG", "L": "TTG",
-    "M": "ATG", "N": "AAC", "P": "CCA", "Q": "CAA", "R": "AGA",
-    "S": "TCT", "T": "ACT", "V": "GTT", "W": "TGG", "Y": "TAC",
-    "*": "TAA",
-}
-
-# WT A. victoria GFP, 238 aa (Prasher 1992; UniProt P42212).
-GFP_PROTEIN = (  # TODO: check correctness of coding sequence
-    "MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGV"
-    "QCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNI"
-    "LGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQ"
-    "SALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK"
-)
 
 # TADH1 from R64-1-1 chrXV 159446-159548 (- strand): 103 nt of clean
 # intergenic between ADH1's stop and MHF1's CDS, reverse-complemented
@@ -156,17 +141,17 @@ def _pull_tadh1(fasta: "pysam.FastaFile") -> str:
 
 
 def _build_gfp_cds(ref_r1: str, ref_r2: str) -> str:
-    """GFP CDS encoded with preferred yeast codons everywhere except the
-    two variable regions (which take row-0 variants from each library)."""
-    codons = [PREFERRED_CODON[aa] for aa in GFP_PROTEIN]
+    """Chen's GFP CDS: wild-type A. victoria GFP (``GFP_CDS_WT``) with the two
+    library variable regions replaced by the row-0 variant from each TSV."""
+    codons = [GFP_CDS_WT[i : i + 3] for i in range(0, len(GFP_CDS_WT), 3)]
     for j, off in enumerate(range(41, 53)):
         codons[off] = ref_r1[3 * j : 3 * j + 3]
     for j, off in enumerate(range(156, 168)):
         codons[off] = ref_r2[3 * j : 3 * j + 3]
-    cds = "".join(codons) + PREFERRED_CODON["*"]
+    cds = "".join(codons)
     prot = _translate(cds).rstrip("*")
     if prot != GFP_PROTEIN:
-        raise RuntimeError("synthesised GFP CDS does not translate to WT GFP")
+        raise RuntimeError("GFP CDS does not translate to WT GFP")
     return cds
 
 

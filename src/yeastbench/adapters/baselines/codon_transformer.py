@@ -20,21 +20,11 @@ from typing import Sequence
 import numpy as np
 import torch
 
+from yeastbench.adapters._chen_gfp_reference import GFP_PROTEIN
 from yeastbench.adapters.protocols import LocalCodingVariantPredictor
 
 log = logging.getLogger(__name__)
 
-# WT A. victoria GFP (Prasher 1992; UniProt P42212), 238 aa. Used as the
-# protein context for both GFP libraries. The S65T variant differs only at
-# position 65 (1-based from M), well outside both libraries' variable
-# regions (codons 41–52 and 156–167), so the per-position log-probs at
-# those positions are robust to that single substitution.
-GFP_PROTEIN = (
-    "MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGV"
-    "QCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNI"
-    "LGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQ"
-    "SALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK"
-)
 # TDH3 (YGR192C from S. cerevisiae R64-1-1), 332 aa.
 TDH3_PROTEIN = (
     "MVRVAINGFGRIGRLVMRIALSRPNVEVVALNDPFITNDYAAYMFKYDSTHGRYAGEVSHDDKHIIVD"

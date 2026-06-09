@@ -26,11 +26,11 @@ which DNA encoding) from accidentally biasing the model's score for the
 
 The variant-gene CDS encodings:
 
-- **GFP**: synthesised here. Every codon is set to S. cerevisiae's
-  most-frequent codon for the corresponding amino acid (per Sharp & Li
-  1987's highly-expressed reference set), *except* codons 41–52 and
-  156–167 which are copied from the first row of each library's TSV so
-  the construct's REF sequence is one valid library variant.
+- **GFP**: wild-type *A. victoria* GFP coding DNA (``GFP_CDS_WT``, from
+  GenBank L29345.1 corrected to the canonical avGFP protein — see
+  ``_chen_gfp_reference``), *except* codons 41–52 and 156–167 which are
+  copied from the first row of each library's TSV so the construct's REF
+  sequence is one valid library variant.
 - **TDH3**: pulled native from R64-1-1 chrVII (YGR192C, 882815-883810
   on the minus strand). 996 nt incl. stop. Identical to the WT gene.
 
@@ -51,6 +51,8 @@ from pathlib import Path
 
 import pandas as pd
 from pyfaidx import Fasta
+
+from yeastbench.adapters._chen_gfp_reference import GFP_CDS_WT, GFP_PROTEIN
 
 log = logging.getLogger(__name__)
 
@@ -82,26 +84,6 @@ TADH1_CHROM = "XV"
 TADH1_START = 159446
 TADH1_END = 159548
 TADH1_STRAND = "-"
-
-# WT A. victoria GFP protein (Prasher 1992; UniProt P42212), 238 aa.
-GFP_PROTEIN = (
-    "MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGV"
-    "QCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNI"
-    "LGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQ"
-    "SALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK"
-)
-
-# Most-frequent S. cerevisiae codon per amino acid, from Sharp & Li
-# 1987's 24-gene highly-expressed reference set. One canonical codon per
-# aa — used to encode the GFP CDS so the construct is reproducible from
-# the protein alone (no dependence on which GenBank entry we vendored).
-PREFERRED_CODON = {
-    "A": "GCT", "C": "TGT", "D": "GAC", "E": "GAA", "F": "TTC",
-    "G": "GGT", "H": "CAC", "I": "ATC", "K": "AAG", "L": "TTG",
-    "M": "ATG", "N": "AAC", "P": "CCA", "Q": "CAA", "R": "AGA",
-    "S": "TCT", "T": "ACT", "V": "GTT", "W": "TGG", "Y": "TAC",
-    "*": "TAA",
-}
 
 CODON_TABLE = {
     "TTT": "F", "TTC": "F", "TTA": "L", "TTG": "L",
@@ -135,23 +117,19 @@ def build_gfp_cds(
     ref_codons_r1: str,  # 36 nt
     ref_codons_r2: str,  # 36 nt
 ) -> str:
-    """Encode WT GFP with preferred yeast codons everywhere, except
-    codons 41-52 use ref_codons_r1 and codons 156-167 use ref_codons_r2.
-    Both ref blocks must already translate to the library's peptide,
-    which the TSV builder guarantees."""
-    codons = [PREFERRED_CODON[aa] for aa in GFP_PROTEIN]
-    # codons is 0-based; we want positions 41-52 and 156-167 in 0-based
-    # indexing into the protein (which equals the codon index here).
+    """Wild-type avGFP CDS (``GFP_CDS_WT``), with codons 41-52 replaced by
+    ref_codons_r1 and codons 156-167 by ref_codons_r2. Both ref blocks must
+    translate to the library's peptide, which the TSV builder guarantees."""
+    codons = [GFP_CDS_WT[i : i + 3] for i in range(0, len(GFP_CDS_WT), 3)]
     for j, off in enumerate(range(41, 53)):
         codons[off] = ref_codons_r1[3 * j : 3 * j + 3]
     for j, off in enumerate(range(156, 168)):
         codons[off] = ref_codons_r2[3 * j : 3 * j + 3]
-    cds = "".join(codons) + PREFERRED_CODON["*"]    # append a TAA stop
-    # Sanity check
+    cds = "".join(codons)
     prot = translate(cds).rstrip("*")
     if prot != GFP_PROTEIN:
         raise ValueError(
-            f"synthesised GFP CDS does not translate to WT GFP "
+            f"GFP CDS does not translate to WT GFP "
             f"(len {len(prot)} vs {len(GFP_PROTEIN)})"
         )
     return cds

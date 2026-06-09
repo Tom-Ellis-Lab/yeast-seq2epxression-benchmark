@@ -60,8 +60,8 @@ Functional mix: glycolysis (5), ribosomal / translation (2), transport (2 HXT), 
 
 | Library | Variant gene CDS | 0-based protein positions of the variable block | nt offset of variable block from CDS start | Block length |
 | --- | --- | --- | ---: | ---: |
-| GFP r1 | yeast-codon-optimised GFP (synthesised), 717 nt | 41–52   | 123 | 36 nt |
-| GFP r2 | same GFP CDS as above (one cassette per gene)     | 156–167 | 468 | 36 nt |
+| GFP r1 | wild-type avGFP CDS (L29345-corrected), 717 nt | 41–52   | 123 | 36 nt |
+| GFP r2 | same GFP CDS as above (one cassette per gene)   | 156–167 | 468 | 36 nt |
 | TDH3   | native R64-1-1 TDH3 CDS (YGR192C), 996 nt          | 56–67   | 168 | 36 nt |
 
 (0-based protein positions count from the start Methionine. Chen's prose says "GFP codons 41–52" but his peptide identity `LTLKFICTTGKL` puts the variable block at 0-based residues 41–52 — i.e., 3 × 41 = 123 nt past the start codon. We use the peptide identity, not the prose codon numbers, as the source of truth.)
@@ -253,7 +253,7 @@ A single Shorkie adapter and a single Yorzoi adapter cover all three libraries v
 
 ## Open questions for implementation phase
 
-1. **dTomato and GFP source sequences.** The paper cites a tag-free dTomato (Shaner 2004) and a generic *Aequorea victoria* GFP. Need to commit canonical FASTA strings (length-verified) in `scripts/chen/build_construct_reference.py`. Should the variant GFP in the construct use the GFP-S65T variant common in yeast or the wild-type *A. victoria* GFP? — pick whichever matches the published synonymous-codon catalog in S7/S8; verify at build time that all 12 aa peptides at codons 41–52 and 156–167 match the paper.
+1. **GFP source sequence — resolved (issue #8).** The GFP is **wild-type *A. victoria* GFP**, not the S65T variant and not a codon-optimised synthesis. Evidence: Chen's construction primers (supp Table S1) encode the wild-type residues at the positions that distinguish variants (E172, Q157), and the protein matches PDB 1EMA everywhere except the engineered chromophore (S65T/Q80R). The coding DNA is `GFP_CDS_WT` in `src/yeastbench/adapters/_chen_gfp_reference.py`: GenBank **L29345.1** corrected to the canonical avGFP protein, with residue 172 set to `GAA` to match Chen's primer. Chen never published the full construct DNA, so codons outside the Table S1 flanks are L29345-native (the flanks we *do* have match this sequence base-for-base). The variable regions are still overwritten per-variant from the TSVs. **Do not** revert to a preferred-codon back-translation — that scored models on the wrong DNA.
 2. **Logits / logSED window inside the construct.** Shorkie has a 16,384 bp receptive field; Yorzoi has 4,992 bp. The construct integration site sits in a region of chrII with no known native expression there in BY4742 (GAL1/GAL7 are silent without galactose), but the *flanking* native chrII genes are real — the receptive window will spill onto them. That's expected, and the logSED is computed over the construct gene's CDS bins only.
 3. **Score sign for degradation rate.** A higher *predicted* mRNA level should imply *lower* measured degradation rate, so the Pearson sign on `(pred, degradation_rate)` is negative. Mirror the Wu RFP-pins benchmark's sign-aware AUC computation: report the absolute correlation and document the expected sign.
 4. **What if the supp tables are gated or hard to parse?** GSA accession PRJCA000227 has the raw reads, but rebuilding R/D counts from raw is a separate (~few-days) project. The supp tables S7–S9 are the canonical resource; if they're inaccessible we revisit.

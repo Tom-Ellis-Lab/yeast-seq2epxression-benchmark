@@ -73,6 +73,15 @@ class ModelCoverage(Protocol):
         """In-place splice ``block_oh`` into ``alt[row]`` at ``start``."""
         ...
 
+    def splice_batch(
+        self, alt: "torch.Tensor", start: int,
+        blocks: "torch.Tensor", length: int,
+    ) -> None:
+        """Vectorized splice: write ``blocks`` (one per row) into every row
+        of ``alt`` at the same ``start`` (the position is per-context, shared
+        across the candidate batch)."""
+        ...
+
     def forward(self, batch_oh: "torch.Tensor") -> "torch.Tensor":
         """Ensemble/RC-averaged forward over a one-hot batch."""
         ...
@@ -84,6 +93,14 @@ class ModelCoverage(Protocol):
         """Per-context pre-log scalar: reduce ``out[row]`` over the
         readout ``bins_t`` (and, for stranded models, the strand-matched
         track slice)."""
+        ...
+
+    def readout_batch(
+        self, out: "torch.Tensor", bins_t: "torch.Tensor", strand: str,
+    ) -> "torch.Tensor":
+        """Batched :meth:`readout` over a candidate batch that all share one
+        context's ``bins_t``/``strand``. Returns a ``(b,)`` tensor whose
+        entries equal ``readout`` applied row by row."""
         ...
 
 
@@ -108,12 +125,24 @@ class ShorkieCoverage:
     def splice(self, alt, row, start, block_oh, length) -> None:
         alt[row, :, start : start + length] = block_oh
 
+    def splice_batch(self, alt, start, blocks, length) -> None:
+        # Vectorized splice: ``blocks`` is (b, 4, length); every row gets the
+        # block at the same ``start`` (the position is per-context, not
+        # per-candidate).
+        alt[:, :, start : start + length] = blocks
+
     def forward(self, batch_oh):
         return self.model.forward_track_mean_perbase(batch_oh, self._track_idx_t)
 
     def readout(self, out, row, bins_t, strand):
         # ``bins_t`` holds exon BASE positions; out is (B, bins*BIN_WIDTH).
         return out[row].index_select(0, bins_t).sum()
+
+    def readout_batch(self, out, bins_t, strand):
+        # Batched ``readout``: out is (b, bins*BIN_WIDTH); all rows share one
+        # context's exon ``bins_t``. Returns (b,) — the same per-row sum as
+        # ``readout`` applied row by row.
+        return out.index_select(1, bins_t).sum(dim=1)
 
 
 class YorzoiCoverage:
@@ -134,6 +163,10 @@ class YorzoiCoverage:
     def splice(self, alt, row, start, block_oh, length) -> None:
         alt[row, start : start + length, :] = block_oh
 
+    def splice_batch(self, alt, start, blocks, length) -> None:
+        # Vectorized channels-last splice: ``blocks`` is (b, length, 4).
+        alt[:, start : start + length, :] = blocks
+
     def forward(self, batch_oh):
         # (B, 162, OUTPUT_BINS*BIN_WIDTH) raw per-base counts (already float32).
         return self.model.forward_tracks_perbase(batch_oh)
@@ -144,6 +177,13 @@ class YorzoiCoverage:
         if strand == "+":
             return per_track[0:_YORZOI_N_PLUS_TRACKS].mean()
         return per_track[_YORZOI_N_PLUS_TRACKS:_YORZOI_N_TRACKS_TOTAL].mean()
+
+    def readout_batch(self, out, bins_t, strand):
+        # Batched ``readout``: out is (b, 162, bins*BIN_WIDTH). Returns (b,).
+        per_track = out.index_select(2, bins_t).sum(dim=2)  # (b, 162)
+        if strand == "+":
+            return per_track[:, 0:_YORZOI_N_PLUS_TRACKS].mean(dim=1)
+        return per_track[:, _YORZOI_N_PLUS_TRACKS:_YORZOI_N_TRACKS_TOTAL].mean(dim=1)
 
 
 class MarginalizedLogSED:
@@ -186,18 +226,35 @@ class MarginalizedLogSED:
 
     def _init_baselines(self, desc: str = "REF baseline") -> None:
         """Cache REF one-hots on GPU and precompute the per-context REF
-        baseline scalar. Call once at the end of ``__init__``."""
+        baseline scalar plus the per-context readout/strand/splice metadata
+        (materialized once here, reused across every candidate instead of
+        being rebuilt per ``(candidate, context)``). Call once at the end of
+        ``__init__``."""
         import torch as _torch
 
         ref_np = np.stack(
             [self._cov.one_hot(self._ref_window_seq(c)) for c in self._contexts]
         )
         self._ref_ohs_gpu = _torch.from_numpy(ref_np).to(self._cov.device)
+
+        self._ctx_bins_t = [
+            _torch.as_tensor(
+                self._ctx_bins(c), device=self._cov.device, dtype=_torch.long
+            )
+            for c in self._contexts
+        ]
+        self._ctx_strands = [self._ctx_strand(c) for c in self._contexts]
+        self._ctx_splice_starts = [
+            int(self._ctx_splice_start(c)) for c in self._contexts
+        ]
+
         self._ref_values = self._reduce_batches(self._ref_ohs_gpu, desc)
 
     def _reduce_batches(self, x_all: "torch.Tensor", desc: str) -> "torch.Tensor":
-        """Forward every cached window in batches and reduce each to its
-        per-context scalar."""
+        """Forward every cached REF window in batches and reduce each to its
+        per-context scalar. Each REF row carries its own exon readout, so
+        (unlike the ALT path) the per-row reduction can't be batch-collapsed
+        here."""
         import torch as _torch
 
         n = len(self._contexts)
@@ -207,52 +264,66 @@ class MarginalizedLogSED:
             with _torch.no_grad():
                 cov = self._cov.forward(x_all[bs:be])
             for j in range(be - bs):
-                ctx = self._contexts[bs + j]
-                bins_t = _torch.as_tensor(
-                    self._ctx_bins(ctx), device=self._cov.device, dtype=_torch.long
-                )
                 out_vals[bs + j] = self._cov.readout(
-                    cov, j, bins_t, self._ctx_strand(ctx)
+                    cov, j, self._ctx_bins_t[bs + j], self._ctx_strands[bs + j]
                 )
         return out_vals
 
-    def _score_one(self, candidate: str) -> float:
-        """logSED-aggregated score for one candidate insert/variant."""
+    def _score_chunk(self, cands: Sequence[str]) -> list[float]:
+        """logSED-aggregated scores for a *chunk* of candidate inserts.
+
+        Batches over candidates rather than contexts: for each context the
+        whole candidate chunk is spliced into that context's REF window in
+        one vectorized op, then forwarded in ``batch_size`` rows — so the GPU
+        sees a batch drawn from the 71k candidate axis instead of the ~22
+        host-gene contexts. Per ``(candidate, context)`` the spliced input
+        (and therefore the model output and readout) is identical to the
+        per-candidate path; only the batch composition changes."""
         import torch as _torch
 
-        fwd_seq, rc_seq, block_len = self._encode_candidate(candidate)
-        fwd_oh = _torch.from_numpy(self._cov.one_hot(fwd_seq)).to(self._cov.device)
-        rc_oh = _torch.from_numpy(self._cov.one_hot(rc_seq)).to(self._cov.device)
+        C = len(cands)
+        N = len(self._contexts)
+        dev = self._cov.device
 
-        n = len(self._contexts)
-        alt_values = _torch.zeros(n, device=self._cov.device, dtype=_torch.float32)
-        for bs in range(0, n, self.batch_size):
-            be = min(bs + self.batch_size, n)
-            alt = self._ref_ohs_gpu[bs:be].clone()
-            for j in range(be - bs):
-                ctx = self._contexts[bs + j]
-                block = rc_oh if self._ctx_strand(ctx) == "-" else fwd_oh
-                self._cov.splice(
-                    alt, j, self._ctx_splice_start(ctx), block, block_len
-                )
-            with _torch.no_grad():
-                cov = self._cov.forward(alt)
-            for j in range(be - bs):
-                ctx = self._contexts[bs + j]
-                bins_t = _torch.as_tensor(
-                    self._ctx_bins(ctx), device=self._cov.device, dtype=_torch.long
-                )
-                alt_values[bs + j] = self._cov.readout(
-                    cov, j, bins_t, self._ctx_strand(ctx)
-                )
-
-        logsed_per_ctx = (
-            _torch.log2(alt_values + 1.0) - _torch.log2(self._ref_values + 1.0)
+        encoded = [self._encode_candidate(c) for c in cands]
+        block_lens = {bl for _, _, bl in encoded}
+        assert len(block_lens) == 1, (
+            f"_score_chunk needs a uniform block length per chunk, got {block_lens}"
         )
-        return self._aggregate(logsed_per_ctx)
+        blk = block_lens.pop()
+        fwd_blocks = _torch.from_numpy(
+            np.stack([self._cov.one_hot(f) for f, _, _ in encoded])
+        ).to(dev)
+        rc_blocks = _torch.from_numpy(
+            np.stack([self._cov.one_hot(r) for _, r, _ in encoded])
+        ).to(dev)
+
+        alt_values = _torch.zeros(C, N, device=dev, dtype=_torch.float32)
+        for j in range(N):
+            strand = self._ctx_strands[j]
+            blocks = rc_blocks if strand == "-" else fwd_blocks
+            start = self._ctx_splice_starts[j]
+            bins_t = self._ctx_bins_t[j]
+            ref_j = self._ref_ohs_gpu[j]
+            for bs in range(0, C, self.batch_size):
+                be = min(bs + self.batch_size, C)
+                alt = ref_j.unsqueeze(0).expand(be - bs, *ref_j.shape).clone()
+                self._cov.splice_batch(alt, start, blocks[bs:be], blk)
+                with _torch.no_grad():
+                    cov = self._cov.forward(alt)
+                alt_values[bs:be, j] = self._cov.readout_batch(cov, bins_t, strand)
+
+        logsed = (
+            _torch.log2(alt_values + 1.0)
+            - _torch.log2(self._ref_values.unsqueeze(0) + 1.0)
+        )
+        return [self._aggregate(logsed[c]) for c in range(C)]
 
     def _predict(self, seqs: Sequence[str], desc: str) -> np.ndarray:
-        """Shared predict loop with optional ``n_sample`` subsampling."""
+        """Shared predict loop with optional ``n_sample`` subsampling.
+
+        Candidates are processed in chunks; within each chunk every context
+        is scored with the candidate axis batched onto the GPU."""
         n = len(seqs)
         scores = np.full(n, np.nan, dtype=np.float64)
 
@@ -262,6 +333,13 @@ class MarginalizedLogSED:
         else:
             sample_idx = np.arange(n)
 
-        for idx in tqdm(sample_idx, desc=desc):
-            scores[idx] = self._score_one(seqs[idx])
+        cand_chunk = max(self.batch_size, 128)
+        pbar = tqdm(total=len(sample_idx), desc=desc)
+        for cs in range(0, len(sample_idx), cand_chunk):
+            chunk_idx = sample_idx[cs : cs + cand_chunk]
+            chunk_scores = self._score_chunk([seqs[int(i)] for i in chunk_idx])
+            for k, gi in enumerate(chunk_idx):
+                scores[int(gi)] = chunk_scores[k]
+            pbar.update(len(chunk_idx))
+        pbar.close()
         return scores

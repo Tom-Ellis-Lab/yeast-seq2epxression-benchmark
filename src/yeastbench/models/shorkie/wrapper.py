@@ -58,6 +58,8 @@ class Shorkie:
         folds: list["ShorkieModule"],
         device: "str | torch.device" = "cuda",
         use_rc: bool = True,
+        autocast: bool = False,
+        compile: bool = False,
     ) -> None:
         import torch as _torch
 
@@ -66,8 +68,32 @@ class Shorkie:
         self.folds = folds
         self.device = _torch.device(device)
         self.use_rc = use_rc
+        # bf16 autocast for the conv/attention trunk. Off by default so the
+        # published fp32 scores are reproduced bit-for-bit unless opted in;
+        # bf16 (not fp16) keeps the fp32 exponent range, which matters for the
+        # softplus count head. Yorzoi runs autocast on by default already.
+        self.autocast = autocast
         for m in self.folds:
             m.to(self.device).eval()
+        # Optional inductor compile + TF32. ``dynamic=True`` so the one graph
+        # handles the varying batch sizes the marginalized pipeline feeds
+        # (REF baseline, full chunks, the trailing remainder) without a
+        # recompile per shape. Fuses the conv/attention trunk — biggest win
+        # stacked on bf16 — and also lowers peak activation memory.
+        self.compiled = compile
+        if compile:
+            _torch.backends.cuda.matmul.allow_tf32 = True
+            _torch.backends.cudnn.allow_tf32 = True
+            self.folds = [_torch.compile(m, dynamic=True) for m in self.folds]
+
+    def _autocast_ctx(self):
+        """bf16 autocast on CUDA when enabled; a no-op context otherwise.
+        Built fresh each forward to avoid cross-call reuse issues."""
+        import torch as _torch
+
+        if self.autocast and self.device.type == "cuda":
+            return _torch.autocast(device_type="cuda", dtype=_torch.bfloat16)
+        return _torch.amp.autocast(device_type="cpu", enabled=False)
 
     @classmethod
     def from_checkpoints(
@@ -76,6 +102,8 @@ class Shorkie:
         checkpoint_paths: Sequence[str | Path],
         device: "str | torch.device" = "cuda",
         use_rc: bool = True,
+        autocast: bool = False,
+        compile: bool = False,
     ) -> "Shorkie":
         from yeastbench.models.shorkie.nn import ShorkieModule
 
@@ -85,7 +113,9 @@ class Shorkie:
             ShorkieModule.from_tf_checkpoint(config["model"], str(p))
             for p in checkpoint_paths
         ]
-        return cls(folds, device=device, use_rc=use_rc)
+        return cls(
+            folds, device=device, use_rc=use_rc, autocast=autocast, compile=compile,
+        )
 
     def forward_tracks_binned(
         self,
@@ -108,9 +138,13 @@ class Shorkie:
         )
         x_rc = x.flip(dims=[1, 2]) if self.use_rc else None
         for m in self.folds:
-            out = m(x).index_select(2, track_subset)
+            with self._autocast_ctx():
+                out = m(x)
+            out = out.float().index_select(2, track_subset)
             if self.use_rc:
-                out_rc = m(x_rc).index_select(2, track_subset).flip(dims=[1])
+                with self._autocast_ctx():
+                    out_rc_raw = m(x_rc)
+                out_rc = out_rc_raw.float().index_select(2, track_subset).flip(dims=[1])
                 out = 0.5 * (out + out_rc)
             acc.add_(out)
         acc.div_(len(self.folds))
@@ -137,9 +171,13 @@ class Shorkie:
         )
         x_rc = x.flip(dims=[1, 2]) if self.use_rc else None
         for m in self.folds:
-            out = m(x).index_select(2, track_subset)
+            with self._autocast_ctx():
+                out = m(x)
+            out = out.float().index_select(2, track_subset)
             if self.use_rc:
-                out_rc = m(x_rc).index_select(2, track_subset).flip(dims=[1])
+                with self._autocast_ctx():
+                    out_rc_raw = m(x_rc)
+                out_rc = out_rc_raw.float().index_select(2, track_subset).flip(dims=[1])
                 out = 0.5 * (out + out_rc)
             acc.add_(out.mean(dim=2))
         acc.div_(len(self.folds))

@@ -11,8 +11,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from yeastbench.data.backends import BackendError, HfBackend, get_backend
-from yeastbench.data.lock import LockedFile, locked_files, sha256_file
+from yeastbench.data.backends import (
+    BackendError,
+    GcsBackend,
+    HfBackend,
+    get_backend,
+)
+from yeastbench.data.lock import (
+    LockedFile,
+    locked_files,
+    read_lock,
+    sha256_file,
+)
 from yeastbench.data.manifest import (
     Artifact,
     BackendKind,
@@ -154,6 +164,14 @@ def build_plans(
 # ──────────────────────────────────────────────────────────────
 
 
+def _backend_for(kind: BackendKind, billing_project: str | None):
+    """The backend to actually transfer with. GCS gets the resolved billing
+    project (its bucket is requester pays); others are the shared singletons."""
+    if kind == BackendKind.GCS:
+        return GcsBackend(billing_project)
+    return get_backend(kind)
+
+
 @dataclass
 class GetSummary:
     fetched: int = 0
@@ -167,7 +185,11 @@ class GetSummary:
         return not self.failures
 
 
-def run_get(plans: list[ArtifactPlan], log: Log = _noop) -> GetSummary:
+def run_get(
+    plans: list[ArtifactPlan],
+    log: Log = _noop,
+    billing_project: str | None = None,
+) -> GetSummary:
     summary = GetSummary()
     for plan in plans:
         art = plan.artifact
@@ -196,7 +218,7 @@ def run_get(plans: list[ArtifactPlan], log: Log = _noop) -> GetSummary:
             log(f"  · {art.id}: {plan.note} — skipping {len(to_fetch)} file(s)")
             continue
 
-        backend = get_backend(plan.mirror.backend)
+        backend = _backend_for(plan.mirror.backend, billing_project)
         for fp in to_fetch:
             remote = plan.mirror.remote_for(fp.relpath)
             tmp = fp.dest_file.with_name(fp.dest_file.name + ".part")
@@ -244,11 +266,12 @@ def run_publish(
     message: str,
     dry_run: bool,
     log: Log = _noop,
+    billing_project: str | None = None,
 ) -> PublishSummary:
     """Upload redistributable artifacts to their ``to_kind`` mirror, exactly as
     locked. Maintainer-only; the caller is responsible for the --yes guard."""
     summary = PublishSummary()
-    backend = get_backend(to_kind)
+    backend = _backend_for(to_kind, billing_project)
     for art in artifacts:
         if art.cache_only:
             summary.skipped.append(f"{art.id}: hf-hub model (nothing to publish)")
@@ -366,6 +389,58 @@ def run_status(
     return rows
 
 
+# ──────────────────────────────────────────────────────────────
+# Run preflight — is a run's data already on disk?
+# ──────────────────────────────────────────────────────────────
+
+
+@dataclass
+class RunDataCheck:
+    files_total: int = 0
+    files_present: int = 0
+    bytes_total: int = 0
+    bytes_present: int = 0
+    missing: list[tuple[str, str]] = field(default_factory=list)  # (id, relpath)
+    stale: list[tuple[str, str]] = field(default_factory=list)
+    cache_only: list[str] = field(default_factory=list)  # warmed at model-load
+
+    @property
+    def ready(self) -> bool:
+        return not self.missing and not self.stale
+
+
+def check_run_data(
+    tasks: list[str],
+    models: list[str],
+    data_root: Path,
+    lock: dict | None = None,
+) -> RunDataCheck:
+    """Are the manifest-declared artifacts for these (tasks, models) present and
+    checksum-valid under ``data_root``? Same selection + lock the matching
+    ``ybench data get`` would use, so it answers "is this run's data fetched?".
+    cache-only HF models (Yorzoi, CodonTransformer) are listed but not
+    hash-checked here — they warm into the HF cache at model-load time."""
+    lock = read_lock() if lock is None else lock
+    check = RunDataCheck()
+    for art in artifacts_for(tasks, models):
+        if art.cache_only:
+            check.cache_only.append(art.id)
+            continue
+        for lf in locked_files(lock, art.id):
+            check.files_total += 1
+            check.bytes_total += lf.size
+            dest_file = data_root / art.dest / lf.relpath
+            state = _file_state(dest_file, lf.sha256)
+            if state == "ok":
+                check.files_present += 1
+                check.bytes_present += lf.size
+            elif state == "stale":
+                check.stale.append((art.id, lf.relpath))
+            else:
+                check.missing.append((art.id, lf.relpath))
+    return check
+
+
 def _human(n: int) -> str:
     f = float(n)
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -379,10 +454,12 @@ __all__ = [
     "ArtifactPlan",
     "FilePlan",
     "GetSummary",
+    "RunDataCheck",
     "StatusRow",
     "VerifyRow",
     "artifacts_for",
     "build_plans",
+    "check_run_data",
     "default_data_root",
     "run_get",
     "run_status",

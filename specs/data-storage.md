@@ -108,7 +108,12 @@ class Backend(Protocol):
 - **GCS** — shells out to `gcloud storage cp` (fallback `gsutil cp`), matching
   the existing `scripts/brooks/…` pattern. No heavy Python GCS dep; uses the
   user's existing gcloud auth. Holds large/private files and is the secondary
-  mirror.
+  mirror. The bucket (`gs://yeast-seq2expression-benchmark`, project
+  `clex-415415`, US multi-region) is **requester pays**, so every read and write
+  must name a billing project: `--billing-project <project>` or the
+  `YBENCH_GCS_BILLING_PROJECT` env var (flag wins; there is no gcloud-config
+  fallback, so we never silently bill an ambient project). Without one the
+  backend errors before shelling out and points you at `--from hf`.
 
 The resolver walks an artifact's `mirrors` in order, skipping any whose backend
 is unavailable or excluded by `--from`, and fetches every file in the lock.
@@ -118,9 +123,11 @@ HF-first means the happy path needs no credentials.
 
 **HF-first, GCS-secondary.** HF downloads are free and auth-free → best default
 for outside users, CI, and agents. GCS is the maintainer/large-file backend and
-the home for anything not suited to HF. Both mirror the same bytes; the lock's
-checksums are the cross-mirror parity guard (`verify --from hf` and
-`--from gcs` must agree).
+the home for anything not suited to HF; because its bucket is **requester pays**,
+a GCS download isn't free — the caller brings their own billing project and pays
+egress. That's deliberate: HF stays the zero-cost default and GCS is the
+bring-your-own-project path. Both mirror the same bytes; the lock's checksums are
+the cross-mirror parity guard (`verify` against either must agree).
 
 ## CLI (`ybench data`)
 
@@ -188,10 +195,13 @@ any distribution, re-freeze the lock, then publish to each backend:
 
 ```bash
 uv sync --extra data
-uv run ybench data lock                     # checksums from local files → lock
-uv run ybench data publish --to hf          # dry run: prints the plan
-uv run ybench data publish --to hf  --yes   # needs `huggingface-cli login` / HF_TOKEN
-uv run ybench data publish --to gcs --yes   # needs gcloud auth
+uv run ybench data lock                      # checksums from local files → lock
+uv run ybench data publish --to hf           # dry run: prints the plan
+uv run ybench data publish --to hf  --yes    # needs `huggingface-cli login` / HF_TOKEN
+# GCS bucket is requester pays — name a billing project (flag or env):
+export YBENCH_GCS_BILLING_PROJECT=clex-415415
+uv run ybench data publish --to gcs          # dry run
+uv run ybench data publish --to gcs --yes    # needs gcloud auth + billing project
 ```
 
 `publish` re-checks every file against the lock before uploading and refuses to

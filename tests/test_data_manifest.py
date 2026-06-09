@@ -17,6 +17,7 @@ from yeastbench.data.fetch import (
     _file_state,
     artifacts_for,
     build_plans,
+    check_run_data,
 )
 from yeastbench.data.lock import (
     LOCK_PATH,
@@ -195,3 +196,61 @@ def test_http_backend_fetches_shorkie_params_matching_lock(tmp_path):
     except urllib.error.URLError as e:  # offline / CI without egress
         pytest.skip(f"network unavailable: {e}")
     assert sha256_file(out) == want["params.json"]
+
+
+# ──────────────────────────────────────────────────────────────
+# Run preflight — check_run_data over the manifest + lock
+# ──────────────────────────────────────────────────────────────
+
+
+def test_check_run_data_flags_missing(tmp_path):
+    """Empty data root → every locked file for the selection is missing."""
+    check = check_run_data(["caudal_eqtl"], [], tmp_path, lock=read_lock())
+    assert check.files_total > 0
+    assert check.files_present == 0
+    assert not check.ready
+    assert len(check.missing) == check.files_total
+
+
+def test_check_run_data_counts_present_files(tmp_path):
+    """A file present and matching the (synthetic) lock counts as ready."""
+    art = artifact_by_id("hong")
+    rel = locked_files(read_lock(), "hong")[0].relpath  # a real locked relpath
+    f = tmp_path / art.dest / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(b"hello world")
+    synth = {
+        "version": 1,
+        "artifacts": {
+            "hong": {
+                "files": {rel: {"sha256": sha256_file(f), "size": f.stat().st_size}}
+            }
+        },
+    }
+    check = check_run_data(["hong_igr"], [], tmp_path, lock=synth)
+    assert check.files_total == 1
+    assert check.files_present == 1
+    assert check.ready
+
+
+def test_check_run_data_detects_stale(tmp_path):
+    """A file present but with the wrong bytes is stale, not ready."""
+    art = artifact_by_id("hong")
+    rel = locked_files(read_lock(), "hong")[0].relpath
+    f = tmp_path / art.dest / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(b"wrong bytes")
+    synth = {
+        "version": 1,
+        "artifacts": {"hong": {"files": {rel: {"sha256": "0" * 64, "size": 999}}}},
+    }
+    check = check_run_data(["hong_igr"], [], tmp_path, lock=synth)
+    assert check.stale == [("hong", rel)]
+    assert not check.ready
+
+
+def test_check_run_data_lists_cache_only_models(tmp_path):
+    """cache-only HF models are reported, not counted as a missing-file failure."""
+    check = check_run_data([], ["yorzoi"], tmp_path, lock=read_lock())
+    assert "yorzoi" in check.cache_only
+    assert check.ready

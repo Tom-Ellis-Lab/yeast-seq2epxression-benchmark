@@ -14,6 +14,7 @@ backends don't need to worry about atomicity or verification themselves).
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import urllib.error
@@ -161,21 +162,26 @@ class HfBackend:
 # ──────────────────────────────────────────────────────────────
 
 
+_BILLING_ENV = "YBENCH_GCS_BILLING_PROJECT"
+
+
 class GcsBackend:
     kind = BackendKind.GCS
 
-    def __init__(self) -> None:
+    def __init__(self, billing_project: str | None = None) -> None:
         self._cli = shutil.which("gcloud") or shutil.which("gsutil")
+        self._billing_project = billing_project
 
     def available(self) -> bool:
         return self._cli is not None
 
+    def _resolve_billing(self) -> str | None:
+        """Billing project for our requester-pays bucket. Flag wins, then the
+        ``YBENCH_GCS_BILLING_PROJECT`` env var. No gcloud-config fallback — we
+        never silently bill whatever project gcloud happens to be pointed at."""
+        return self._billing_project or os.environ.get(_BILLING_ENV) or None
+
     def fetch(self, mirror: Mirror, remote: str, out_path: Path) -> None:
-        if self._cli is None:
-            raise BackendError(
-                "neither `gcloud` nor `gsutil` found on PATH; "
-                "install the Google Cloud SDK or use `--from hf`"
-            )
         src = f"{mirror.base}{remote}"
         _ensure_parent(out_path)
         self._cp(src, str(out_path))
@@ -184,16 +190,28 @@ class GcsBackend:
         """Publish a single file to ``mirror``. Maintainer-only."""
         self._cp(str(local), f"{mirror.base}{remote}")
 
-    def _cp(self, src: str, dst: str) -> None:
+    def _build_cmd(self, src: str, dst: str) -> list[str]:
+        """The `cp` argv, with a `--billing-project`/`-u` for the requester-pays
+        bucket. Raises if no billing project is set — our only GCS mirror is
+        requester pays, so a copy without one would just fail server-side."""
         if self._cli is None:
             raise BackendError(
                 "neither `gcloud` nor `gsutil` found on PATH; "
                 "install the Google Cloud SDK or use `--from hf`"
             )
+        billing = self._resolve_billing()
+        if billing is None:
+            raise BackendError(
+                "the GCS mirror is requester pays — set a billing project via "
+                f"`--billing-project <project>` or the {_BILLING_ENV} env var "
+                "(or use `--from hf`, which is free)"
+            )
         if self._cli.endswith("gcloud"):
-            cmd = [self._cli, "storage", "cp", src, dst]
-        else:
-            cmd = [self._cli, "cp", src, dst]
+            return [self._cli, "storage", "cp", f"--billing-project={billing}", src, dst]
+        return [self._cli, "-u", billing, "cp", src, dst]
+
+    def _cp(self, src: str, dst: str) -> None:
+        cmd = self._build_cmd(src, dst)
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             raise BackendError(

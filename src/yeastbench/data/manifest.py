@@ -99,11 +99,14 @@ class Artifact:
 # Mirror helpers
 # ──────────────────────────────────────────────────────────────
 
-# Planned mirrors for our own processed task data. These repos/buckets are the
-# publish targets; until `ybench data publish` (v2) runs, `get` from them will
-# report "not yet published" rather than failing hard.
+# Mirrors for our own processed task data — these repos/buckets are the publish
+# targets. HF is the free, auth-free default; the GCS bucket is **requester
+# pays** (project clex-415415, US multi-region), so every read/write must name a
+# billing project (`ybench data get/publish --billing-project …` or the
+# YBENCH_GCS_BILLING_PROJECT env var). Until a mirror is published, `get` from it
+# reports "not yet published" rather than failing hard.
 _HF_DATA_REPO = "tom-ellis-lab/yeast-seq2expression-data"
-_GCS_DATA_BUCKET = "gs://yeast-seq2expression/"
+_GCS_DATA_BUCKET = "gs://yeast-seq2expression-benchmark/"
 
 
 def _task_mirrors(artifact_id: str) -> tuple[Mirror, ...]:

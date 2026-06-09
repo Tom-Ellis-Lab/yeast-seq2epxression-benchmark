@@ -92,6 +92,7 @@ def get_cmd(
     tasks: Annotated[Optional[str], typer.Option("--tasks", help="Comma-separated task names (no config)")] = None,
     models: Annotated[Optional[str], typer.Option("--models", help="Comma-separated model names (no config)")] = None,
     from_: Annotated[Optional[str], typer.Option("--from", help="Force a backend: hf | gcs | http")] = None,
+    billing_project: Annotated[Optional[str], typer.Option("--billing-project", help="GCP project to bill for the requester-pays GCS bucket (or set YBENCH_GCS_BILLING_PROJECT); not needed for the HF default")] = None,
     data_root: Annotated[Optional[Path], typer.Option("--data-root", help="Where data/ lives (default: repo root)")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Print the plan and exit")] = False,
 ) -> None:
@@ -109,7 +110,7 @@ def get_cmd(
         raise typer.Exit(code=0)
 
     _echo("")
-    summary = run_get(plans, log=_echo)
+    summary = run_get(plans, log=_echo, billing_project=billing_project)
     _print_get_summary(summary)
     if not summary.ok:
         raise typer.Exit(code=1)
@@ -298,6 +299,7 @@ def lock_cmd(
 def publish_cmd(
     to: Annotated[str, typer.Option("--to", help="Mirror to publish to: hf | gcs")],
     tasks: Annotated[Optional[str], typer.Option("--tasks", help="Only these artifact ids (default: all redistributable)")] = None,
+    billing_project: Annotated[Optional[str], typer.Option("--billing-project", help="GCP project to bill for the requester-pays GCS bucket (or set YBENCH_GCS_BILLING_PROJECT); ignored for --to hf")] = None,
     data_root: Annotated[Optional[Path], typer.Option("--data-root")] = None,
     message: Annotated[str, typer.Option("--message", "-M", help="Commit message (HF)")] = "publish benchmark data",
     yes: Annotated[bool, typer.Option("--yes", help="Actually upload (without this it's a dry run)")] = False,
@@ -315,7 +317,10 @@ def publish_cmd(
 
     dry_run = not yes
     _echo(f"{'DRY RUN — ' if dry_run else ''}publish to {kind.value}  (data root: {root})")
-    summary = run_publish(artifacts, lock, kind, root, message, dry_run, log=_echo)
+    summary = run_publish(
+        artifacts, lock, kind, root, message, dry_run,
+        log=_echo, billing_project=billing_project,
+    )
     _echo("")
     verb = "would upload" if dry_run else "uploaded"
     _echo(f"{verb} {summary.files} files across {summary.artifacts} artifact(s)")

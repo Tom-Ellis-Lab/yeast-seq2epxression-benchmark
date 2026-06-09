@@ -56,9 +56,25 @@ atomically. Shorkie weights, Yorzoi, and CodonTransformer resolve from their
 public homes; the per-task processed data comes from the project mirror. Add
 `--json` to `list`/`status` for machine-readable output.
 
+The HF mirror is free and needs no account — it's the default. The GCS mirror
+(`gs://yeast-seq2expression-benchmark`) is **requester pays**, so `--from gcs`
+needs your own GCP project to bill: pass `--billing-project <project>` or set
+`YBENCH_GCS_BILLING_PROJECT`. If you don't have a project, just use the HF
+default.
+
+**How much you'll download.** The full set is **~690 MB**: Shorkie weights
+(~440 MB), all task data (~215 MB), and the R64 reference genomes (~34 MB). A
+single task is much smaller — from ~11 KB (`hong`) to ~132 MB (`brooks_scramble`)
+— so scope your `get` to the config or `--tasks`/`--models` you actually need.
+Yorzoi and CodonTransformer aren't in that figure: they're pulled into the
+HuggingFace cache the first time you run those models (additional, model-sized).
+Run `ybench data status` for an exact present-vs-total byte count, or
+`ybench data get --dry-run` to see the size before fetching.
+
 > Maintainers: `ybench data lock` re-freezes the checksum lock from a local
 > copy, and `ybench data publish --to hf|gcs` uploads the redistributable
-> artifacts to a mirror (dry-run unless `--yes`).
+> artifacts to a mirror (dry-run unless `--yes`). Publishing to GCS needs a
+> billing project (`--billing-project` / `YBENCH_GCS_BILLING_PROJECT`).
 
 ## Running the benchmark
 

@@ -14,6 +14,12 @@ import typer
 
 from yeastbench.config import Config, load_config
 from yeastbench.data.cli import app as data_app
+from yeastbench.data.fetch import (
+    RunDataCheck,
+    _human,
+    check_run_data,
+    default_data_root,
+)
 from yeastbench.registry import MODELS, TASKS
 
 
@@ -110,7 +116,11 @@ def run_cmd(
     ] = None,
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="List planned runs and exit"),
+        typer.Option("--dry-run", help="List planned runs, check data presence, and exit"),
+    ] = False,
+    no_data_check: Annotated[
+        bool,
+        typer.Option("--no-data-check", help="Skip the pre-flight data/weights check"),
     ] = False,
 ) -> None:
     """Execute (model, task) pairs defined by the config, with optional filters."""
@@ -128,8 +138,23 @@ def run_cmd(
     for m, t in pairs:
         _echo(f"  - {m} × {t}")
 
+    check = None
+    if not no_data_check:
+        sel_tasks = sorted({t for r in cfg.runs for t in r.tasks})
+        sel_models = sorted({r.model for r in cfg.runs})
+        check = check_run_data(sel_tasks, sel_models, default_data_root())
+        _print_data_check(check)
+
     if dry_run:
         raise typer.Exit(code=0)
+
+    if check is not None and not check.ready:
+        _echo(
+            "\nrequired data/weights are missing or stale. fetch them with:\n"
+            f"  uv run ybench data get --config {config}\n"
+            "or re-run with --no-data-check to proceed anyway."
+        )
+        raise typer.Exit(code=1)
 
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     for r in cfg.runs:
@@ -144,6 +169,20 @@ def run_cmd(
     # gets paired against the prior model's results on disk.
     full_cfg = load_config(config)
     _run_compare(full_cfg)
+
+
+def _print_data_check(c: RunDataCheck) -> None:
+    mark = "✓ ready" if c.ready else "✗ incomplete"
+    extra = f", {len(c.cache_only)} hf-cache model(s)" if c.cache_only else ""
+    _echo(
+        f"data:          {mark}  "
+        f"{c.files_present}/{c.files_total} files "
+        f"({_human(c.bytes_present)}/{_human(c.bytes_total)}){extra}"
+    )
+    for aid, rel in c.missing:
+        _echo(f"  missing: {aid}/{rel}")
+    for aid, rel in c.stale:
+        _echo(f"  stale:   {aid}/{rel}")
 
 
 def _run_compare(cfg: Config) -> None:

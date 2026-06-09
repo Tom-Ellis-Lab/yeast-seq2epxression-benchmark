@@ -20,8 +20,6 @@
 - [x] 282-test pytest suite (eQTL, marginalized + Shalem + Chen MPRA, Wu,
   Hong, Brooks, Cuperus, Meneu, data manifest/backends + fresh-install,
   compare, per-base wrappers, registry, config, CLI persistence)
-- [ ] Measured-RNA-seq oracle baseline benchmark (upper bound via
-  Shorkie's expression scoring formula on real data)
 - [ ] Refactor MPRA / Shalem benchmark classes to share an abstract
   `RegressionBenchmark` base (data-source-agnostic)
 - [x] **Automated cross-model comparison runner (`ybench compare`).**

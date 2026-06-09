@@ -2,39 +2,38 @@
 
 ## Infrastructure
 
-- [x] Protocol-based adapter dispatch (`VariantEffectScorer`,
-  `MarginalizedSequenceExpressionPredictor`,
+- [x] Protocol-based adapter dispatch — 9 protocols
+  (`VariantEffectScorer`, `MarginalizedSequenceExpressionPredictor`,
   `TerminatorMarginalizedExpressionPredictor`,
-  `CassetteExpressionPredictor`, `CoverageTrackPredictor`)
+  `CassetteExpressionPredictor`, `IGRInsertionExpressionPredictor`,
+  `CoverageTrackPredictor`, `TiledCoverageTrackPredictor`,
+  `LocalCodingVariantPredictor`, `FivePrimeUtrReporterExpressionPredictor`)
 - [x] Benchmark ABC with `evaluate` / `plot` / `save_results` / `load_results`
   / `summary_dict` / `headline` contract
 - [x] Registry (`SHORKIE_ADAPTERS` / `YORZOI_ADAPTERS` keyed by protocol,
   task factories in `TASKS`)
-- [x] YAML run-spec CLI (`ybench run|replot|list` + `configs/default.yaml`)
-- [x] 106-test pytest suite (eQTL, both MPRA variants, Shalem, registry,
-  config, CLI persistence)
+- [x] YAML run-spec CLI (`ybench run|compare|replot|list` + the mounted
+  `ybench data` sub-app + `configs/default.yaml`)
+- [x] Run UX (PR #23): hardware banner (`describe_device`), `--gpu` /
+  `--device` GPU selection, per-pair ETA progress line
+  (`src/yeastbench/hardware.py`, `cli.py`; `tests/test_run_progress.py`)
+- [x] 282-test pytest suite (eQTL, marginalized + Shalem + Chen MPRA, Wu,
+  Hong, Brooks, Cuperus, Meneu, data manifest/backends + fresh-install,
+  compare, per-base wrappers, registry, config, CLI persistence)
 - [ ] Measured-RNA-seq oracle baseline benchmark (upper bound via
   Shorkie's expression scoring formula on real data)
 - [ ] Refactor MPRA / Shalem benchmark classes to share an abstract
   `RegressionBenchmark` base (data-source-agnostic)
-- [ ] **Automated cross-model comparison runner (`ybench compare` or
-  equivalent).** Walks `results/<config>/<model>__<task>/summary.json`
-  + raw arrays, intersects on a common per-task sample axis where
-  applicable (mirroring the Brooks shared-cohort logic), and
-  emits a unified per-task comparison directory under
-  `results/<config>/compare__shared/<task>/` with:
-    - a side-by-side metrics table (per-task summary CSV/JSON
-      with one row per model, primary metric column highlighted),
-    - per-task standardised plot (scatter / dir-acc bar / ROC, etc.
-      depending on protocol — defined by the benchmark class's new
-      `compare_plot(results_by_model, out_dir)` hook), and
-    - a top-level `compare__all/index.md` that aggregates the per-task
-      summaries into a single results page (the existing Documentation
-      "Results summary page" item collapses into this).
-  Today only Brooks has this (the shared-cohort intersection in
-  `src/yeastbench/benchmarks/brooks.py`, run via `ybench compare`).
-  Generalising means defining a `Benchmark.compare(...)` classmethod
-  + a per-protocol shared-cohort intersection helper.
+- [x] **Automated cross-model comparison runner (`ybench compare`).**
+  `src/yeastbench/compare.py` walks `<out_dir>/<model>__<task>/summary.json`,
+  groups by task, and for every task with ≥ 2 models writes a per-task
+  comparison directory under `<out_dir>/compare/per_task/<task>/` with a
+  standardised plot (each benchmark class's
+  `compare_plot(results_by_model, out_dir)` hook — default grouped-bar over
+  the numeric summary scalars; Brooks overrides it for the shared-cohort
+  intersection) plus a cross-task `summary.csv` (long) and `summary.md`
+  (wide tables). Auto-triggers at the end of every `ybench run`
+  (`cli.py`); also a standalone `ybench compare --config …` command.
 - [ ] **ExoShorkie integration** — prerequisite for the per-task
   ExoShorkie adapter bullets under each benchmark below. Two open
   questions to resolve first:
@@ -117,7 +116,7 @@
   logSED_agg over host-gene exon bins)
 - [x] Shorkie marginalized adapter (T0 RNA-seq tracks, 8-fold ensemble;
   full 71,103-seq run, r = 0.760)
-- [x] Yorzoi marginalized adapter (strand-matched tracks; r = 0.608 on
+- [x] Yorzoi marginalized adapter (strand-matched tracks; r = 0.606 on
   all 71,103 seqs; motif strata r ≈ 0.73–0.74)
 - [x] Pair-difference Pearson on full runs for SNV / motif pair strata
   (`per_pair_stratum` with `diff_pearson_r` saved in both Shorkie and
@@ -168,6 +167,65 @@
   Rafi above + a per-task adapter. Weights + code from
   `shorkie-paper/`.
 
+### Chen et al. (synonymous-mutation CDS MPRA)
+
+Probes the **coding sequence itself** — the regulatory layer no other
+MPRA in the suite touches. ~4,079 synonymous variants of three genes
+(each changes a 36 nt / 12-codon block; the surrounding ~1.7 kb construct
+is constant), scored by marginalizing the variant CDS's logSED over 20
+active-in-YPD host loci (the construct's real chrII PGAL1 locus is
+galactose-induced and silent in every training track, so scoring there
+adds calibration noise). Three libraries share one construct: **GFP r1**
+(codons 41–52, 1,124 variants), **GFP r2** (codons 156–167, 2,432),
+**TDH3** (codons 57–68, 523). Headline = per-library Pearson *r* **and**
+Spearman ρ on `log2(R/D)`, scored against each replicate, read against
+published replicate ceilings.
+
+Source: Chen et al. 2017, *Codon-Resolution Analysis Reveals a Direct and
+Context-Dependent Impact of Individual Synonymous Mutations on mRNA
+Level*, MBE 34(11):2944–2958
+([DOI](https://doi.org/10.1093/molbev/msx229)). Spec:
+`benchmarks/chen_synonymous.md`.
+
+**Done.**
+
+- [x] Spec finalized (`benchmarks/chen_synonymous.md`): marginalized-over-
+  20-YPD-hosts scoring, per-replicate labels, replicate ceilings per
+  library (GFP r1 0.83/0.71, GFP r2 0.73/0.71, TDH3 0.72/—).
+- [x] New `LocalCodingVariantPredictor` protocol
+  (`predict_local_variants(library_ids, variant_seqs)`).
+- [x] `ChenSynonymousBenchmark` (`benchmarks/chen.py`) — one class
+  parameterized by library; tasks `chen_gfp_r1`, `chen_gfp_r2`,
+  `chen_tdh3` wired into `TASKS` + `configs/default.yaml`.
+- [x] **WT avGFP CDS backbone fix (PR #24 / issue #8):** the GFP
+  libraries use the wild-type avGFP CDS (`_chen_gfp_reference.py`), not a
+  preferred-codon back-translation.
+- [x] Shorkie + Yorzoi adapters (`shorkie_chen_marginalized.py`,
+  `yorzoi_chen_marginalized.py`; shared machinery in
+  `_chen_marginalized.py`).
+- [x] Tests (`tests/test_chen.py`, `tests/test_chen_gfp_reference.py`).
+- [x] **GPU runs (RTX A6000), headline `log2(R/D)` (rep1; ceiling in
+  brackets):**
+    * **GFP r1** [r ≤ 0.83 / ρ ≤ 0.71] — Shorkie r 0.386 / ρ 0.475;
+      Yorzoi r 0.307 / ρ 0.376. The hardest library.
+    * **GFP r2** [r ≤ 0.73 / ρ ≤ 0.71] — Shorkie r 0.601 / ρ 0.622;
+      Yorzoi r 0.570 / ρ 0.589. Both models near the ceiling.
+    * **TDH3** [r ≤ 0.72] — Shorkie r 0.527 / ρ 0.302; Yorzoi r 0.606 /
+      ρ 0.231. Pearson ≫ Spearman (CAI heavy tail).
+- [x] **CAI baseline** (`cai` model, `adapters/baselines/cai.py`):
+  codon-adaptation-index sum per variant. Reference, not zero-shot —
+  beats both deep models on TDH3 (r 0.675) by leverage of the CAI tail.
+- [x] **CodonTransformer baseline** (`codon_transformer` model,
+  `adapters/baselines/codon_transformer.py`): pretrained codon-LM
+  log-likelihood. Strong on GFP r2 (r ≈ 0.56–0.59), weak on GFP r1 / TDH3.
+
+**Open.**
+
+- [ ] **ExoShorkie adapter** (`LocalCodingVariantPredictor`). The
+  heterologous GFP CDS is OOD for vanilla Shorkie / Yorzoi but closer to
+  ExoShorkie's foreign-DNA-in-yeast training distribution; reuse the
+  marginalized wrapper, only the model changes.
+
 ### Wu et al. (RFP Genome wide position effects)
 - [x] Spec complete (`benchmarks/wu_rfpins.md`); evaluation design
   settled, blocked on cassette-sequence verification
@@ -180,7 +238,7 @@
   `barcodes.tsv` (non-blocking; inert for the readout)
 - [x] Implement benchmark (`RFPInsertionBenchmark` + `_wu_scaffold.py`;
   protocol-name / registry-key / stub gaps all fixed;
-  `tests/test_rfpins.py`, 20 tests; full suite green; end-to-end
+  `tests/test_rfpins.py`, 30 tests; full suite green; end-to-end
   validated on real 1044-locus data with a mock adapter)
 - [x] Implement Yorzoi & Shorkie adapters (`ShorkieWuPredictor`,
   `YorzoiWuPredictor`; mCherry-start-codon-centred window, absolute
@@ -278,20 +336,20 @@ https://github.com/daftpunksss/YeIP.
   groups; 36 candidate readouts).
 - [x] Yorzoi adapter `YorzoiHongPredictor` (RNA-seq only, no
   chromatin tracks; 4 track subgroups × 6 regions = 24 candidates).
-- [x] Tests (`tests/test_hong_igr.py`, 30 tests): scaffold,
+- [x] Tests (`tests/test_hong_igr.py`, 36 tests): scaffold,
   benchmark, IntTrain-fitted selection, save/load roundtrip,
   back-compat with adapters lacking `predict_diagnostic_readouts`,
   per-locus readout-bin aggregation (clamped-window regression).
-  Full suite 190 tests green.
+  Full suite green (282 tests).
 - [x] **GPU runs (RTX A6000), headline numbers:**
     * **Shorkie**: Primary IntProp ρ = −0.148 (IntTrain −0.269) |
       **IntTrain-fitted [H3 nucleosome × flank both 1 kb] IntProp
       ρ = +0.185** (IntTrain +0.345, selected from 36 candidates).
       Direction agrees with YeIP's "nucleosome density lower in
       high-expression IGRs."
-    * **Yorzoi**: Primary IntProp ρ = +0.057 (IntTrain −0.070) |
-      IntTrain-fitted [SCRaMBLE strains × flank L 1 kb] IntProp
-      ρ = −0.030 (IntTrain +0.107, selected from 24 candidates).
+    * **Yorzoi**: Primary IntProp ρ = +0.063 (IntTrain −0.073) |
+      IntTrain-fitted [All + tracks (baseline) × flank L 1 kb] IntProp
+      ρ = −0.016 (IntTrain +0.113, selected from 24 candidates).
       **IntTrain-fitted is *worse* than Primary** — Yorzoi's RNA-seq-
       only track inventory has no chromatin-density signal, so the
       IntTrain-selected combo doesn't generalize.
@@ -464,8 +522,9 @@ direct-RNA BEDs + per-strain genomes + GFFs at `gs://brooks-nanopore/`.
   `src/yeastbench/benchmarks/brooks.py`) reads each model's
   result dir, intersects on `sample_id`, recomputes per-replicate
   metrics + LOO ceiling on the shared cohort, and writes
-  `results/brooks/compare__shared/summary.json` + a Tier-1 chart
-  (`shared_tier1.png`). Yorzoi and Shorkie share 698 samples
+  `<out_dir>/compare/per_task/brooks_scramble/summary.json` + shared-
+  cohort charts (`shared_tier1.{png,svg}`, `shared_per_sample.{png,svg}`).
+  Yorzoi and Shorkie share 698 samples
   (= full Yorzoi set); on that subset Shorkie's dir-acc rises
   0.517 → 0.553 (the 357 wider-only extras were a bit harder), but
   Pearson r stays ≈ 0 and ρ stays ≈ 0 — qualitative finding
@@ -588,6 +647,9 @@ Genomes + processed RNA-seq coverage from the ExoShorkie figshare release
   `TiledCoverageTrackPredictor` protocol, Shorkie (T0) + Yorzoi
   (`illumina_exo`) adapters, registry, tests. First zero-shot numbers in
   the spec: shape Pearson Mpneumo 0.09–0.11 / Mmmyco 0.26–0.38.
+- [x] Two window-sized tasks route per model (mirroring the Brooks split):
+  `meneu_foreign_dna` (4,992 bp, Yorzoi) and `meneu_foreign_dna_shorkie`
+  (16,384 bp, Shorkie); both wired in `configs/meneu.yaml`.
 - [ ] **ExoShorkie adapter** (`TiledCoverageTrackPredictor`). This is the
   exogenous-DNA-in-yeast task ExoShorkie was built for, so the most
   in-distribution model for the benchmark. Reuses the Shorkie wrapper
@@ -609,7 +671,9 @@ Genomes + processed RNA-seq coverage from the ExoShorkie figshare release
 
 - [ ] Cross-model RNA-seq track-prediction benchmark on held-out yeast
   regions (paper-style R² per track, tissue-style grouping if relevant)
-- [ ] Adapters implementing `TrackPredictor.predict_tracks(regions)`
+- [ ] Adapters implementing a held-out-region track readout (via
+  `CoverageTrackPredictor` / `TiledCoverageTrackPredictor`'s
+  `predict_coverage_batch`; there is no `TrackPredictor.predict_tracks`)
 
 ## Code-structure refactor (post-Brooks)
 
@@ -647,13 +711,13 @@ Remaining follow-ups (migrated from the former `REFACTOR_PLAN.md`):
   the same model loads weights N times. Fine for the default config (3–6
   tasks per model, often on different devices); worth caching once a single
   `ybench run` routinely repeats model loads. Low priority.
-- [ ] **Cross-task adapter consolidation.** Adapters for structurally
-  similar tasks across benchmarks (e.g. `yorzoi_shalem` vs
-  `yorzoi_mpra_marginalized` — both marginalized-over-host-genes logSED)
-  still re-implement the REF-cache + ALT-splice loop separately. Could
-  parametrise one `MarginalizedExpressionPredictor` per model over many
-  tasks (route by a `Scaffold` / `Site` arg). Defer until either a third
-  marginalized-family task or a bug that needs fixing in N parallel adapters.
+- [x] **Cross-task adapter consolidation.** The shared
+  `MarginalizedLogSED` engine (`adapters/_marginalized_logsed.py`) now
+  owns the REF-cache + ALT-splice orchestration; `ShalemMarginalizedBase`
+  and `MPRAMarginalizedBase` both inherit it, and the Shorkie / Yorzoi
+  Shalem + marginalized-MPRA adapters are thin subclasses that only wire
+  up input geometry and readout. (Chen's marginalized machinery lives
+  alongside in `_chen_marginalized.py`.)
 
 ### Correctness sweep — always evaluate on the untransformed, unbinned scale
 
@@ -684,14 +748,16 @@ outputs are already in raw-count units — no inverse-transform needed,
 but its 16 bp output bins introduce CDS-boundary rounding that
 unbinning to per-base eliminates.
 
-**Audit (2026-05-20).** Only `yorzoi_brooks` operates on
-untransformed, per-base predictions. Every other Yorzoi adapter sums
-transformed binned values directly:
+**Audit (2026-05-20, historical).** Superseded by the 2026-06-02 per-base
+conversion noted above — every adapter below now reads untransformed
+per-base counts, and the `yorzoi_mpra` fixed-context (DREAM YFP) adapter
+has since been deleted (dropped from the table). Kept for provenance; at
+the time, only `yorzoi_brooks` operated on untransformed, per-base
+predictions:
 
 | Adapter | Aggregation | Transform-affected? | Bin-boundary-rounding? |
 | --- | --- | :-: | :-: |
 | `yorzoi_eqtl` | `log2(alt_sum+1) − log2(ref_sum+1)` over exon bins | yes | yes |
-| `yorzoi_mpra` | scalar `cov[:, yfp_bins].sum()` (DREAM YFP) | yes | yes |
 | `yorzoi_mpra_marginalized` | per-host logSED → mean | yes | yes |
 | `yorzoi_shalem` | per-host logSED → mean | yes | yes |
 | `yorzoi_wu` | strand-matched 81-track mean × CDS-bin sum | yes | yes |
@@ -733,30 +799,32 @@ model in the suite.
 
 ## Documentation
 
-- [x] Spec per benchmark (`benchmarks/*.md`)
-- [x] Architecture doc (`benchmarks/architecture.md`)
+- [x] Spec per benchmark (`benchmarks/*.md`) + index (`benchmarks/README.md`)
+- [x] Architecture doc (`archive/architecture.md`)
+- [x] Data-storage spec (`specs/data-storage.md`)
 - [x] README extension guide ("Adding a new benchmark / model")
-- [ ] Results summary page pulling numbers from `results/default/*/summary.json`
+- [x] Results summary page — `ybench compare` writes
+  `<out_dir>/compare/summary.md` (wide tables) + `summary.csv` from each
+  run's `summary.json`, auto-triggered after every run
 - [ ] Per-stratum result tables auto-generated from saved scores
 
 ## Reproducibility
 
 - [x] Run metadata (config hash, git commit, timestamp) per output dir
 - [x] Raw scores / labels persisted so re-plotting doesn't require re-scoring
-- [ ] CI / automated smoke-test run on synthetic data (no GPU)
-- [ ] Lock data distribution versions in a manifest (SHA256 of each raw
-  input file)
-- [ ] `ybench data` CLI to fetch benchmark artifacts from a hosted store
-  - `--all` or `--tasks t1,t2,...` (task names match `data/tasks/` subdirs:
-    `caudal_eqtl`, `kita_eqtl`, `rafi_mpra`, `shalem_mpra_terminator`,
-    `wu_rfpins`, `brooks_scramble`)
-  - Resolves shared assets (e.g. `R64-1-1.fa`/GTF, `1011Matrix.gvcf.gz`)
-    once across tasks rather than per-task
-  - Verifies each file against the SHA256 manifest above; refuses partial
-    downloads; idempotent (skip files already present and matching)
-  - Open questions: ship prepared task artifacts vs raw inputs + local
-    regeneration; hosting (Zenodo / HuggingFace datasets / GCS); whether
-    to use `pooch` rather than hand-rolling fetch+verify
+- [x] Lock data distribution versions in a manifest (SHA256 of each file)
+  — `src/yeastbench/data/manifest.lock.json` + `data/lock.py`
+- [x] `ybench data` CLI to fetch & verify benchmark artifacts from a
+  hosted store (PR #22). Subcommands `get | status | verify | list |
+  lock | publish | build` over a requester-pays GCS backend
+  (`data/{cli,fetch,manifest,lock,backends}.py`); resolves shared assets
+  (`R64-1-1.fa`/GTF, `R64-5-1.fa`, `1011Matrix.gvcf.gz`) once across
+  tasks; verifies each file against the SHA256 lock; idempotent; covered
+  by `test_data_{backends,manifest}.py` + `test_fresh_install.py`. Spec:
+  `specs/data-storage.md`.
+- [ ] CI / automated smoke-test run on synthetic data (no GPU). CI today
+  runs only ruff F401 lint (`.github/workflows/lint.yml`); the
+  `test_fresh_install` acceptance test is not yet wired into CI.
 
 ## v2 release
 
@@ -892,6 +960,12 @@ checkouts too):**
   notebook).
 - `notebooks/wu_yorzoi_predictions.ipynb` — same shape, for the Wu
   RFP-insertions benchmark.
+- `notebooks/cuperus_predictions.ipynb`,
+  `notebooks/cuperus_translation_features.ipynb`,
+  `notebooks/cuperus_data_summary.ipynb` — Cuperus 5′-UTR prediction,
+  Kozak-feature screen, and data-summary diagnostics.
+- `notebooks/hong_predictions_deep_dive.ipynb` (+ `.py`) — Hong IGR
+  per-locus deep-dive + IntTrain → IntProp selection diagnostics.
 - `notebooks/_*cache*.pkl` — per-notebook prediction caches.
 - `notebooks/investigation_plots/` — extracted PNGs.
 

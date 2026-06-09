@@ -1,0 +1,253 @@
+{
+  "artifacts": {
+    "brooks_scramble": {
+      "files": {
+        "brooks_scramble_v1.tsv": {
+          "sha256": "10f9c7d17cc3631e117d69c3c6a12c9bfea6a9ad9ec1960067fac3482cb43d84",
+          "size": 23652126
+        },
+        "brooks_scramble_v1_w16384.tsv": {
+          "sha256": "2404cd5db73e073eab7a777d56c0d7ac7c32dba77506079835fa2bdf4b8f89e7",
+          "size": 115177128
+        }
+      }
+    },
+    "caudal_eqtl": {
+      "files": {
+        "negset_1.tsv": {
+          "sha256": "c875a99f5fec548216e987626a492478aa61670229cf059532d2ca2bfe61e515",
+          "size": 113158
+        },
+        "negset_2.tsv": {
+          "sha256": "97b924afe97d16a7c3f361f4701c33eff98f850ed214e38206a1ba8f6275eef0",
+          "size": 113121
+        },
+        "negset_3.tsv": {
+          "sha256": "9cd0eff645cc39f124de84c5ce30b533801744cde64d4e6c06acb5d86da86243",
+          "size": 113126
+        },
+        "negset_4.tsv": {
+          "sha256": "2223e8b53cdfa0063b01d5874f3f78464d6d4d1a801d98474951f4bdbe5dae10",
+          "size": 113189
+        }
+      }
+    },
+    "chen_synonymous": {
+      "files": {
+        "gfp_r1.tsv": {
+          "sha256": "c96be4b65e083a3234bb07e424a6be163ca61504e824c6b88b6bc9a52e4ff0e3",
+          "size": 221460
+        },
+        "gfp_r2.tsv": {
+          "sha256": "7652a24592cd2cb92e3699bbd7b5a577a51cd358313b2e3cd665c5d196ae50b7",
+          "size": 428653
+        },
+        "marginalized_hosts.json": {
+          "sha256": "5569b5f3bc44678cd95f566588d8b078b3025b417d44dbef6654ac936994f61d",
+          "size": 4703
+        },
+        "tdh3.tsv": {
+          "sha256": "8350a9c97c1caa7de8e9f907baf9d3acf5ade8bf73e934270874b986ea79b80f",
+          "size": 56128
+        }
+      }
+    },
+    "cuperus_mpra_5utr": {
+      "files": {
+        "native_utrs.tsv": {
+          "sha256": "2efc7689b10b33783f23cc7fbc8f485af75b0b3fb55a99c8c48ac5a68a07fcff",
+          "size": 992240
+        },
+        "random_utrs.tsv": {
+          "sha256": "9e774f71a49f567938d17d3ca4bb28241323bfef4f4dbe773c472bc9a3a5e87e",
+          "size": 39077279
+        }
+      }
+    },
+    "hong": {
+      "files": {
+        "expression_cassette.fasta": {
+          "sha256": "967cc25505d46d6959a1162c316700f1cd2977bada9ad7d3631c8db281f0e7d9",
+          "size": 1729
+        },
+        "hong_igr_v1.tsv": {
+          "sha256": "b4d33d9f64e80c672e54af4774a55cfb4087c8f642f8d4e619eb1441d2921524",
+          "size": 9807
+        }
+      }
+    },
+    "kita_eqtl": {
+      "files": {
+        "negset_1.tsv": {
+          "sha256": "1208db157c09002e318cf656346f19f237d38a3fa66113e5a62b6e48b4f62854",
+          "size": 36809
+        },
+        "negset_2.tsv": {
+          "sha256": "e29bd8111b2b05c42ae054fd1fda9a70176bb3fb27b32e3261c86f3e582155e6",
+          "size": 36794
+        },
+        "negset_3.tsv": {
+          "sha256": "ac986a201953b8871a9427c16ee4ce9dfdbd554c74644126ea3fa0f8e8ec3b49",
+          "size": 36833
+        },
+        "negset_4.tsv": {
+          "sha256": "c33fea0cbab0ea02b572c8d6e8ac4df212b4d4d63a7c4f67fb4e57f3d0314afe",
+          "size": 36813
+        }
+      }
+    },
+    "meneu_foreign_dna": {
+      "files": {
+        "meneu_cov_Mmmyco.npz": {
+          "sha256": "7d0edad3887b1444061017c69683bc6356cce65917834df1c251a1d13bca3b07",
+          "size": 820487
+        },
+        "meneu_cov_Mpneumo.npz": {
+          "sha256": "eef3ff3f5ded83a5b7c3d80ed7e6227f9f9934ac3d5ce0876bef252227140f8c",
+          "size": 2138629
+        },
+        "meneu_foreign_dna_v1.tsv": {
+          "sha256": "7facc169c69ca0a7768a9dc42e9ed51b7a78215a1aeeca268c420ed0002e8f11",
+          "size": 3434679
+        },
+        "meneu_foreign_dna_v1_w16384.tsv": {
+          "sha256": "16cc424f6e51051880e766874551b845c5d67bb4e9074ca1ca9ca6678eefeee3",
+          "size": 2366954
+        }
+      }
+    },
+    "rafi_mpra": {
+      "files": {
+        "filtered_test_data_with_MAUDE_expression.txt": {
+          "sha256": "fe5a96c98caabd95b82af24ad6ca1932e02ed30551a94cc4f6c3d37f718272c8",
+          "size": 9184998
+        },
+        "test_subset_ids/all_SNVs_seqs.csv": {
+          "sha256": "6b484f8ddd424a31743ddc5fa7a96edd2d3bcb5bcb0d7647d4832a7696d02095",
+          "size": 13883683
+        },
+        "test_subset_ids/all_random_seqs.csv": {
+          "sha256": "f1f3fb397cf664ce9bd5796e68418aad42e9ee017f60b129009b14c10e1096bb",
+          "size": 858758
+        },
+        "test_subset_ids/challenging_seqs.csv": {
+          "sha256": "b62de941b2d9cf4367d9933e4b43c3997ecb8c6f508f429d4488a3345193d097",
+          "size": 303214
+        },
+        "test_subset_ids/high_exp_seqs.csv": {
+          "sha256": "8ca895e422e92770b715f917ff48593cc7e2d1a004683aef9eea37229de9480f",
+          "size": 138018
+        },
+        "test_subset_ids/low_exp_seqs.csv": {
+          "sha256": "206926a6054c106039b8ae87b2807305ae5454ccc725bc8b162512496949a9c2",
+          "size": 141135
+        },
+        "test_subset_ids/motif_perturbation.csv": {
+          "sha256": "627cba47abd45b54cfad6e522697cfa0f5b0c7b005290a9311d1ab9e6f45a65a",
+          "size": 978811
+        },
+        "test_subset_ids/motif_tiling_seqs.csv": {
+          "sha256": "1edaaa96fe9af4987d119cd647a6f53da99dd87eb30e55fb85c76e753cfada03",
+          "size": 706063
+        },
+        "test_subset_ids/yeast_seqs.csv": {
+          "sha256": "af3041c3645ba3ae4ff8a992abe1e5170ce57e625e7c5f819e4550036224b22e",
+          "size": 141464
+        }
+      }
+    },
+    "refs": {
+      "files": {
+        "R64-1-1.115.gtf": {
+          "sha256": "8c43c98a3a0db24c9e53fd9d460f096c48de0eabefd955fd25d044c948692623",
+          "size": 10463408
+        },
+        "R64-1-1.fa": {
+          "sha256": "35cc97fccb91762c7a1f0f71b4adb1037b143d48b63fbd3b3f8bad45e5afa44c",
+          "size": 12360704
+        },
+        "R64-1-1.fa.fai": {
+          "sha256": "65163e1e9c8cb7b63f43befd8294019b11fba0c18dd37c801e9d356e71e391c3",
+          "size": 416
+        },
+        "R64-5-1.fa": {
+          "sha256": "970a521f0c354fff45b020db1dec0e1ce3c67b34e014ce7856c5a988c97a4d69",
+          "size": 12359809
+        },
+        "R64-5-1.fa.fai": {
+          "sha256": "d60d798c7c982f58342b731882605280eba879a4279ff764f5e67ab749d3ac0e",
+          "size": 415
+        }
+      }
+    },
+    "shalem_mpra_terminator": {
+      "files": {
+        "host_genes.json": {
+          "sha256": "af9740b34d882bb68cddd61e9ddff188dee45bd27b941563da87c4661f2c0ee1",
+          "size": 4898
+        },
+        "segal_2015.tsv": {
+          "sha256": "71eb1ded86c844f89b944763f179dd756a728883773f94a66694132441aa9c54",
+          "size": 8865216
+        }
+      }
+    },
+    "shorkie": {
+      "files": {
+        "checkpoints/f0.h5": {
+          "sha256": "a34e97ba4fa382e061f519d4d4c737c6ca4ed97744045b5f19e307f6c01d4872",
+          "size": 57571980
+        },
+        "checkpoints/f1.h5": {
+          "sha256": "53d9d335849ac2f035ec68ed7b67d550db4b9bc5fbf12e69876acc6e21a160bc",
+          "size": 57571980
+        },
+        "checkpoints/f2.h5": {
+          "sha256": "220d513c78da80f3a25a6c82ce9835d2cd6cefca3e71ee58ea80e32ffd599565",
+          "size": 57571980
+        },
+        "checkpoints/f3.h5": {
+          "sha256": "6f6cf1f13b51fc8a0a5cf3324c36ad74fff62c563165568123826d6267de1dec",
+          "size": 57571980
+        },
+        "checkpoints/f4.h5": {
+          "sha256": "c01204ef41cc9bc8dcd5dbf33b87fbc875bf37b407c431d4c3b928a17e3a8eb0",
+          "size": 57571980
+        },
+        "checkpoints/f5.h5": {
+          "sha256": "eec3f295b171b0100916ec2e77c1e85859a5904bf4a84ebbc069d2e634c06638",
+          "size": 57571980
+        },
+        "checkpoints/f6.h5": {
+          "sha256": "e136eff6592d0654c158132a5a9cfd179737f9f3fcc13737ce16bb8c2beef68f",
+          "size": 57571980
+        },
+        "checkpoints/f7.h5": {
+          "sha256": "5a85d1e82dd9a483d498605886509e76102bb1747f08c2463d5f50db32c864d8",
+          "size": 57571980
+        },
+        "params.json": {
+          "sha256": "eae4261a4775f246110f6cc210d75e10908e256950b83f977d2d7a2031adfe3f",
+          "size": 2751
+        },
+        "targets.txt": {
+          "sha256": "2c1592eba8928b063f753daddfb3b4ead16609e06713dbad6bc74bc142af9ad7",
+          "size": 781531
+        }
+      }
+    },
+    "wu_rfpins": {
+      "files": {
+        "expression_cassette.fasta": {
+          "sha256": "c71179260324a001f11ac4861631e7ae1e62594f5edb1e9e205d6e2260bbdf67",
+          "size": 3858
+        },
+        "table_s2_fluorescence_1044_loci.csv": {
+          "sha256": "fd27da88ca848e25e4ccce8c8765131fb56c4b075b9895ee5b19dd85eeafb450",
+          "size": 28327
+        }
+      }
+    }
+  },
+  "version": 1
+}

@@ -2458,8 +2458,12 @@ dependencies = [
 all = [
     { name = "flash-attn" },
     { name = "h5py" },
+    { name = "huggingface-hub" },
     { name = "torch" },
     { name = "yorzoi" },
+]
+data = [
+    { name = "huggingface-hub" },
 ]
 dev = [
     { name = "ipykernel" },
@@ -2480,6 +2484,7 @@ yorzoi = [
 requires-dist = [
     { name = "flash-attn", marker = "extra == 'yorzoi'", url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" },
     { name = "h5py", marker = "extra == 'shorkie'" },
+    { name = "huggingface-hub", marker = "extra == 'data'", specifier = ">=0.25" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.2.0" },
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "numpy" },
@@ -2497,10 +2502,10 @@ requires-dist = [
     { name = "torch", marker = "extra == 'shorkie'", specifier = ">=2.11.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "typer", specifier = ">=0.12" },
-    { name = "yeast-seq2epxression-benchmark", extras = ["shorkie", "yorzoi"], marker = "extra == 'all'" },
+    { name = "yeast-seq2epxression-benchmark", extras = ["shorkie", "yorzoi", "data"], marker = "extra == 'all'" },
     { name = "yorzoi", marker = "extra == 'yorzoi'", specifier = ">=0.0.3" },
 ]
-provides-extras = ["shorkie", "yorzoi", "all", "dev"]
+provides-extras = ["shorkie", "yorzoi", "data", "all", "dev"]
 
 [[package]]
 name = "yorzoi"

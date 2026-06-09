@@ -31,8 +31,11 @@ yorzoi = [
     "flash-attn",
     "yorzoi>=0.0.3",
 ]
+data = [
+    "huggingface_hub>=0.25",
+]
 all = [
-    "yeast-seq2epxression-benchmark[shorkie,yorzoi]",
+    "yeast-seq2epxression-benchmark[shorkie,yorzoi,data]",
 ]
 dev = [
     "ipykernel>=7.2.0",
@@ -50,6 +53,11 @@ packages = ["src/yeastbench"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "network: requires internet egress (skipped offline)",
+    "integration: end-to-end, needs the published mirror (opt-in)",
+    "gpu: needs a GPU + model extras (shorkie/yorzoi)",
+]
 
 [tool.uv.sources]
 flash-attn = { url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }

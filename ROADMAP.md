@@ -70,7 +70,9 @@ files under `benchmarks/`. This roadmap tracks status only.
   close-only subset, distance-to-TSS strata)
 - [x] Shorkie adapter (`ShorkieVariantScorer`, 8-fold ensemble)
 - [x] Yorzoi adapter (`YorzoiVariantScorer`, strand-swap RC averaging)
-- [ ] Check and fix divergence vs the Shorkie paper's Caudal numbers
+- [x] Verified vs the Shorkie paper's Caudal numbers — reproduces Fig 7E
+  (≤ 8 kb) within readout precision on current per-base code; the earlier
+  apparent divergence was stale pre-migration results
 - [ ] Audit discovery methodology — positives called from the 1011-strain
   panel with varying ploidy + per-variant VAFs; decide whether to filter on
   ploidy / VAF before scoring

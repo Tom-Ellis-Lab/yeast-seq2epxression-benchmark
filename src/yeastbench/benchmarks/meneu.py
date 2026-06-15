@@ -99,6 +99,11 @@ def tile_contig(seq: str, window: int, crop: int) -> list[_Tile]:
     any model — this is what lets Meneu be a single task."""
     L = len(seq)
     stride = window - 2 * crop
+    assert stride > 0, (
+        f"invalid tiling geometry: window ({window}) must exceed 2*crop "
+        f"({2 * crop}) so the predicted region out_len = window - 2*crop is "
+        "positive; check the adapter's seq_len / crop_bp_each_side"
+    )
     n_tiles = (L + stride - 1) // stride
     tiles: list[_Tile] = []
     for i in range(n_tiles):
@@ -121,23 +126,38 @@ class MeneuForeignDNABenchmark(
     EVAL_WINDOW: ClassVar[int] = 5000
     FLOOR_EPS: ClassVar[float] = 1e-9
 
+    #: Arrays every window-agnostic sidecar must carry.
+    _SIDECAR_KEYS: ClassVar[frozenset[str]] = frozenset({"seq", "fwd", "rev"})
+
     def __init__(self, data_path: Path, info: BenchmarkInfo) -> None:
-        # ``data_path`` is the task data directory (a file path is tolerated
-        # and resolved to its parent for back-compat). Contigs are discovered
-        # from the window-agnostic coverage sidecars ``meneu_cov_<contig>.npz``;
-        # each also carries the contig ``seq`` so the benchmark can tile at run
-        # time to whatever window the adapter needs — no fixed per-task window.
-        p = Path(data_path)
-        self.data_path = p
+        # ``data_path`` is the task data directory. Contigs are discovered from
+        # the window-agnostic coverage sidecars ``meneu_cov_<contig>.npz``; each
+        # carries the contig ``seq`` (so the benchmark can tile at run time to
+        # whatever window the adapter needs) plus per-base ``fwd``/``rev``.
+        self.data_path = Path(data_path)
         self.info = info
-        self.data_dir = p if p.is_dir() else p.parent
+        self.data_dir = self.data_path
         cov_files = sorted(self.data_dir.glob(f"{COV_PREFIX}*.npz"))
         assert cov_files, (
-            f"no {COV_PREFIX}*.npz coverage sidecars in {self.data_dir}"
+            f"no {COV_PREFIX}*.npz coverage sidecars in {self.data_dir} — "
+            "fetch the distribution with `ybench data get`"
         )
-        self.contigs: list[str] = [
-            cp.name[len(COV_PREFIX):-len(".npz")] for cp in cov_files
-        ]
+        # Validate each sidecar's schema up front (the old TSV-backed __init__
+        # validated columns at construction): a stale pre-tiling sidecar holds
+        # only fwd/rev, and globbing filenames alone would let it through to
+        # fail later with an opaque ``KeyError('seq')`` inside evaluate().
+        # ``NpzFile.files`` reads the zip directory only — no arrays loaded.
+        contigs: list[str] = []
+        for cp in cov_files:
+            with np.load(cp) as d:
+                missing = self._SIDECAR_KEYS - set(d.files)
+            assert not missing, (
+                f"{cp} is missing array(s) {sorted(missing)} — it looks like a "
+                "stale pre-tiling sidecar (fwd/rev only); re-fetch with "
+                "`ybench data get`"
+            )
+            contigs.append(cp.name[len(COV_PREFIX):-len(".npz")])
+        self.contigs: list[str] = contigs
 
     def _run_batched(
         self,

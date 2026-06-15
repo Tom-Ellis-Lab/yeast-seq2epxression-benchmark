@@ -154,6 +154,39 @@ class TestTileContig:
         assert [t.window_start for t in tiles] == [0, 10, 20]
         assert all(t.seq.count("N") == 0 for t in tiles)
 
+    # Real model receptive fields (Yorzoi 4992/996, Shorkie 16384/1024).
+    # Exercises tile_contig at the actual asymmetric geometry WITHOUT the
+    # gitignored shipped data, so `pytest` validates the PR's core invariant
+    # everywhere — not only where the real distribution is fetched (the
+    # data-gated golden test below). Catches off-by-ones in stride / padding /
+    # n_tiles that the toy window=20 cases would miss.
+    @pytest.mark.parametrize("window,crop", [(4992, 996), (16384, 1024)])
+    def test_real_geometry_central_regions_reconstruct_contig(self, window, crop):
+        L = 60_000
+        seq = _contig_seq(np.random.default_rng(1234), L)
+        stride = window - 2 * crop
+        tiles = tile_contig(seq, window, crop)
+        assert len(tiles) == (L + stride - 1) // stride
+        assert all(len(t.seq) == window for t in tiles)
+        assert [t.center_start for t in tiles] == list(range(0, L, stride))
+        # The predicted central region of each tile (window[crop:crop+stride])
+        # tiles [0, L) contiguously and reproduces the contig exactly.
+        rebuilt = "".join(t.seq[crop:crop + stride] for t in tiles)[:L]
+        assert rebuilt == seq
+        # Contig ends are N-padded; the first window opens crop bp before 0 and
+        # the last window runs past the end.
+        assert tiles[0].window_start == -crop
+        assert tiles[0].seq[:crop] == "N" * crop
+        assert tiles[-1].seq.endswith("N")
+
+    def test_rejects_nonpositive_stride(self):
+        # window <= 2*crop -> stride <= 0; the geometry guard must fire rather
+        # than ZeroDivisionError (stride==0) or silently returning 0 tiles (<0).
+        with pytest.raises(AssertionError):
+            tile_contig("ACGT" * 10, window=20, crop=10)   # stride 0
+        with pytest.raises(AssertionError):
+            tile_contig("ACGT" * 10, window=20, crop=12)   # stride -4
+
 
 # ── benchmark ─────────────────────────────────────────────────
 
@@ -166,6 +199,17 @@ class TestMeneuBenchmark:
     def test_init_requires_sidecars(self, tmp_path):
         with pytest.raises(AssertionError):
             MeneuForeignDNABenchmark(tmp_path, INFO)     # empty dir
+
+    def test_init_rejects_stale_sidecar_missing_seq(self, tmp_path):
+        # A pre-tiling sidecar (fwd/rev only, no seq) must fail at construction
+        # with a clear message, not later inside evaluate() with KeyError('seq').
+        n = 100
+        np.savez(
+            tmp_path / f"{COV_PREFIX}Mpneumo.npz",
+            fwd=np.ones(n, dtype=np.float32), rev=np.ones(n, dtype=np.float32),
+        )
+        with pytest.raises(AssertionError):
+            MeneuForeignDNABenchmark(tmp_path, INFO)
 
     def test_evaluate_metrics_present_and_finite(self, meneu_dir):
         b = MeneuForeignDNABenchmark(meneu_dir, INFO)

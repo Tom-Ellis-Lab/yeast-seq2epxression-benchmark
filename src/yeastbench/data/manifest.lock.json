@@ -64,6 +64,18 @@
         }
       }
     },
+    "dream_rnn": {
+      "files": {
+        "model_best.pth": {
+          "sha256": "5b68b78ed9c96882c92b2f274a18e62211cc532c2730a3c5db07c2ee91fcd761",
+          "size": 16527979
+        },
+        "plasmid.json": {
+          "sha256": "e1444cace7908c314be020e79c7790558f3947c3c932fd0c02136df14df59113",
+          "size": 8296
+        }
+      }
+    },
     "hong": {
       "files": {
         "expression_cassette.fasta": {

@@ -304,6 +304,22 @@ ARTIFACTS: tuple[Artifact, ...] = (
         license=License.PUBLIC,
         mirrors=(Mirror(BackendKind.HF, base="adibvafa/CodonTransformer", repo_type="model"),),
     ),
+    # DREAM-RNN supervised baseline: a single small net (~8 MB) + the reporter
+    # plasmid. Weights come from Zenodo 10633252 (dir 0_1_1_0/model_best.pth, the
+    # Bi-LSTM-core composite — NOT 0_1_0_0, which is DREAM-CNN); plasmid.json from
+    # the de-Boer-Lab repo (MIT). Both are small + redistributable, so they're
+    # re-hosted on our data mirrors rather than fetched from the 2.3 GB tarball.
+    # Publish the two files to the HF/GCS mirrors, then `ybench data lock`.
+    Artifact(
+        id="dream_rnn",
+        kind=Kind.MODEL_WEIGHTS,
+        dest="data/models/dream_rnn",
+        needed_by=("dream_rnn",),
+        include=("model_best.pth", "plasmid.json"),
+        license=License.CC_BY_4_0,
+        redistributable=True,
+        mirrors=_task_mirrors("dream_rnn"),
+    ),
 )
 
 

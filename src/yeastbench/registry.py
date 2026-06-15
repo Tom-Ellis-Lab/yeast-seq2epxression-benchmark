@@ -20,7 +20,7 @@ from yeastbench.adapters.protocols import (
     FivePrimeUtrReporterExpressionPredictor,
     IGRInsertionExpressionPredictor,
     LocalCodingVariantPredictor,
-    MarginalizedSequenceExpressionPredictor,
+    SequenceExpressionScorer,
     TerminatorMarginalizedExpressionPredictor,
     TiledCoverageTrackPredictor,
     VariantEffectScorer,
@@ -241,7 +241,7 @@ CHEN_FIELDS: tuple[str, ...] = (
 
 SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     VariantEffectScorer: (_shorkie_eqtl_adapter, REFS_FIELDS),
-    MarginalizedSequenceExpressionPredictor: (_shorkie_mpra_marginalized_adapter, REFS_FIELDS),
+    SequenceExpressionScorer: (_shorkie_mpra_marginalized_adapter, REFS_FIELDS),
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_shorkie_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_shorkie_hong_adapter, FASTA_ONLY),
@@ -253,7 +253,7 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
 
 YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     VariantEffectScorer: (_yorzoi_eqtl_adapter, REFS_FIELDS),
-    MarginalizedSequenceExpressionPredictor: (_yorzoi_mpra_marginalized_adapter, REFS_FIELDS),
+    SequenceExpressionScorer: (_yorzoi_mpra_marginalized_adapter, REFS_FIELDS),
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_yorzoi_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_yorzoi_hong_adapter, FASTA_ONLY),
@@ -316,11 +316,23 @@ def _build_codon_transformer_baseline(task: Benchmark, device: str, **cfg: Any) 
     )
 
 
+def _build_dream_rnn_baseline(task: Benchmark, device: str, **cfg: Any) -> Any:
+    from yeastbench.adapters.dream_rnn_rafi import DreamRnnRafiPredictor
+
+    if task.adapter_protocol is not SequenceExpressionScorer:
+        raise ValueError(
+            f"dream_rnn baseline only supports SequenceExpressionScorer tasks; "
+            f"got {task.adapter_protocol.__name__}"
+        )
+    return DreamRnnRafiPredictor.from_weights(device=device, **cfg)
+
+
 MODELS: dict[str, ModelFactory] = {
     "shorkie": _build_shorkie,
     "yorzoi": _build_yorzoi,
     "cai": _build_cai_baseline,
     "codon_transformer": _build_codon_transformer_baseline,
+    "dream_rnn": _build_dream_rnn_baseline,
 }
 
 

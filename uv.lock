@@ -2471,6 +2471,9 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+dream-rnn = [
+    { name = "torch" },
+]
 shorkie = [
     { name = "h5py" },
     { name = "torch" },
@@ -2499,13 +2502,14 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "torch", marker = "extra == 'dream-rnn'", specifier = ">=2.11.0" },
     { name = "torch", marker = "extra == 'shorkie'", specifier = ">=2.11.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "typer", specifier = ">=0.12" },
-    { name = "yeast-seq2epxression-benchmark", extras = ["shorkie", "yorzoi", "data"], marker = "extra == 'all'" },
+    { name = "yeast-seq2epxression-benchmark", extras = ["shorkie", "yorzoi", "dream-rnn", "data"], marker = "extra == 'all'" },
     { name = "yorzoi", marker = "extra == 'yorzoi'", specifier = ">=0.0.3" },
 ]
-provides-extras = ["shorkie", "yorzoi", "data", "all", "dev"]
+provides-extras = ["shorkie", "yorzoi", "dream-rnn", "data", "all", "dev"]
 
 [[package]]
 name = "yorzoi"

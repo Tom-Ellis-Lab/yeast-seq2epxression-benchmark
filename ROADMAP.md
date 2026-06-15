@@ -102,13 +102,9 @@ files under `benchmarks/`. This roadmap tracks status only.
 - [x] Yorzoi marginalized adapter (strand-matched tracks)
 - [x] Pair-difference Pearson for SNV / motif pair strata (`per_pair_stratum`
   with `diff_pearson_r` in both summaries)
-- [ ] DREAM-RNN supervised reference baseline — Prix Fixe BHI model
-  (in-distribution upper bound, reported separately from zero-shot). Raw 80 bp
-  insert → scalar. Architecture vendored at
-  `shorkie-paper/from_kuanhao/eQTL/data/eQTL_MPRA_models_eval/prixfixe/bhi/`;
-  weights from the
-  [de-Boer-Lab repo](https://github.com/de-Boer-Lab/random-promoter-dream-challenge-2022)
-  or retrained
+- [x] DREAM-RNN supervised baseline — single in-distribution model, reported
+  separately from zero-shot (spec: `benchmarks/rafi_mpra_promoter.md`); weights
+  pending publish to mirrors
 
 #### Shalem / Segal (terminator)
 

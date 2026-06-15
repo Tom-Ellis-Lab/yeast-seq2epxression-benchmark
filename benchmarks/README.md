@@ -15,7 +15,7 @@ not in the individual specs. The forward-looking task list lives in
 | --- | --- | --- | --- | --- |
 | [Caudal eQTL](caudal_eqtl.md) | *cis*-regulatory variants | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) | implemented |
 | [Kita eQTL](kita_eqtl.md) | *cis*-regulatory variants (independent panel) | binary classification | AUROC / AUPRC | implemented |
-| Rafi / deBoer MPRA (promoter) | promoter grammar | regression (marginalized logSED) | Pearson / Spearman | implemented — no standalone spec, see [ROADMAP § MPRA](../ROADMAP.md) |
+| [Rafi / deBoer MPRA (promoter)](rafi_mpra_promoter.md) | promoter grammar | regression (marginalized logSED) | Pearson / Spearman | implemented (zero-shot); DREAM-RNN supervised baseline spec'd |
 | [Shalem MPRA (terminator)](shalem_mpra_terminator.md) | 3′-end / termination grammar | regression (marginalized logSED) | Pearson *r* (Spearman alongside) | implemented |
 | [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | implemented |
 | [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect (ORF-deletion locus) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | implemented, GPU runs done |

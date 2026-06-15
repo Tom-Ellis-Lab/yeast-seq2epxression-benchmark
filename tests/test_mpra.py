@@ -7,7 +7,7 @@ from typing import Sequence
 import numpy as np
 import pytest
 
-from yeastbench.adapters.protocols import MarginalizedSequenceExpressionPredictor
+from yeastbench.adapters.protocols import SequenceExpressionScorer
 from yeastbench.benchmarks.base import BenchmarkInfo
 from yeastbench.benchmarks.mpra import (
     PAIR_STRATA,
@@ -28,14 +28,14 @@ class LinearPredictor:
     """Predicts expression as a noisy linear function of the true label.
 
     Given the true labels at construction time, returns
-    ``labels * scale + noise`` from predict_marginalized_expressions.
+    ``labels * scale + noise`` from predict_expression_scores.
     """
 
     def __init__(self, labels: np.ndarray, scale: float = 1.0, noise_std: float = 0.05, seed: int = 0):
         rng = np.random.default_rng(seed)
         self.predictions = labels * scale + rng.normal(0, noise_std, size=len(labels))
 
-    def predict_marginalized_expressions(self, seqs: Sequence[str]) -> np.ndarray:
+    def predict_expression_scores(self, seqs: Sequence[str]) -> np.ndarray:
         return self.predictions
 
 
@@ -45,12 +45,12 @@ class ConstantPredictor:
     def __init__(self, value: float = 0.5):
         self.value = value
 
-    def predict_marginalized_expressions(self, seqs: Sequence[str]) -> np.ndarray:
+    def predict_expression_scores(self, seqs: Sequence[str]) -> np.ndarray:
         return np.full(len(seqs), self.value)
 
 
-assert isinstance(LinearPredictor(np.array([0.0])), MarginalizedSequenceExpressionPredictor)
-assert isinstance(ConstantPredictor(), MarginalizedSequenceExpressionPredictor)
+assert isinstance(LinearPredictor(np.array([0.0])), SequenceExpressionScorer)
+assert isinstance(ConstantPredictor(), SequenceExpressionScorer)
 
 
 # ── Synthetic distribution uses mpra_distribution fixture from conftest ──

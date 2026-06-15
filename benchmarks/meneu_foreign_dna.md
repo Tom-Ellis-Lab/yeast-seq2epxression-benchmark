@@ -44,10 +44,11 @@ from held-out yeast regions to non-native DNA the model provably never saw.
 
 It is mechanically the **Brooks SCRaMBLE coverage benchmark with the LFC
 machinery stripped out**: same `CoverageTrackPredictor`-style protocol
-(sequence-in / per-base coverage-out), same model adapters, same "self-contained
-TSV per receptive field" data pattern. The genuinely new code is (a) tiling a
-megabase contig end-to-end (Brooks predicts isolated gene windows) and (b) a
-per-chromosome Pearson/Spearman over the stitched track instead of paired LFC.
+(sequence-in / per-base coverage-out), same model adapters. The genuinely new
+code is (a) tiling a megabase contig end-to-end (Brooks predicts isolated gene
+windows), to the model's receptive field at run time from a single
+window-agnostic per-contig artifact, and (b) a per-chromosome Pearson/Spearman
+over the stitched track instead of paired LFC.
 
 ### The reference ladder (orientation, not competition)
 
@@ -273,13 +274,16 @@ strand)` block is stale — this batched API is the live one.)
   built (deferred; see *Open questions*).
 
 ### Processed distribution (the run-time dependency)
-- `data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1.tsv` (4992 / Yorzoi) and
-  `..._v1_w16384.tsv` (16384 / Shorkie) — **built, gitignored.** One row per tile:
-  `tile_id, chrom, strain, window_start, center_start, window_len,
-  crop_bp_each_side, seq`. Plus a window-agnostic per-genome coverage sidecar
-  `meneu_cov_<contig>.npz` (`fwd` / `rev`, float32, per base). The benchmark stitches
-  each tile's central prediction into a per-base profile and scores it against
-  `fwd + rev`. At run time it depends on these built files alone — no figshare, no GEO.
+- `data/tasks/meneu_foreign_dna/meneu_cov_<contig>.npz` — **built, gitignored.**
+  One **window-agnostic** sidecar per contig holding the full contig `seq`
+  (uint8/ASCII) plus per-base `fwd` / `rev` coverage (float32). The benchmark
+  reads `seq`, tiles it to the adapter's receptive field **at run time**
+  (`tile_contig`: stride = predicted-region length, N-padded ends), stitches each
+  tile's central prediction into a per-base profile, and scores it against
+  `fwd + rev`. One artifact serves every model — there is no per-window TSV any
+  more, so this is a single registry task (`meneu_foreign_dna`) regardless of
+  receptive field. At run time it depends on these built files alone — no
+  figshare, no GEO.
 
 ### Track subsets / RC averaging
 - **Shorkie:** the **384-track T0 subset** (`SHORKIE_T0_RNA_SEQ_TRACK_IDS`), for
@@ -299,10 +303,10 @@ strand)` block is stale — this batched API is the live one.)
 
 ### Build script
 - `scripts/meneu/build_meneu_distribution.py` — the only component that touches
-  figshare: downloads each genome's FASTA + fwd/rev coverage `.npz`, tiles the
-  contig per window size (stride = predicted-region length, N-padded ends), and
-  writes the TSV(s) + per-genome `meneu_cov_<contig>.npz` sidecar.
-  `uv run python scripts/meneu/build_meneu_distribution.py --window {4992,16384}`.
+  figshare: downloads each genome's FASTA + fwd/rev coverage `.npz` and writes one
+  window-agnostic `meneu_cov_<contig>.npz` per genome (`seq` + `fwd` + `rev`). No
+  tiling at build time — the benchmark tiles to the model's receptive field at run
+  time. `uv run python scripts/meneu/build_meneu_distribution.py`.
   No pyBigWig (coverage is already per-base `.npz`); no masking (whole contig scored).
 
 ## Open questions / TODO

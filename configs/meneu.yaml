@@ -4,21 +4,15 @@
 # into S. cerevisiae and predict their per-base RNA-seq coverage, scored per
 # contig against the measured RNA-seq (see benchmarks/meneu_foreign_dna.md).
 #
-# Two distribution files, one per model receptive field:
-#   - meneu_foreign_dna_v1.tsv         (4,992 bp window, Yorzoi)
-#   - meneu_foreign_dna_v1_w16384.tsv  (16,384 bp window, Shorkie)
+# One window-agnostic artifact per contig (meneu_cov_<contig>.npz: seq + fwd/rev).
+# The benchmark tiles each contig to the model's receptive field at run time, so
+# both models run the single `meneu_foreign_dna` task.
 #
 #   uv run ybench run --config configs/meneu.yaml
 #   uv run ybench run --config configs/meneu.yaml --model shorkie
 
 out_dir: results/meneu
 device: cuda
-
-tasks_config:
-  meneu_foreign_dna:
-    data_path: data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1.tsv
-  meneu_foreign_dna_shorkie:
-    data_path: data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1_w16384.tsv
 
 runs:
   - model: yorzoi
@@ -34,7 +28,7 @@ runs:
       track_mode: illumina_exo
 
   - model: shorkie
-    tasks: [meneu_foreign_dna_shorkie]
+    tasks: [meneu_foreign_dna]
     model_config:
       params_path: data/models/shorkie/params.json
       checkpoint_paths:

@@ -1,20 +1,22 @@
 #!/usr/bin/env python
 """Build the Meneu foreign-DNA coverage distribution.
 
-Mirrors ``scripts/brooks/build_brooks_distribution.py`` but for a tiled
-megabase contig instead of gene-centred windows. The *only* component that
-touches the network: it downloads the ExoShorkie figshare release (genome
-FASTAs + per-base normalized RNA-seq coverage, as ``.npz`` numpy arrays keyed
-by contig) into a cache, then bakes:
+Mirrors ``scripts/brooks/build_brooks_distribution.py`` but for whole megabase
+contigs instead of gene-centred windows. The *only* component that touches the
+network: it downloads the ExoShorkie figshare release (genome FASTAs + per-base
+normalized RNA-seq coverage, as ``.npz`` numpy arrays keyed by contig) into a
+cache, then writes one window-agnostic sidecar ``.npz`` per genome holding:
 
-  * one TSV per receptive-field window size (tile metadata + input sequence),
-  * one coverage sidecar ``.npz`` per genome (per-base fwd/rev, window-agnostic).
+  * ``seq`` — the full contig DNA (uint8/ASCII),
+  * ``fwd`` / ``rev`` — per-base normalized coverage.
 
-At eval time the benchmark depends on these built files alone (no figshare).
+The benchmark tiles each contig to the model's receptive field *at run time*
+(``yeastbench.benchmarks.meneu.tile_contig``), so a single artifact serves every
+model — there is no longer a per-window TSV. At eval time the benchmark depends
+on these built files alone (no figshare).
 
 Run:
-    uv run python scripts/meneu/build_meneu_distribution.py --window 4992
-    uv run python scripts/meneu/build_meneu_distribution.py --window 16384
+    uv run python scripts/meneu/build_meneu_distribution.py
 
 See ``benchmarks/meneu_foreign_dna.md``.
 """
@@ -25,7 +27,6 @@ import urllib.request
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 # ── Paths ────────────────────────────────────────────────────────────────
 OUT_DIR = Path("data/tasks/meneu_foreign_dna")
@@ -49,11 +50,6 @@ GENOMES: dict[str, dict[str, str]] = {
         "rev": "61042567",
     },
 }
-
-# Receptive fields: window -> crop_bp_each_side (Yorzoi 4992/996, Shorkie 16384/1024).
-WINDOW_CROP: dict[int, int] = {4992: 996, 16384: 1024}
-DEFAULT_WINDOW = 4992
-
 
 # ── Helpers (read_fasta mirrors the Brooks builder) ──────────────────────
 def fetch(file_id: str, name: str) -> Path:
@@ -85,72 +81,34 @@ def load_coverage(contig: str, cfg: dict[str, str]) -> tuple[np.ndarray, np.ndar
     return fwd, rev
 
 
-def tile_rows(contig: str, strain: str, seq: str, window: int, crop: int) -> list[dict]:
-    """Tile the contig so each window's central (predicted) region of length
-    ``stride = window - 2*crop`` tiles [0, L) contiguously. Windows overlap
-    neighbours by ``crop`` on each side; contig ends are N-padded."""
-    L = len(seq)
-    stride = window - 2 * crop
-    n_tiles = (L + stride - 1) // stride
-    rows = []
-    for i in range(n_tiles):
-        center_start = i * stride
-        ws = center_start - crop  # window start in contig coords (may be < 0)
-        # N-padded window slice [ws, ws+window)
-        left_pad = max(0, -ws)
-        right_pad = max(0, (ws + window) - L)
-        core = seq[max(0, ws): min(L, ws + window)]
-        win = "N" * left_pad + core + "N" * right_pad
-        assert len(win) == window, (len(win), window, i)
-        rows.append(
-            dict(
-                tile_id=f"{contig}_{i}",
-                chrom=contig,
-                strain=strain,
-                window_start=ws,          # contig coord of window col 0 (may be negative)
-                center_start=center_start,  # contig coord where the predicted region starts
-                window_len=window,
-                crop_bp_each_side=crop,
-                seq=win,
-            )
-        )
-    return rows
-
-
-def build(window: int, genomes: list[str]) -> Path:
-    crop = WINDOW_CROP[window]
+def build(genomes: list[str]) -> None:
+    """Write one window-agnostic ``meneu_cov_<contig>.npz`` per genome holding
+    the full contig sequence + per-base fwd/rev coverage. The benchmark tiles
+    these at run time to the model's receptive field."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    all_rows: list[dict] = []
     for contig in genomes:
         cfg = GENOMES[contig]
         seq = read_fasta(fetch(cfg["fasta"], f"{contig}.fa"))[contig]
-        # Coverage sidecar is window-agnostic — write once.
+        fwd, rev = load_coverage(contig, cfg)
+        assert len(seq) == len(fwd) == len(rev), (len(seq), len(fwd), len(rev))
         cov_path = OUT_DIR / f"meneu_cov_{contig}.npz"
-        if not cov_path.exists():
-            fwd, rev = load_coverage(contig, cfg)
-            assert len(seq) == len(fwd) == len(rev), (len(seq), len(fwd), len(rev))
-            np.savez_compressed(cov_path, fwd=fwd, rev=rev)
-            print(f"  wrote {cov_path}  (len {len(seq):,}, "
-                  f"unstranded mean {(fwd + rev).mean():.3g}, frac0 {np.mean((fwd + rev) == 0):.3f})")
-        all_rows.extend(tile_rows(contig, cfg["strain"], seq, window, crop))
-
-    df = pd.DataFrame(all_rows)
-    out = (OUT_DIR / "meneu_foreign_dna_v1.tsv" if window == DEFAULT_WINDOW
-           else OUT_DIR / f"meneu_foreign_dna_v1_w{window}.tsv")
-    df.to_csv(out, sep="\t", index=False)
-    print(f"wrote {out}  ({len(df)} tiles across {len(genomes)} genomes, window {window})")
-    return out
+        np.savez_compressed(
+            cov_path,
+            seq=np.frombuffer(seq.encode("ascii"), dtype=np.uint8),
+            fwd=fwd,
+            rev=rev,
+        )
+        print(f"  wrote {cov_path}  (len {len(seq):,}, "
+              f"unstranded mean {(fwd + rev).mean():.3g}, "
+              f"frac0 {np.mean((fwd + rev) == 0):.3f})")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--window", type=int, default=DEFAULT_WINDOW,
-                    choices=sorted(WINDOW_CROP),
-                    help=f"Receptive-field window (bp). {DEFAULT_WINDOW} Yorzoi, 16384 Shorkie.")
     ap.add_argument("--genomes", nargs="+", default=list(GENOMES),
-                    choices=list(GENOMES), help="Which exogenous contigs to tile.")
+                    choices=list(GENOMES), help="Which exogenous contigs to bake.")
     args = ap.parse_args()
-    build(args.window, args.genomes)
+    build(args.genomes)
 
 
 if __name__ == "__main__":

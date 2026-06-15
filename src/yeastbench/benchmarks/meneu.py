@@ -45,7 +45,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
-import pandas as pd
 from scipy.stats import pearsonr
 
 from yeastbench.adapters.protocols import TiledCoverageTrackPredictor
@@ -82,6 +81,43 @@ def _normalize(x: np.ndarray) -> np.ndarray:
     return x / s
 
 
+@dataclass(frozen=True)
+class _Tile:
+    window_start: int   # contig coord of window col 0 (may be negative)
+    center_start: int   # contig coord where the predicted region starts
+    seq: str            # input window, exactly ``window`` bp, N-padded at ends
+
+
+def tile_contig(seq: str, window: int, crop: int) -> list[_Tile]:
+    """Tile a contig so each window's central (predicted) region of length
+    ``stride = window - 2*crop`` tiles ``[0, L)`` contiguously. Windows overlap
+    neighbours by ``crop`` on each side; contig ends are N-padded.
+
+    Ported verbatim from the build script's ``tile_rows`` so runtime tiling
+    reproduces the (formerly pre-cut) distribution bit-for-bit. The window and
+    crop come from the *adapter* (its receptive field), so one contig serves
+    any model — this is what lets Meneu be a single task."""
+    L = len(seq)
+    stride = window - 2 * crop
+    assert stride > 0, (
+        f"invalid tiling geometry: window ({window}) must exceed 2*crop "
+        f"({2 * crop}) so the predicted region out_len = window - 2*crop is "
+        "positive; check the adapter's seq_len / crop_bp_each_side"
+    )
+    n_tiles = (L + stride - 1) // stride
+    tiles: list[_Tile] = []
+    for i in range(n_tiles):
+        center_start = i * stride
+        ws = center_start - crop                  # window start (may be < 0)
+        left_pad = max(0, -ws)
+        right_pad = max(0, (ws + window) - L)
+        core = seq[max(0, ws): min(L, ws + window)]
+        win = "N" * left_pad + core + "N" * right_pad
+        assert len(win) == window, (len(win), window, i)
+        tiles.append(_Tile(window_start=ws, center_start=center_start, seq=win))
+    return tiles
+
+
 class MeneuForeignDNABenchmark(
     Benchmark[TiledCoverageTrackPredictor, MeneuResults]
 ):
@@ -90,24 +126,38 @@ class MeneuForeignDNABenchmark(
     EVAL_WINDOW: ClassVar[int] = 5000
     FLOOR_EPS: ClassVar[float] = 1e-9
 
+    #: Arrays every window-agnostic sidecar must carry.
+    _SIDECAR_KEYS: ClassVar[frozenset[str]] = frozenset({"seq", "fwd", "rev"})
+
     def __init__(self, data_path: Path, info: BenchmarkInfo) -> None:
+        # ``data_path`` is the task data directory. Contigs are discovered from
+        # the window-agnostic coverage sidecars ``meneu_cov_<contig>.npz``; each
+        # carries the contig ``seq`` (so the benchmark can tile at run time to
+        # whatever window the adapter needs) plus per-base ``fwd``/``rev``.
         self.data_path = Path(data_path)
         self.info = info
-        self.data_dir = self.data_path.parent
-        df = pd.read_csv(self.data_path, sep="\t")
-        for col in ("tile_id", "chrom", "strain", "window_start",
-                    "center_start", "window_len", "crop_bp_each_side",
-                    "seq"):
-            assert col in df.columns, f"{col} missing from {self.data_path}"
-        window_len = int(df.window_len.iloc[0])
-        assert (df.window_len == window_len).all(), (
-            f"all rows of {self.data_path} must share window_len"
+        self.data_dir = self.data_path
+        cov_files = sorted(self.data_dir.glob(f"{COV_PREFIX}*.npz"))
+        assert cov_files, (
+            f"no {COV_PREFIX}*.npz coverage sidecars in {self.data_dir} — "
+            "fetch the distribution with `ybench data get`"
         )
-        assert (df.seq.str.len() == window_len).all(), (
-            f"all seq strings must be {window_len} bp"
-        )
-        self.window_len = window_len
-        self.df = df.reset_index(drop=True)
+        # Validate each sidecar's schema up front (the old TSV-backed __init__
+        # validated columns at construction): a stale pre-tiling sidecar holds
+        # only fwd/rev, and globbing filenames alone would let it through to
+        # fail later with an opaque ``KeyError('seq')`` inside evaluate().
+        # ``NpzFile.files`` reads the zip directory only — no arrays loaded.
+        contigs: list[str] = []
+        for cp in cov_files:
+            with np.load(cp) as d:
+                missing = self._SIDECAR_KEYS - set(d.files)
+            assert not missing, (
+                f"{cp} is missing array(s) {sorted(missing)} — it looks like a "
+                "stale pre-tiling sidecar (fwd/rev only); re-fetch with "
+                "`ybench data get`"
+            )
+            contigs.append(cp.name[len(COV_PREFIX):-len(".npz")])
+        self.contigs: list[str] = contigs
 
     def _run_batched(
         self,
@@ -135,6 +185,12 @@ class MeneuForeignDNABenchmark(
             )
             out_chunks.append(np.asarray(arr, dtype=np.float64))
         return np.concatenate(out_chunks, axis=0)
+
+    def _load_contig_seq(self, contig: str) -> str:
+        """The full contig DNA (window-agnostic), stored as a uint8/ASCII array
+        in the coverage sidecar alongside ``fwd``/``rev``."""
+        with np.load(self.data_dir / f"{COV_PREFIX}{contig}.npz") as d:
+            return d["seq"].tobytes().decode("ascii")
 
     def _load_truth(self, contig: str) -> np.ndarray:
         path = self.data_dir / f"{COV_PREFIX}{contig}.npz"
@@ -197,39 +253,41 @@ class MeneuForeignDNABenchmark(
         }
 
     def evaluate(self, adapter: TiledCoverageTrackPredictor) -> MeneuResults:
-        assert adapter.seq_len == self.window_len, (
-            f"adapter seq_len {adapter.seq_len} != distribution window_len "
-            f"{self.window_len}; pick a TSV that matches the model "
-            "(`meneu_foreign_dna_v1.tsv` for Yorzoi @ 4992, "
-            "`meneu_foreign_dna_v1_w16384.tsv` for Shorkie @ 16384)."
-        )
+        # Window + crop come from the adapter's receptive field; the contig is
+        # tiled to match at run time (``tile_contig``). There's no fixed
+        # per-task window any more, so one task serves every model.
+        window = adapter.seq_len
         crop = adapter.crop_bp_each_side
-        out_len = adapter.seq_len - 2 * crop
+        out_len = window - 2 * crop
 
-        contigs = list(self.df.chrom.drop_duplicates())
         per_contig: dict[str, dict] = {}
         stitched_pred: dict[str, np.ndarray] = {}
 
-        for contig in contigs:
-            g = self.df[self.df.chrom == contig].sort_values("center_start")
+        for contig in self.contigs:
+            seq = self._load_contig_seq(contig)
             true = self._load_truth(contig)
+            assert len(seq) == len(true), (
+                f"{contig}: seq length {len(seq)} != coverage length "
+                f"{len(true)} in {COV_PREFIX}{contig}.npz"
+            )
             L = len(true)
             pred = np.zeros(L, dtype=np.float64)
 
+            tiles = tile_contig(seq, window, crop)
             tile_pred = self._run_batched(
                 adapter,
-                seqs=g.seq.tolist(),
-                strands=["+"] * len(g),
-                strains=[None] * len(g),
-                desc=f"{contig} (n={len(g)})",
+                seqs=[t.seq for t in tiles],
+                strands=["+"] * len(tiles),
+                strains=[None] * len(tiles),
+                desc=f"{contig} (n={len(tiles)})",
             )
-            assert tile_pred.shape == (len(g), out_len), (
+            assert tile_pred.shape == (len(tiles), out_len), (
                 f"adapter returned {tile_pred.shape}, expected "
-                f"({len(g)}, {out_len})"
+                f"({len(tiles)}, {out_len})"
             )
 
-            for row_i, center_start in enumerate(g.center_start.to_numpy()):
-                cs = int(center_start)
+            for row_i, t in enumerate(tiles):
+                cs = t.center_start
                 ce = min(cs + out_len, L)
                 pred[cs:ce] = tile_pred[row_i, : ce - cs]
 
@@ -237,8 +295,8 @@ class MeneuForeignDNABenchmark(
             stitched_pred[contig] = pred
 
         return MeneuResults(
-            window_len=self.window_len,
-            contigs=contigs,
+            window_len=window,
+            contigs=list(self.contigs),
             per_contig=per_contig,
             stitched_pred=stitched_pred,
         )
@@ -356,16 +414,7 @@ class MeneuForeignDNABenchmark(
 
     def headline_metric_labels(self) -> dict[str, str]:
         labels: dict[str, str] = {}
-        for c in self.df.chrom.drop_duplicates():
+        for c in self.contigs:
             labels[f"{c}_shape_pearson"] = f"{c} shape r"
             labels[f"{c}_shape_js"] = f"{c} shape JS"
         return labels
-
-    @property
-    def compare_task_name(self) -> str:
-        """Meneu ships two registry entries (`meneu_foreign_dna` for
-        Yorzoi @ 4992, `meneu_foreign_dna_shorkie` for Shorkie @ 16384)
-        because the two models need differently-sized windows. Cross-model
-        comparisons treat them as one task — the canonical name is
-        `meneu_foreign_dna`."""
-        return "meneu_foreign_dna"

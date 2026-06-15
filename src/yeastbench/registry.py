@@ -472,9 +472,10 @@ def _build_brooks_scramble_shorkie(data_path: str | Path) -> Benchmark:
 
 
 def _build_meneu(
-    data_path: str | Path =
-        "data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1.tsv",
+    data_path: str | Path = "data/tasks/meneu_foreign_dna",
 ) -> Benchmark:
+    """One task for every model: the benchmark tiles each contig to the
+    adapter's receptive field at run time, so there's no per-window split."""
     from yeastbench.benchmarks.meneu import MeneuForeignDNABenchmark
 
     return MeneuForeignDNABenchmark(
@@ -482,27 +483,10 @@ def _build_meneu(
         info=BenchmarkInfo(
             name="meneu_foreign_dna",
             version="v1",
-            description="Meneu et al. foreign-DNA zero-shot coverage (4992 bp window)",
-            distribution_uri="",
-        ),
-    )
-
-
-def _build_meneu_shorkie(
-    data_path: str | Path =
-        "data/tasks/meneu_foreign_dna/meneu_foreign_dna_v1_w16384.tsv",
-) -> Benchmark:
-    """Same benchmark class, reads the 16,384 bp distribution for
-    Shorkie's receptive field. Separate task names route the right TSV
-    to the right model (mirrors the Brooks split)."""
-    from yeastbench.benchmarks.meneu import MeneuForeignDNABenchmark
-
-    return MeneuForeignDNABenchmark(
-        data_path=Path(data_path),
-        info=BenchmarkInfo(
-            name="meneu_foreign_dna_shorkie",
-            version="v1-shorkie",
-            description="Meneu et al. foreign-DNA — 16,384 bp window (Shorkie)",
+            description=(
+                "Meneu et al. foreign-DNA zero-shot RNA-seq coverage; contigs "
+                "tiled at run time to the model's receptive field"
+            ),
             distribution_uri="",
         ),
     )
@@ -565,7 +549,6 @@ TASKS: dict[str, TaskFactory] = {
     "brooks_scramble": _build_brooks_scramble,
     "brooks_scramble_shorkie": _build_brooks_scramble_shorkie,
     "meneu_foreign_dna": _build_meneu,
-    "meneu_foreign_dna_shorkie": _build_meneu_shorkie,
     "chen_gfp_r1": _build_chen,
     "chen_gfp_r2": _build_chen,
     "chen_tdh3": _build_chen,

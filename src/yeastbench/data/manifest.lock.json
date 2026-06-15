@@ -99,20 +99,12 @@
     "meneu_foreign_dna": {
       "files": {
         "meneu_cov_Mmmyco.npz": {
-          "sha256": "7d0edad3887b1444061017c69683bc6356cce65917834df1c251a1d13bca3b07",
-          "size": 820487
+          "sha256": "874239905be68b3cf2afb1d1891e98fd255f9fad56aa183cdd0c1cf9fb59b8e2",
+          "size": 1124289
         },
         "meneu_cov_Mpneumo.npz": {
-          "sha256": "eef3ff3f5ded83a5b7c3d80ed7e6227f9f9934ac3d5ce0876bef252227140f8c",
-          "size": 2138629
-        },
-        "meneu_foreign_dna_v1.tsv": {
-          "sha256": "7facc169c69ca0a7768a9dc42e9ed51b7a78215a1aeeca268c420ed0002e8f11",
-          "size": 3434679
-        },
-        "meneu_foreign_dna_v1_w16384.tsv": {
-          "sha256": "16cc424f6e51051880e766874551b845c5d67bb4e9074ca1ca9ca6678eefeee3",
-          "size": 2366954
+          "sha256": "ffb9a0fad0f4cd522fb0bbdc8eb87edc1111366909f904dd1f1b8598d6d2acd6",
+          "size": 2373203
         }
       }
     },

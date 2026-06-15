@@ -1,23 +1,27 @@
 """Tests for the Meneu foreign-DNA tiled-coverage benchmark.
 
-The benchmark tiles a whole contig end-to-end, stitches the per-tile
-central predictions into one per-base track, and scores it per contig
-against a measured RNA-seq coverage sidecar (``meneu_cov_<contig>.npz``,
-arrays ``fwd``/``rev``). The tests build a tiny self-contained TSV +
-matching tiny ``.npz`` sidecars and run the whole path against a
+The benchmark tiles a whole contig to the *adapter's* receptive field at run
+time, stitches the per-tile central predictions into one per-base track, and
+scores it per contig against a measured RNA-seq coverage sidecar
+(``meneu_cov_<contig>.npz``, arrays ``seq``/``fwd``/``rev``). The tests build a
+tiny self-contained set of ``.npz`` sidecars and run the whole path against a
 pure-numpy mock ``TiledCoverageTrackPredictor`` — no GPU, no torch.
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from yeastbench.adapters.protocols import TiledCoverageTrackPredictor
 from yeastbench.benchmarks.base import BenchmarkInfo
-from yeastbench.benchmarks.meneu import MeneuForeignDNABenchmark
+from yeastbench.benchmarks.meneu import (
+    COV_PREFIX,
+    MeneuForeignDNABenchmark,
+    tile_contig,
+)
 from yeastbench.registry import TASKS
 
 INFO = BenchmarkInfo(name="test_meneu", version="test", description="t",
@@ -29,10 +33,10 @@ CROP = 4
 OUT_LEN = SEQ_LEN - 2 * CROP            # 12 — the per-tile central region
 
 # Two contigs. Lengths chosen so each gives exactly one 5 kb eval window
-# (L // EVAL_WINDOW == 1) and the *second* contig's length is not a
-# multiple of OUT_LEN, so its final tile is clipped (exercises stitching
-# of a short last tile). Both are fully covered exactly once.
-CONTIGS = {"Mpneumo": 6000, "Mmmyco": 5496}
+# (L // EVAL_WINDOW == 1). Mmmyco's length is NOT a multiple of the stride, so
+# its final tile's central region is clipped on stitching (exercises a short
+# last tile). Both are fully covered exactly once.
+CONTIGS = {"Mpneumo": 6000, "Mmmyco": 5500}
 
 _BASE_CODE = {"A": 1.0, "C": 2.0, "G": 3.0, "T": 4.0, "N": 0.0}
 
@@ -60,36 +64,20 @@ def _split_fwd_rev(truth: np.ndarray, rng: np.random.Generator
 
 
 @pytest.fixture
-def meneu_tsv(tmp_path: Path) -> Path:
-    """Write a tiny TSV (both contigs tiled) + matching tiny
-    ``meneu_cov_<contig>.npz`` sidecars next to it. Returns the TSV path."""
+def meneu_dir(tmp_path: Path) -> Path:
+    """Write tiny window-agnostic ``meneu_cov_<contig>.npz`` sidecars
+    (seq + fwd + rev) and return the directory holding them."""
     rng = np.random.default_rng(0)
-    rows = []
     for chrom, L in CONTIGS.items():
         full = _contig_seq(rng, L)
         truth = _truth_from_seq(full)
         fwd, rev = _split_fwd_rev(truth, rng)
-        np.savez(tmp_path / f"meneu_cov_{chrom}.npz", fwd=fwd, rev=rev)
-        # Tiles ordered by center_start, stepping by the stride (== OUT_LEN).
-        for tile_i, center_start in enumerate(range(0, L, OUT_LEN)):
-            window_start = center_start - CROP
-            # Slice the window from the contig, N-padding the contig ends.
-            chars = []
-            for j in range(window_start, window_start + SEQ_LEN):
-                chars.append(full[j] if 0 <= j < L else "N")
-            rows.append({
-                "tile_id": f"{chrom}_{tile_i}",
-                "chrom": chrom,
-                "strain": f"strain_{chrom}",
-                "window_start": window_start,
-                "center_start": center_start,
-                "window_len": SEQ_LEN,
-                "crop_bp_each_side": CROP,
-                "seq": "".join(chars),
-            })
-    p = tmp_path / "mini_meneu.tsv"
-    pd.DataFrame(rows).to_csv(p, sep="\t", index=False)
-    return p
+        np.savez(
+            tmp_path / f"{COV_PREFIX}{chrom}.npz",
+            seq=np.frombuffer(full.encode("ascii"), dtype=np.uint8),
+            fwd=fwd, rev=rev,
+        )
+    return tmp_path
 
 
 class _MockAdapter:
@@ -122,9 +110,9 @@ class _MockAdapter:
 assert isinstance(_MockAdapter(), TiledCoverageTrackPredictor)
 
 
-def _contig_len(tsv: Path, chrom: str) -> int:
-    d = np.load(tsv.parent / f"meneu_cov_{chrom}.npz")
-    return len(d["fwd"])
+def _contig_len(data_dir: Path, chrom: str) -> int:
+    with np.load(data_dir / f"{COV_PREFIX}{chrom}.npz") as d:
+        return len(d["fwd"])
 
 
 _METRIC_KEYS = (
@@ -133,34 +121,57 @@ _METRIC_KEYS = (
 )
 
 
+# ── tile_contig (pure run-time tiling) ────────────────────────
+
+
+class TestTileContig:
+    def test_central_regions_tile_contiguously(self):
+        seq = "ACGT" * 25                     # 100 bp, no Ns
+        window, crop = 20, 4
+        stride = window - 2 * crop            # 12
+        tiles = tile_contig(seq, window, crop)
+        assert len(tiles) == (len(seq) + stride - 1) // stride
+        # center_starts step by stride from 0, covering [0, L)
+        assert [t.center_start for t in tiles] == list(range(0, len(seq), stride))
+        # every input window is exactly `window` bp
+        assert all(len(t.seq) == window for t in tiles)
+
+    def test_ends_are_n_padded(self):
+        seq = "ACGT" * 25
+        window, crop = 20, 4
+        tiles = tile_contig(seq, window, crop)
+        # first tile: window opens `crop` bp before the contig -> leading Ns
+        assert tiles[0].window_start == -crop
+        assert tiles[0].seq[:crop] == "N" * crop
+        assert tiles[0].seq[crop] == seq[0]
+        assert tiles[0].seq.count("N") == crop      # only the left pad
+        # last tile: window runs past the end -> trailing Ns
+        assert tiles[-1].seq.endswith("N")
+
+    def test_no_padding_when_window_equals_stride(self):
+        # crop=0 -> stride==window, interior tiles are exact contig slices
+        tiles = tile_contig("A" * 30, window=10, crop=0)
+        assert [t.window_start for t in tiles] == [0, 10, 20]
+        assert all(t.seq.count("N") == 0 for t in tiles)
+
+
 # ── benchmark ─────────────────────────────────────────────────
 
 
 class TestMeneuBenchmark:
-    def test_init_loads_and_validates_schema(self, meneu_tsv):
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
-        assert b.window_len == SEQ_LEN
-        assert (b.df.seq.str.len() == SEQ_LEN).all()
-        assert set(b.df.chrom.unique()) == set(CONTIGS)
+    def test_init_discovers_contigs(self, meneu_dir):
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
+        assert set(b.contigs) == set(CONTIGS)
 
-    def test_init_rejects_inconsistent_window_len(self, meneu_tsv):
-        df = pd.read_csv(meneu_tsv, sep="\t")
-        df.loc[0, "window_len"] = SEQ_LEN + 1     # mismatch
-        df.to_csv(meneu_tsv, sep="\t", index=False)
+    def test_init_requires_sidecars(self, tmp_path):
         with pytest.raises(AssertionError):
-            MeneuForeignDNABenchmark(meneu_tsv, INFO)
+            MeneuForeignDNABenchmark(tmp_path, INFO)     # empty dir
 
-    def test_init_rejects_missing_column(self, meneu_tsv, tmp_path):
-        df = pd.read_csv(meneu_tsv, sep="\t").drop(columns=["center_start"])
-        bad = tmp_path / "bad.tsv"
-        df.to_csv(bad, sep="\t", index=False)
-        with pytest.raises(AssertionError):
-            MeneuForeignDNABenchmark(bad, INFO)
-
-    def test_evaluate_metrics_present_and_finite(self, meneu_tsv):
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+    def test_evaluate_metrics_present_and_finite(self, meneu_dir):
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
         res = b.evaluate(_MockAdapter())
         assert set(res.contigs) == set(CONTIGS)
+        assert res.window_len == SEQ_LEN          # taken from the adapter
         for c in CONTIGS:
             pc = res.per_contig[c]
             for k in _METRIC_KEYS:
@@ -177,12 +188,12 @@ class TestMeneuBenchmark:
             # Mock shape co-varies with truth → high raw Pearson.
             assert pc["shape_pearson"] > 0.9
 
-    def test_fold_change_runs_over_all_windows(self, meneu_tsv):
+    def test_fold_change_runs_over_all_windows(self, meneu_dir):
         """Magnitude FC must cover ALL eval windows (option A), including a
         true-silent window where the model predicts coverage — that is a real
         mis-allocation and must register. The shape floor gates only the shape
         metrics; it must NOT shrink the magnitude window set."""
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
         W = b.EVAL_WINDOW
         rng = np.random.default_rng(1)
         # Window 0: genuine non-flat signal. Window 1: true all-zero (floored
@@ -204,8 +215,8 @@ class TestMeneuBenchmark:
         # The all-window mean differs from the kept-only (window-0) value.
         assert sc["mag_fc_mean"] != pytest.approx(float(fc[0]))
 
-    def test_tiling_covers_every_base(self, meneu_tsv):
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+    def test_tiling_covers_every_base(self, meneu_dir):
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
         res = b.evaluate(_MockAdapter())
         for c, L in CONTIGS.items():
             pred = res.stitched_pred[c]
@@ -219,12 +230,12 @@ class TestMeneuBenchmark:
                 f"{c}: stitching left an unwritten 0.0 hole at indices "
                 f"{np.flatnonzero(pred == 0).tolist()[:5]}"
             )
-            assert L == _contig_len(meneu_tsv, c)
+            assert L == _contig_len(meneu_dir, c)
 
-    def test_save_load_roundtrip_exact(self, meneu_tsv, tmp_path):
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+    def test_save_load_roundtrip_exact(self, meneu_dir):
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
         res = b.evaluate(_MockAdapter())
-        out = tmp_path / "out"
+        out = meneu_dir / "out"
         b.save_results(res, out)
         loaded = b.load_results(out)
         assert loaded.window_len == res.window_len
@@ -240,17 +251,17 @@ class TestMeneuBenchmark:
             # Metrics must NOT be dropped to NaN on load.
             assert np.isfinite(loaded.per_contig[c]["shape_pearson"])
 
-    def test_plot_writes_a_file_per_contig(self, meneu_tsv, tmp_path):
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+    def test_plot_writes_a_file_per_contig(self, meneu_dir):
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
         res = b.evaluate(_MockAdapter())
-        out = tmp_path / "p"
+        out = meneu_dir / "p"
         b.plot(res, out)
         assert out.is_dir()
         imgs = list(out.glob("*.png")) + list(out.glob("*.svg"))
         assert len(imgs) >= len(CONTIGS)
 
-    def test_summary_dict_is_flat_scalars(self, meneu_tsv):
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+    def test_summary_dict_is_flat_scalars(self, meneu_dir):
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
         res = b.evaluate(_MockAdapter())
         s = b.summary_dict(res)
         for c in CONTIGS:
@@ -259,8 +270,8 @@ class TestMeneuBenchmark:
                 assert key in s, f"{key} missing from summary"
                 assert isinstance(s[key], (int, float))
 
-    def test_headline_names_each_contig(self, meneu_tsv):
-        b = MeneuForeignDNABenchmark(meneu_tsv, INFO)
+    def test_headline_names_each_contig(self, meneu_dir):
+        b = MeneuForeignDNABenchmark(meneu_dir, INFO)
         res = b.evaluate(_MockAdapter())
         h = b.headline(res)
         assert isinstance(h, str)
@@ -272,17 +283,48 @@ class TestMeneuBenchmark:
 
 
 class TestMeneuRegistry:
-    def test_tasks_registered(self):
+    def test_single_task_registered(self):
         assert "meneu_foreign_dna" in TASKS
-        assert "meneu_foreign_dna_shorkie" in TASKS
+        # The window-split twin is gone — one task serves both models now.
+        assert "meneu_foreign_dna_shorkie" not in TASKS
 
-    def test_factory_builds_benchmark(self, meneu_tsv):
-        task = TASKS["meneu_foreign_dna"](data_path=meneu_tsv)
+    def test_factory_builds_benchmark(self, meneu_dir):
+        task = TASKS["meneu_foreign_dna"](data_path=meneu_dir)
         assert isinstance(task, MeneuForeignDNABenchmark)
         assert task.adapter_protocol is TiledCoverageTrackPredictor
 
-    def test_shorkie_factory_builds_same_class(self, meneu_tsv):
-        task = TASKS["meneu_foreign_dna_shorkie"](data_path=meneu_tsv)
-        assert isinstance(task, MeneuForeignDNABenchmark)
-        assert task.info.name == "meneu_foreign_dna_shorkie"
-        assert task.adapter_protocol is TiledCoverageTrackPredictor
+
+# ── bit-exactness regression guard (real shipped data) ────────
+#
+# Runtime tiling must reproduce the original pre-cut distribution exactly.
+# Each digest is sha256 over the center-ordered tile `seq` strings for one
+# (contig, window); the counts/digests were captured from the legacy TSVs
+# before they were removed. Skipped where the shipped data isn't present
+# (e.g. CI without a data fetch).
+
+_REAL_DIR = Path("data/tasks/meneu_foreign_dna")
+_REAL_CROP = {4992: 996, 16384: 1024}            # Yorzoi, Shorkie receptive fields
+_GOLDEN: dict[tuple[str, int], tuple[int, str]] = {
+    ("Mmmyco", 4992): (
+        408, "01d96e13ce2b7788d7588c14a226e794cff7ad52f222ce02c4ceeba1d1b5237f"),
+    ("Mmmyco", 16384): (
+        86, "4bd0478db1ac10950c5df8f451c11241429285a0cd6a556985236806c8e63177"),
+    ("Mpneumo", 4992): (
+        273, "5e6eddbaeea817e45595e579111e1a8024d174aa7d354ea37f677d248a9ac0a3"),
+    ("Mpneumo", 16384): (
+        58, "53d4ad3f1f6d1abbc8c2e6bf3be9864c0bf32b6e272129bd25d5b9189fb3e07b"),
+}
+
+
+@pytest.mark.parametrize("contig,window", sorted(_GOLDEN))
+def test_runtime_tiling_matches_shipped_distribution(contig, window):
+    npz = _REAL_DIR / f"{COV_PREFIX}{contig}.npz"
+    if not npz.exists():
+        pytest.skip(f"{npz} not present (data not fetched)")
+    with np.load(npz) as d:
+        seq = d["seq"].tobytes().decode("ascii")
+    tiles = tile_contig(seq, window, _REAL_CROP[window])
+    n_expected, digest_expected = _GOLDEN[(contig, window)]
+    assert len(tiles) == n_expected
+    digest = hashlib.sha256("".join(t.seq for t in tiles).encode()).hexdigest()
+    assert digest == digest_expected

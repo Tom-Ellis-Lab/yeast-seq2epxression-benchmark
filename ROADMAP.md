@@ -61,6 +61,15 @@ files under `benchmarks/`. This roadmap tracks status only.
   compares models *not* named in the run (ignoring `--model` / `--task`), silently
   pulling in stale on-disk results — confusing and error-prone. A run should
   compare exactly the (model, task) pairs it was given.
+- Unify window-split tasks: one logical benchmark = one registry task. The
+  benchmark tiles to the adapter's receptive field at run time from a single
+  window-agnostic artifact, dropping the `<task>_shorkie` twin and
+  `compare_task_name`.
+  - [x] Meneu: `meneu_foreign_dna` only; per-contig `meneu_cov_<contig>.npz`
+    (seq + fwd/rev), `tile_contig` at eval time (`benchmarks/meneu.py`)
+  - [ ] Brooks (`brooks_scramble*`): same transform, larger surface
+    (`benchmarks/brooks.py`, `configs/brooks.yaml`, manifest); keeps
+    `compare_task_name` until done
 
 ### eQTL
 
@@ -250,8 +259,10 @@ Meneu et al. foreign-DNA chromosome integration — spec
 - [x] Spec, build script, `MeneuForeignDNABenchmark` +
   `TiledCoverageTrackPredictor` protocol, Shorkie (T0) + Yorzoi (`illumina_exo`)
   adapters, registry, tests
-- [x] Two window-sized tasks (`meneu_foreign_dna` 4992 bp,
-  `meneu_foreign_dna_shorkie` 16384 bp) in `configs/meneu.yaml`
+- [x] Single task `meneu_foreign_dna` for both models — contigs tiled to each
+  model's receptive field at run time from one window-agnostic
+  `meneu_cov_<contig>.npz` (seq + fwd/rev) per contig (see "Unify window-split
+  tasks" under Infrastructure)
 
 ### Code-structure refactor
 

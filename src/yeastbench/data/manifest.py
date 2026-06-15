@@ -237,12 +237,11 @@ ARTIFACTS: tuple[Artifact, ...] = (
     _task(
         "meneu_foreign_dna",
         dest="data/tasks/meneu_foreign_dna",
-        needed_by=("meneu_foreign_dna", "meneu_foreign_dna_shorkie"),
+        needed_by=("meneu_foreign_dna",),
         license=License.CC_BY_4_0,  # ExoShorkie figshare
-        include=(
-            "meneu_foreign_dna_v1.tsv", "meneu_foreign_dna_v1_w16384.tsv",
-            "meneu_cov_Mpneumo.npz", "meneu_cov_Mmmyco.npz",
-        ),
+        # One window-agnostic sidecar per contig (seq + fwd/rev); the benchmark
+        # tiles to the model's receptive field at run time, so no per-window TSV.
+        include=("meneu_cov_Mpneumo.npz", "meneu_cov_Mmmyco.npz"),
     ),
 
     # ── Model weights ──────────────────────────────────────────

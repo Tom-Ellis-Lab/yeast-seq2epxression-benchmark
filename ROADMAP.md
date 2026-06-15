@@ -20,6 +20,7 @@
 - [Species LM](#species-lm)
 - [Condition coherence](#condition-coherence)
 - [Caudal eQTL effect-size calibration](#caudal-eqtl-effect-size-calibration)
+- [Caudal eQTL positive-set cleanup](#caudal-eqtl-positive-set-cleanup)
 - [Per-stratum reporting and bootstrap CIs](#per-stratum-reporting-and-bootstrap-cis)
 - [Hong et al. extensions](#hong-et-al-extensions)
 - [Brooks et al. extensions](#brooks-et-al-extensions)
@@ -82,9 +83,10 @@ files under `benchmarks/`. This roadmap tracks status only.
 - [x] Verified vs the Shorkie paper's Caudal numbers — reproduces Fig 7E
   (≤ 8 kb) within readout precision on current per-base code; the earlier
   apparent divergence was stale pre-migration results
-- [ ] Audit discovery methodology — positives called from the 1011-strain
-  panel with varying ploidy + per-variant VAFs; decide whether to filter on
-  ploidy / VAF before scoring
+- [x] Audit discovery methodology — positives called from the 1011-strain
+  panel with varying ploidy / per-variant VAFs. Decided: no AF/VAF filter;
+  positive-set cleanup deferred to v2 (confound real but small on Yorzoi).
+  Audit + notebook in `scripts/eqtl/audit/`
 
 #### Kita et al. eQTL
 
@@ -416,6 +418,19 @@ the effect-size decay, the strand facet doubles as an adapter strand-handling
 diagnostic.
 
 - [ ] Per-(gene-strand, distance-bin) effect-size calibration plot
+
+### Caudal eQTL positive-set cleanup
+
+Deferred from the v1 ploidy/VAF audit (`scripts/eqtl/audit/`). The positives are
+called from the 1011-isolate panel of mixed ploidy and zygosity; the confound is
+real but small (clean vs not-clean barely moves Yorzoi), so v1 ships the full set
+and v2 cleans it up.
+
+- [ ] Re-normalise / drop the multiallelic-complex positives mislabelled `SNP`
+  (already excluded by negset matching — fix for an honest count)
+- [ ] Ship ploidy/zygosity strata as an optional diagnostic stratifier (full set
+  primary, clean-carrier subset secondary), not a hard filter
+- [ ] Re-run the clean vs not-clean split on Shorkie to confirm the v1 decision
 
 ### Per-stratum reporting and bootstrap CIs
 

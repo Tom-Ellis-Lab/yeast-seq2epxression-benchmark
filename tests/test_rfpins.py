@@ -12,11 +12,18 @@ import pytest
 from yeastbench.adapters._genome import Gene
 from yeastbench.adapters._wu_scaffold import (
     CASSETTE_FEATURES,
+    D1_SEQ,
+    D2_SEQ,
+    DEFAULT_BARCODES_TSV,
     PAYLOAD_LEN,
     RFP_CDS_LEN,
     RFP_CDS_START_IN_PAYLOAD,
+    U1_SEQ,
+    U2_SEQ,
     WuLocus,
     build_insertion_context,
+    inject_barcodes,
+    load_barcodes,
     load_cassette_payload,
     payload_feature_window_span,
     resolve_loci,
@@ -241,6 +248,18 @@ def _write_mini_gtf(tmp_path: Path) -> Path:
     return gtf
 
 
+def _write_mini_barcodes(tmp_path: Path, gene_ids: Sequence[str]) -> Path:
+    """A barcodes.tsv with valid (distinct) 20 bp tags for the given loci."""
+    bc = tmp_path / "barcodes.tsv"
+    lines = ["ORF_name\tuptag\tdntag\tuptag_source\tdntag_source"]
+    for k, g in enumerate(gene_ids):
+        up = ("ACGT" * 5)[:20]
+        dn = (("TGCA" * 5)[:19] + "ACGT"[k % 4])  # distinct per locus
+        lines.append(f"{g}\t{up}\t{dn}\tdesigned\tdesigned")
+    bc.write_text("\n".join(lines) + "\n")
+    return bc
+
+
 class TestWuPerBaseAdapter:
     """The adapters call the per-base forward and read the cassette CDS by
     base position; with an identity-per-position stub the score is the exact
@@ -261,8 +280,13 @@ class TestWuPerBaseAdapter:
             SEQ_LEN, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
         )
         model = _StubPerbaseModel(OUTPUT_BINS * BIN_WIDTH, n_tracks=162)
-        adapter = YorzoiWuPredictor(model, fasta_path=fa, gtf_path=gtf, batch_size=4)
+        adapter = YorzoiWuPredictor(
+            model, fasta_path=fa, gtf_path=gtf,
+            barcodes_path=_write_mini_barcodes(tmp_path, ["G+"]), batch_size=4,
+        )
         out = adapter.predict_expressions([locus])
+        # barcodes land outside the mCherry CDS, so the readout positions
+        # (hence the stub's position-sum score) are unchanged by injection.
         assert out[0] == pytest.approx(float(ctx.rfp_base_positions.sum()))
 
     def test_shorkie_wu_sums_raw_base_positions(self, tmp_path):
@@ -281,10 +305,89 @@ class TestWuPerBaseAdapter:
         )
         model = _StubPerbaseModel(OUTPUT_BINS * BIN_WIDTH)
         adapter = ShorkieWuPredictor(
-            model, fasta_path=fa, gtf_path=gtf, batch_size=4,
+            model, fasta_path=fa, gtf_path=gtf,
+            barcodes_path=_write_mini_barcodes(tmp_path, ["G+"]), batch_size=4,
         )
         out = adapter.predict_expressions([locus])
         assert out[0] == pytest.approx(float(ctx.rfp_base_positions.sum()))
+
+
+# ── Barcode injection + data ──────────────────────────────────
+
+REAL_BARCODES = Path("data/tasks/wu_rfpins/barcodes.tsv")
+REAL_LABELS = Path("data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv")
+
+
+class TestBarcodeInjection:
+    UP = "AAAACCCCGGGGTTTTACGT"  # 20 bp
+    DN = "TTTTGGGGCCCCAAAATGCA"  # 20 bp
+
+    def test_replaces_slots_and_preserves_flanks(self):
+        p = load_cassette_payload(REAL_CASSETTE)
+        new = inject_barcodes(p, self.UP, self.DN)
+        assert len(new) == PAYLOAD_LEN
+        assert new[18:38] == self.UP and new[3485:3505] == self.DN
+        assert new[0:18] == U1_SEQ and new[38:56] == U2_SEQ
+        assert new[3466:3485] == D2_SEQ and new[3505:3522] == D1_SEQ
+        # nothing between/around the slots changes (only the 2×20 bp slots)
+        assert new[56:3466] == p[56:3466]
+        assert new[3522:] == p[3522:]
+
+    def test_removes_all_placeholder_Ns(self):
+        # The frozen scaffold has exactly the two 20×N slots; injecting real
+        # tags must leave zero N (the all-zero one-hot OOD artifact gone).
+        p = load_cassette_payload(REAL_CASSETTE)
+        assert p.count("N") == 40
+        assert inject_barcodes(p, self.UP, self.DN).count("N") == 0
+
+    def test_rejects_bad_tags(self):
+        p = load_cassette_payload(REAL_CASSETTE)
+        with pytest.raises(ValueError):
+            inject_barcodes(p, "ACGT", self.DN)            # too short
+        with pytest.raises(ValueError):
+            inject_barcodes(p, "N" * 20, self.DN)          # N not allowed
+        with pytest.raises(ValueError):
+            inject_barcodes(p, self.UP, "ACGTX" + "A" * 15)  # non-ACGT char
+
+    def test_rejects_bad_payload(self):
+        with pytest.raises(ValueError):
+            inject_barcodes("ACGT", self.UP, self.DN)       # wrong length
+        with pytest.raises(ValueError):
+            inject_barcodes("A" * PAYLOAD_LEN, self.UP, self.DN)  # flanks absent
+
+    def test_reinjection_is_idempotent(self):
+        p = load_cassette_payload(REAL_CASSETTE)
+        once = inject_barcodes(p, self.UP, self.DN)
+        assert inject_barcodes(once, self.UP, self.DN) == once
+
+
+class TestBarcodesData:
+    def test_loads_real_barcodes(self):
+        bc = load_barcodes(REAL_BARCODES)
+        assert len(bc) == 1044
+        for up, dn in bc.values():
+            assert len(up) == 20 and len(dn) == 20
+            assert set(up) <= set("ACGT") and set(dn) <= set("ACGT")
+
+    def test_default_path_matches_real_file(self):
+        assert DEFAULT_BARCODES_TSV == REAL_BARCODES.resolve() or \
+            DEFAULT_BARCODES_TSV.name == "barcodes.tsv"
+
+    def test_covers_every_labelled_orf(self):
+        # The adapter indexes barcodes by gene_id with no fallback, so the
+        # table must cover every ORF in the labels CSV or scoring KeyErrors.
+        bc = load_barcodes(REAL_BARCODES)
+        orfs = pd.read_csv(REAL_LABELS)["ORF_name"].astype(str).tolist()
+        assert [o for o in orfs if o not in bc] == []
+
+    def test_rejects_table_with_N_tag(self, tmp_path):
+        bad = tmp_path / "bad.tsv"
+        bad.write_text(
+            "ORF_name\tuptag\tdntag\tuptag_source\tdntag_source\n"
+            "YAL001C\t" + "N" * 20 + "\t" + "ACGT" * 5 + "\tdesigned\tdesigned\n"
+        )
+        with pytest.raises(ValueError, match="non-20bp/non-ACGT"):
+            load_barcodes(bad)
 
 
 # ── Annotation helpers ────────────────────────────────────────

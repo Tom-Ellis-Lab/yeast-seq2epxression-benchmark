@@ -209,7 +209,11 @@ ARTIFACTS: tuple[Artifact, ...] = (
         dest="data/tasks/wu_rfpins",
         needed_by=("wu_rfpins",),
         requires=(_REFS,),
-        include=("table_s2_fluorescence_1044_loci.csv", "expression_cassette.fasta"),
+        include=(
+            "table_s2_fluorescence_1044_loci.csv",
+            "expression_cassette.fasta",
+            "barcodes.tsv",
+        ),
     ),
     _task(
         "hong",

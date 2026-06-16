@@ -7,13 +7,18 @@
 > the constant payload frozen
 > (`scripts/wu/{verify,build}_cassette*.py`). End-to-end validated on
 > the real 1044-locus data with a mock adapter (1043 resolved; YIR044C
-> dropped — dubious ORF absent from Ensembl 115). One non-blocking data
-> task remains: per-ORF UPTAG/DNTAG barcodes from the SGD deletion table
-> (inert for the readout — see *Open questions*). **GPU runs done
-> (RTX A6000): Shorkie r = −0.006, Yorzoi r = +0.026 (n = 1043)** —
-> the predicted headline negative result (position effect invisible to
-> both models; both still emit locus-varying predictions, so output is
-> not merely constant). Numbers in ROADMAP.
+> dropped — dubious ORF absent from Ensembl 115). **Per-ORF UPTAG/DNTAG
+> barcodes now injected** (`barcodes.tsv`, `scripts/wu/build_barcodes.py`):
+> the placeholder 20×N slots one-hot-encode to all-zero (out-of-
+> distribution) columns, so they are replaced with the real per-strain
+> tags from the SGTC deletion registry — 1013/1044 loci get both designed
+> tags, 31 are UPTAG-only and get a synthetic 20-mer DNTAG (never N).
+> **GPU runs (RTX A6000) on the N-placeholder scaffold: Shorkie
+> r = −0.006, Yorzoi r = +0.026 (n = 1043)** — the predicted headline
+> negative result (position effect invisible to both models; both still
+> emit locus-varying predictions, so output is not merely constant). A
+> barcode re-run (robustness check that the N→real-tag swap does not move
+> the per-locus scores) is the one step pending. Numbers in ROADMAP.
 
 ## At a glance
 
@@ -34,8 +39,11 @@
 Every other benchmark in the suite varies the *cis*-regulatory sequence
 and asks the model to predict the consequence. **This one does the
 opposite.** The cassette — `pURA3` driving RFP, `tADH1`/`tLEU2`
-terminators, a `tCYC1` insulator upstream — is byte-for-byte identical at
-all 1044 loci. The only thing that changes is the **genomic
+terminators, a `tCYC1` insulator upstream — has the same *cis*-regulatory
+sequence at all 1044 loci; the only intra-cassette variation is the two
+strain-specific 20 bp molecular barcodes (UPTAG/DNTAG, inert random
+sequence ~0.5 kb / ~2.2 kb from the mCherry readout, behind the `tCYC1`
+insulator). The thing that actually changes between loci is the **genomic
 neighbourhood** the cassette is dropped into: local chromatin
 environment, neighbouring promoters and their orientation, distance to
 centromere/telomere, replication context.
@@ -120,9 +128,20 @@ replaces *kanMX*. **Content verified** by
   `U2=CGTACGCTGCAGGTCGAC`, `D2=ATCGATGAATTCGAGCTCG`,
   `D1=CGGTGTCGGTCTCGTAG`).
 - **UPTAG/DNTAG are strain-specific** (one unique 20 bp pair per deleted
-  ORF — the whole point of the barcoded collection), all-N in the
-  reconstruction template; supplied per locus from the SGD deletion
-  barcode table at splice time.
+  ORF — the whole point of the barcoded collection), all-N in the frozen
+  scaffold template and injected per locus from `barcodes.tsv` at splice
+  time (`scripts/wu/build_barcodes.py`). Source = the canonical SGTC /
+  Saccharomyces Genome Deletion Project registry
+  (`Deletion_primers_PCR_sizes.txt`, columns `UPTAG_sequence_20mer` /
+  `DNTAG_sequence_20mer`); the `UPTAG` is used as-is (top strand, between
+  U1/U2) and the `DNTAG` is **reverse-complemented** into the cassette's
+  top-strand `D2-DNTAG-D1` slot. These are the **as-designed** tags (the
+  deep-sequenced Smith 2009 recharacterization is unrecoverable — host
+  dead, no archive snapshots, ~20 % delta only). Of the 1044 loci, 1013
+  carry both designed tags and 31 (the earliest-deleted ORFs) are
+  UPTAG-only and take a deterministic synthetic ACGT DNTAG — never an N
+  placeholder, since a run of N one-hot-encodes to all-zero columns the
+  models never saw in training.
 
 Genomic structure post-integration, following the Giaever design
 (homology arms **outermost**, universal sites + barcodes inside them):
@@ -315,15 +334,20 @@ ORF → tracks 0–80, − strand ORF → 81–161.
   the reconstruction (RFP→mCherry, native parts, universal sites).
 - `scripts/wu/build_cassette_fasta.py` — freezes the constant payload
   scaffold to the FASTA below.
+- `scripts/wu/build_barcodes.py` — joins the SGTC deletion registry
+  against the 1044 loci → `barcodes.tsv` (UPTAG as-is, DNTAG
+  reverse-complemented; synthetic fill for the 31 UPTAG-only loci). Raw
+  source `data/tasks/wu_rfpins/Deletion_primers_PCR_sizes.txt` (SGD-hosted
+  SGTC alias; download URL documented in the script).
 
 ### Processed distribution
 - `data/tasks/wu_rfpins/expression_cassette.fasta` — **frozen**, 3522 bp
   constant scaffold `U1+N20+U2+RFP-TU-core(3410)+D2+N20+D1` (N20 = per-
-  locus barcode placeholder).
-- TBD: `barcodes.tsv` — per-ORF UPTAG/DNTAG from the SGD deletion table
-  (build script + source TODO). A manifest pinning the 1044 `ORF_name →
-  chrom/start/stop/strand` resolution (including unresolved/dubious/
-  overlapping ORF handling) and the labels-CSV hash.
+  locus barcode placeholder, injected at splice time).
+- `data/tasks/wu_rfpins/barcodes.tsv` — **frozen**, 1044 rows
+  `ORF_name → uptag, dntag, uptag_source, dntag_source` (top-strand
+  orientation; `*_source` ∈ {designed, synthetic}). Built by
+  `scripts/wu/build_barcodes.py`.
 
 ## Open questions / TODO
 
@@ -331,12 +355,19 @@ ORF → tracks 0–80, − strand ORF → 81–161.
 (`scripts/wu/verify_cassette.py`): RFP = mCherry, LEU2/tCYC1/pURA3/tADH1
 are the correct native elements, U1/U2/D1/D2 match Giaever 2014 Fig. 1B,
 constant payload frozen. Residual, **non-blocking**:
-- **Per-ORF barcodes.** UPTAG/DNTAG are strain-specific; source them from
-  the SGD deletion barcode table into `barcodes.tsv` and inject per
-  locus. Effect on the readout is expected to be nil (random 20-mers,
-  ~kb from mCherry, 5′ tag behind the `tCYC1` insulator) — v1 may run
-  with N20 placeholders and add real barcodes as a faithfulness
-  refinement; document whichever is used.
+- **Per-ORF barcodes — done** (`barcodes.tsv`, `build_barcodes.py`,
+  injected by the adapters via `inject_barcodes`). The placeholder 20×N
+  one-hot-encodes to all-zero columns the models never saw in training
+  (out-of-distribution, and identical across all 1044 loci), so the real
+  per-strain tags are injected instead. Two residual caveats: (1)
+  **as-designed, not resequenced** — the SGTC design tags are used
+  because the deep-sequenced Smith 2009 set is unrecoverable; ~3 % of real
+  strains carry a corrected tag not reflected here. (2) **31 loci are
+  UPTAG-only** and take a deterministic synthetic DNTAG (the real down tag
+  is unknown for those early-deleted strains). Both are immaterial to the
+  readout (inert 20-mers, ~0.5/2.2 kb from mCherry, behind the insulator);
+  the pending GPU re-run confirms the N→real-tag swap does not move the
+  per-locus scores.
 - **MCS gap (GenBank 57–86, ~30 bp)** between `U2` and the 5′ arm
   (BamHI/SmaI/PacI/AscI cloning sites). Whether these land in the genome
   depends on the `kanMX-L`/`kanMX-R` swap junctions; excluded from the

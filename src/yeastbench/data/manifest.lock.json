@@ -230,6 +230,10 @@
     },
     "wu_rfpins": {
       "files": {
+        "barcodes.tsv": {
+          "sha256": "a13aec47f0db2e7b638202128cffee21486b92e5112b1cf8408dbf35fd26e875",
+          "size": 71130
+        },
         "expression_cassette.fasta": {
           "sha256": "c71179260324a001f11ac4861631e7ae1e62594f5edb1e9e205d6e2260bbdf67",
           "size": 3858

@@ -21,10 +21,13 @@ from yeastbench.adapters._genome import (
     parse_gene_annotations,
 )
 from yeastbench.adapters._wu_scaffold import (
+    DEFAULT_BARCODES_TSV,
     DEFAULT_CASSETTE_FASTA,
     WuInsertionContext,
     WuLocus,
     build_insertion_context,
+    inject_barcodes,
+    load_barcodes,
     load_cassette_payload,
 )
 from yeastbench.adapters.protocols import CassetteExpressionPredictor
@@ -47,6 +50,7 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
         fasta_path: str | Path,
         gtf_path: str | Path,
         cassette_fasta: str | Path | None = None,
+        barcodes_path: str | Path | None = None,
         track_subset: list[int] = SHORKIE_T0_RNA_SEQ_TRACK_IDS,
         batch_size: int = 16,
     ) -> None:
@@ -58,6 +62,9 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
         self.genes = parse_gene_annotations(gtf_path)
         self.payload = load_cassette_payload(
             cassette_fasta if cassette_fasta is not None else DEFAULT_CASSETTE_FASTA
+        )
+        self.barcodes = load_barcodes(
+            barcodes_path if barcodes_path is not None else DEFAULT_BARCODES_TSV
         )
         self.track_subset = list(track_subset)
         self.batch_size = batch_size
@@ -73,6 +80,7 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
         fasta_path: str | Path,
         gtf_path: str | Path,
         cassette_fasta: str | Path | None = None,
+        barcodes_path: str | Path | None = None,
         track_subset: list[int] = SHORKIE_T0_RNA_SEQ_TRACK_IDS,
         device: str = "cuda",
         batch_size: int = 16,
@@ -85,6 +93,7 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
             fasta_path=fasta_path,
             gtf_path=gtf_path,
             cassette_fasta=cassette_fasta,
+            barcodes_path=barcodes_path,
             track_subset=list(track_subset),
             batch_size=batch_size,
         )
@@ -95,8 +104,9 @@ class ShorkieWuPredictor(CassetteExpressionPredictor):
         scores = np.full(len(loci), np.nan, dtype=np.float64)
         contexts: list[tuple[int, WuInsertionContext]] = []
         for i, locus in enumerate(loci):
+            uptag, dntag = self.barcodes[locus.gene_id]
             ctx = build_insertion_context(
-                locus, self.payload, self.fasta,
+                locus, inject_barcodes(self.payload, uptag, dntag), self.fasta,
                 SEQ_LEN, CROP_BP_EACH_SIDE, BIN_WIDTH, OUTPUT_BINS,
             )
             if ctx is not None:

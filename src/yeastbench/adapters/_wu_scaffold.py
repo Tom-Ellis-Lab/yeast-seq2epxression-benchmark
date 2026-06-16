@@ -19,6 +19,7 @@ would have lived).
 """
 from __future__ import annotations
 
+import csv
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,11 +46,84 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CASSETTE_FASTA = (
     REPO_ROOT / "data" / "tasks" / "wu_rfpins" / "expression_cassette.fasta"
 )
+DEFAULT_BARCODES_TSV = (
+    REPO_ROOT / "data" / "tasks" / "wu_rfpins" / "barcodes.tsv"
+)
 
 # ── Cassette geometry ─────────────────────────────────────────
 PAYLOAD_LEN = 3522
 RFP_CDS_START_IN_PAYLOAD = 554   # 0-based; = U1+UPTAG+U2 (56) + core offset 498
 RFP_CDS_LEN = 711                # mCherry CDS incl. stop codon
+
+# ── Barcode slots + flanking universal sites (forward payload coords) ──
+# The two strain-specific 20 bp barcodes sit between constant universal
+# priming sites: U1-[UPTAG]-U2 near the 5′ end, D2-[DNTAG]-D1 near the 3′
+# end.  ``build_cassette_fasta.py`` freezes both slots as 20×N; the
+# adapters inject the real per-locus tags here (a run of N one-hot-encodes
+# to all-zero columns — out-of-distribution for the models).
+TAG_LEN = 20
+UPTAG_SLOT = (18, 38)
+DNTAG_SLOT = (3485, 3505)
+U1_SEQ = "GATGTCCACGAGGTCTCT"
+U2_SEQ = "CGTACGCTGCAGGTCGAC"
+D2_SEQ = "ATCGATGAATTCGAGCTCG"
+D1_SEQ = "CGGTGTCGGTCTCGTAG"
+
+
+def _is_tag(s: str) -> bool:
+    return len(s) == TAG_LEN and set(s) <= set("ACGT")
+
+
+def load_barcodes(path: str | Path) -> dict[str, tuple[str, str]]:
+    """Read ``barcodes.tsv`` → ``{ORF_name: (uptag, dntag)}``.
+
+    Both tags are validated as bare 20 bp ACGT (no N), in cassette
+    top-strand orientation (``uptag`` between U1/U2, ``dntag`` between
+    D2/D1).  Built by ``scripts/wu/build_barcodes.py``.
+    """
+    out: dict[str, tuple[str, str]] = {}
+    with open(path, newline="") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        for row in reader:
+            orf = row["ORF_name"].strip()
+            up = row["uptag"].strip().upper()
+            dn = row["dntag"].strip().upper()
+            if not _is_tag(up) or not _is_tag(dn):
+                raise ValueError(
+                    f"barcodes.tsv: {orf} has non-20bp/non-ACGT tag "
+                    f"(uptag={up!r}, dntag={dn!r})"
+                )
+            out[orf] = (up, dn)
+    return out
+
+
+def inject_barcodes(payload: str, uptag: str, dntag: str) -> str:
+    """Return ``payload`` with the UPTAG/DNTAG slots replaced by real tags.
+
+    Anchor-validated: the flanking universal sites (U1/U2 around UPTAG,
+    D2/D1 around DNTAG) must be intact before and after, so a wrong offset
+    or a corrupted scaffold fails loudly rather than silently mis-splicing.
+    Length is preserved (20 bp → 20 bp), so the frozen cassette geometry
+    (``RFP_CDS_*``) is unchanged.
+    """
+    if len(payload) != PAYLOAD_LEN:
+        raise ValueError(f"payload len {len(payload)} != {PAYLOAD_LEN}")
+    if not _is_tag(uptag) or not _is_tag(dntag):
+        raise ValueError(f"tags must be 20bp ACGT (uptag={uptag!r}, dntag={dntag!r})")
+    if payload[0:18] != U1_SEQ or payload[38:56] != U2_SEQ:
+        raise ValueError("UPTAG slot flanks (U1/U2) do not match the cassette")
+    if payload[3466:3485] != D2_SEQ or payload[3505:3522] != D1_SEQ:
+        raise ValueError("DNTAG slot flanks (D2/D1) do not match the cassette")
+
+    us, ue = UPTAG_SLOT
+    ds, de = DNTAG_SLOT
+    new = payload[:us] + uptag + payload[ue:ds] + dntag + payload[de:]
+
+    assert len(new) == PAYLOAD_LEN
+    assert new[us:ue] == uptag and new[ds:de] == dntag
+    assert new[0:18] == U1_SEQ and new[38:56] == U2_SEQ
+    assert new[3466:3485] == D2_SEQ and new[3505:3522] == D1_SEQ
+    return new
 
 
 def load_cassette_payload(fasta_path: str | Path) -> str:
@@ -216,12 +290,17 @@ def build_insertion_context(
 
 __all__ = [
     "DEFAULT_CASSETTE_FASTA",
+    "DEFAULT_BARCODES_TSV",
     "PAYLOAD_LEN",
     "RFP_CDS_START_IN_PAYLOAD",
     "RFP_CDS_LEN",
+    "UPTAG_SLOT",
+    "DNTAG_SLOT",
     "CASSETTE_FEATURES",
     "reverse_complement",
     "load_cassette_payload",
+    "load_barcodes",
+    "inject_barcodes",
     "payload_feature_window_span",
     "span_to_bins",
     "WuLocus",

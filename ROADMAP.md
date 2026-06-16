@@ -164,7 +164,11 @@ files under `benchmarks/`. This roadmap tracks status only.
   AUROC / AUPRC + ROC/PR plots
 - [x] GPU run (Shorkie / Yorzoi) — headline negative result
 - [x] Diagnostic dump `scripts/wu/dump_yorzoi_tracks.py`
-- [ ] Per-ORF UPTAG / DNTAG barcodes → `barcodes.tsv` (non-blocking)
+- [x] Per-ORF UPTAG / DNTAG barcodes injected (`barcodes.tsv`,
+  `scripts/wu/build_barcodes.py`, `inject_barcodes`) — replaces OOD 20×N
+  slots with real SGTC tags (1013 both / 31 synthetic DNTAG)
+- [ ] Barcode robustness re-run (Shorkie / Yorzoi) — confirm N→real-tag
+  swap leaves the headline negative result unchanged
 
 #### Hong et al. (mCherry IGR insertions)
 

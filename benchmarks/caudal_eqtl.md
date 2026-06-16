@@ -1,7 +1,6 @@
 # Caudal et al. — yeast cis-eQTL classification
 
-> **Status:** draft. This is the worked example used to develop the benchmark
-> entry template — fields and wording are still in flux.
+![image](eQTL_task.svg)
 
 ## At a glance
 

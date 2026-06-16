@@ -128,3 +128,14 @@ runs:
   - model: codon_transformer
     tasks: [chen_gfp_r1, chen_gfp_r2, chen_tdh3]
     model_config: {}
+
+  # Supervised in-distribution reference baseline (reported separately from
+  # the zero-shot foundation models). Single DREAM-RNN net trained on this
+  # very assay; scored on the insert in its own reporter context, not
+  # marginalized at native loci. See benchmarks/rafi_mpra_promoter.md.
+  - model: dream_rnn
+    tasks: [rafi_mpra_marginalized]
+    model_config:
+      weights_path: data/models/dream_rnn/model_best.pth
+      plasmid_path: data/models/dream_rnn/plasmid.json
+      batch_size: 1024

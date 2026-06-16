@@ -3,7 +3,7 @@
 Evaluates zero-shot prediction of scalar expression for 71,103 80-bp random
 promoter sequences across eight DREAM test-set strata. Each insert is
 scored by marginalizing its logSED over 22 native host-gene contexts (the
-``MarginalizedSequenceExpressionPredictor`` protocol). The earlier
+``SequenceExpressionScorer`` protocol). The earlier
 fixed-context plasmid-construct variant was retired on 2026-05-21 — the
 marginalized / native-position evaluation is what Shorkie / Yorzoi were
 trained for and is the canonical Rafi benchmark going forward.
@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 
-from yeastbench.adapters.protocols import MarginalizedSequenceExpressionPredictor
+from yeastbench.adapters.protocols import SequenceExpressionScorer
 from yeastbench.benchmarks._metrics import MPRAStratumResult
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo, model_color
 
@@ -75,16 +75,16 @@ class MPRAResults:
 
 
 class MPRAMarginalizedBenchmark(
-    Benchmark[MarginalizedSequenceExpressionPredictor, MPRAResults]
+    Benchmark[SequenceExpressionScorer, MPRAResults]
 ):
     """Rafi / deBoer MPRA, marginalized / native-position scoring.
 
-    Adapters implement ``predict_marginalized_expressions`` and return a
+    Adapters implement ``predict_expression_scores`` and return a
     scalar per insert that's the mean logSED across 22 native host-gene
     contexts (configured in the adapter, not the benchmark).
     """
 
-    adapter_protocol: ClassVar[type] = MarginalizedSequenceExpressionPredictor
+    adapter_protocol: ClassVar[type] = SequenceExpressionScorer
 
     def __init__(
         self,
@@ -136,10 +136,10 @@ class MPRAMarginalizedBenchmark(
         return self._gtf_path
 
     def evaluate(
-        self, adapter: MarginalizedSequenceExpressionPredictor
+        self, adapter: SequenceExpressionScorer
     ) -> MPRAResults:
         scores = np.asarray(
-            adapter.predict_marginalized_expressions(self.sequences), dtype=float
+            adapter.predict_expression_scores(self.sequences), dtype=float
         )
         assert len(scores) == len(self.labels)
 
@@ -307,7 +307,19 @@ class MPRAMarginalizedBenchmark(
         x = np.arange(len(ordered))
         n_models = len(model_names)
         width = 0.8 / n_models
-        colors = {m: model_color(m, model_names) for m in model_names}
+        # Supervised in-distribution baselines (e.g. DREAM-RNN) are scored on a
+        # different substrate than the zero-shot models (the reporter insert vs
+        # marginalized native loci), so they get a distinct hatched-grey bar and
+        # a caption flag rather than reading as one more zero-shot model.
+        supervised = {"dream_rnn"} & set(model_names)
+
+        def _bar_style(m: str) -> dict:
+            if m in supervised:
+                return {"color": "#6e6e6e", "hatch": "//", "edgecolor": "white"}
+            return {"color": model_color(m, model_names)}
+
+        def _bar_label(m: str) -> str:
+            return f"{m} (supervised, in-distribution)" if m in supervised else m
 
         fig, (ax_p, ax_s) = plt.subplots(2, 1, figsize=(max(8.0, 1.1 * len(ordered)), 8))
         for metric_key, ax, ylabel in (
@@ -318,7 +330,8 @@ class MPRAMarginalizedBenchmark(
                 ys = [per_model[m][s][metric_key] for s in ordered]
                 offset = (i - (n_models - 1) / 2) * width
                 bars = ax.bar(
-                    x + offset, ys, width=width, label=m, color=colors[m],
+                    x + offset, ys, width=width, label=_bar_label(m),
+                    **_bar_style(m),
                 )
                 for b, v in zip(bars, ys):
                     if not np.isfinite(v):
@@ -337,7 +350,19 @@ class MPRAMarginalizedBenchmark(
             ax.legend(loc="best", fontsize=9)
 
         fig.suptitle(self.compare_plot_title() + " — per-stratum correlations", fontsize=12)
-        fig.tight_layout()
+        if supervised:
+            fig.text(
+                0.5, 0.005,
+                "Each model is fed its native substrate: zero-shot models scored by "
+                "marginalized logSED at native host-gene loci; "
+                + ", ".join(sorted(supervised))
+                + " scored on the reporter insert in its own plasmid context "
+                "(supervised in-distribution reference — not identical inputs).",
+                ha="center", va="bottom", fontsize=7.5, style="italic", wrap=True,
+            )
+            fig.tight_layout(rect=(0, 0.045, 1, 1))
+        else:
+            fig.tight_layout()
         out_path = out_dir / "plot.svg"
         fig.savefig(out_path)
         plt.close(fig)
@@ -427,7 +452,7 @@ def _plot_scatter_grid(
     for j in range(n, len(axes)):
         axes[j].set_visible(False)
 
-    title = f"Rafi MPRA — pred vs measured"
+    title = "Rafi MPRA — pred vs measured"
     if model_label:
         title += f" — {model_label}"
     fig.suptitle(title, fontsize=13)

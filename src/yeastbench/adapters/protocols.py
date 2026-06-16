@@ -63,13 +63,25 @@ class IGRInsertionExpressionPredictor(Protocol):
 
 
 @runtime_checkable
-class MarginalizedSequenceExpressionPredictor(Protocol):
-    """Predict the marginalized effect of each input sequence across native
-    host-gene contexts, inserted **upstream** of the host-gene TSS
-    (promoter-MPRA flavour, e.g. Rafi/deBoer).  Returns mean logSED across
-    a committed list of host genes."""
+class SequenceExpressionScorer(Protocol):
+    """Return one scalar per input sequence that should track its measured
+    expression — *however the model computes it*. The Rafi/deBoer benchmark
+    correlates these scalars against measured expression per stratum, so only
+    monotone correspondence matters (Pearson/Spearman are scale-free).
 
-    def predict_marginalized_expressions(self, seqs: Sequence[str]) -> np.ndarray: ...
+    Two kinds of model implement this:
+
+    - **Zero-shot foundation models** (Shorkie, Yorzoi) return the mean logSED
+      of the insert marginalized across a committed list of native host-gene
+      contexts (inserted upstream of the TSS) — they predict *effects in native
+      context*, never reporter readouts.
+    - **Supervised in-distribution baselines** (DREAM-RNN) return the directly
+      predicted reporter expression of the insert in its own reporter context.
+
+    They are scored on the same axis but fed their native substrate; any figure
+    placing them together must say so (see ``benchmarks/rafi_mpra_promoter.md``)."""
+
+    def predict_expression_scores(self, seqs: Sequence[str]) -> np.ndarray: ...
 
 
 @runtime_checkable
@@ -141,7 +153,7 @@ class TiledCoverageTrackPredictor(Protocol):
     to their own adapters, separate from the isolated-construct Brooks
     SCRaMBLE adapters — mirroring the precedent on
     ``TerminatorMarginalizedExpressionPredictor`` (same signature as
-    ``MarginalizedSequenceExpressionPredictor`` but a different assay).
+    ``SequenceExpressionScorer`` but a different assay).
 
     ``varies_by_strain`` is part of the surface for parity with
     ``CoverageTrackPredictor``; Meneu adapters set it ``False`` (their
@@ -167,7 +179,7 @@ class TerminatorMarginalizedExpressionPredictor(Protocol):
     with a non-terminating filler (terminator-MPRA flavour, e.g. Shalem).
     Returns mean logSED across a committed list of host genes.
 
-    Distinct from ``MarginalizedSequenceExpressionPredictor`` because the
+    Distinct from ``SequenceExpressionScorer`` because the
     insertion *site* and the surrounding scaffold are semantically
     different (promoter-region insertion vs terminator-region insertion),
     so the two protocols cleanly disambiguate in the registry."""

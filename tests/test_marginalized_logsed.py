@@ -235,7 +235,7 @@ class TestMPRACharacterization:
         fa, gt, _ = shalem_genome
         stub = StubModel(16384, 1024, 16, 896, n_tracks=4, layout="cf", global_weight=0.5)
         adapter = _build_shorkie_mpra(stub, fa, gt)
-        out = adapter.predict_marginalized_expressions(MPRA_SEQS)
+        out = adapter.predict_expression_scores(MPRA_SEQS)
         if EXPECTED_MPRA["shorkie"] is None:
             print("RECORD mpra shorkie:", repr(out.tolist()))
             pytest.skip("recording golden")
@@ -245,7 +245,7 @@ class TestMPRACharacterization:
         fa, gt, _ = shalem_genome
         stub = StubModel(4992, 996, 10, 300, n_tracks=162, layout="cl", global_weight=0.5)
         adapter = _build_yorzoi_mpra(stub, fa, gt)
-        out = adapter.predict_marginalized_expressions(MPRA_SEQS)
+        out = adapter.predict_expression_scores(MPRA_SEQS)
         if EXPECTED_MPRA["yorzoi"] is None:
             print("RECORD mpra yorzoi:", repr(out.tolist()))
             pytest.skip("recording golden")

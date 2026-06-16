@@ -33,7 +33,7 @@ from yeastbench.adapters._marginalized_logsed import (
     ModelCoverage,
 )
 from yeastbench.adapters.protocols import (
-    MarginalizedSequenceExpressionPredictor,
+    SequenceExpressionScorer,
 )
 
 if TYPE_CHECKING:
@@ -226,7 +226,7 @@ def build_alt_one_hot(
 # ── Shared marginalized-logSED predictor base ─────────────────
 
 
-class MPRAMarginalizedBase(MarginalizedLogSED, MarginalizedSequenceExpressionPredictor):
+class MPRAMarginalizedBase(MarginalizedLogSED, SequenceExpressionScorer):
     """Model-agnostic native-position MPRA marginalized adapter.
 
     Concrete Shorkie/Yorzoi subclasses set ``self._cov`` then call
@@ -308,5 +308,5 @@ class MPRAMarginalizedBase(MarginalizedLogSED, MarginalizedSequenceExpressionPre
             gene_means.append(float(logsed_per_ctx[idx].mean()))
         return float(np.mean(gene_means))
 
-    def predict_marginalized_expressions(self, seqs) -> np.ndarray:
+    def predict_expression_scores(self, seqs) -> np.ndarray:
         return self._predict(seqs, self._predict_desc)

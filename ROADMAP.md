@@ -62,15 +62,17 @@ files under `benchmarks/`. This roadmap tracks status only.
   compares models *not* named in the run (ignoring `--model` / `--task`), silently
   pulling in stale on-disk results — confusing and error-prone. A run should
   compare exactly the (model, task) pairs it was given.
-- Unify window-split tasks: one logical benchmark = one registry task. The
-  benchmark tiles to the adapter's receptive field at run time from a single
-  window-agnostic artifact, dropping the `<task>_shorkie` twin and
-  `compare_task_name`.
+- [x] Unify window-split tasks: one logical benchmark = one registry task. The
+  benchmark re-cuts each construct to the adapter's receptive field at run time
+  from a single window-agnostic artifact; `<task>_shorkie` twins and the
+  `compare_task_name` overrides are gone.
   - [x] Meneu: `meneu_foreign_dna` only; per-contig `meneu_cov_<contig>.npz`
     (seq + fwd/rev), `tile_contig` at eval time (`benchmarks/meneu.py`)
-  - [ ] Brooks (`brooks_scramble*`): same transform, larger surface
-    (`benchmarks/brooks.py`, `configs/brooks.yaml`, manifest); keeps
-    `compare_task_name` until done
+  - [x] Brooks: `brooks_scramble` only; window-agnostic `brooks_index.tsv` +
+    `brooks_constructs.fasta` + `brooks_cov.npz`, `window_slice` + membership/
+    dedup replay at eval time (bit-identical 698/1055; `benchmarks/brooks.py`)
+  - Note: `compare_task_name` / `_group_by_compare_task` in `compare.py` are now
+    dead (no task overrides them) — delete in the issue-#2 comparison PR
 
 ### eQTL
 
@@ -219,9 +221,10 @@ Brooks et al. SCRaMBLE chromosome 9 — spec `benchmarks/brooks_scramble.md`.
   (verified 2026-05-20) → its headline is partly a leakage measurement, not
   zero-shot. Shorkie is clean; remediation deferred to v2 (see Brooks extensions)
 - [x] Distribution built (`scripts/brooks/build_brooks_distribution.py` →
-  `data/tasks/brooks_scramble/brooks_scramble_v1.tsv`): 698 samples / 56 strains;
-  JS94 deep-WT replicates; per-copy sampling; per-replicate raw + normalized JS94
-  coverages in the schema
+  window-agnostic `brooks_index.tsv` + `brooks_constructs.fasta` +
+  `brooks_cov.npz`): 1786 candidate constructs / 56 strains (→ 698 @ 4992,
+  1055 @ 16384 after the run-time window/dedup); JS94 deep-WT replicates;
+  per-copy sampling; per-replicate raw + normalized JS94 coverages in the schema
 - [x] `CoverageTrackPredictor` protocol — batched `predict_coverage_batch(seqs,
   strands, strains) → (B, out_len)`, per-base raw counts; adapters expose
   `batch_size`
@@ -246,11 +249,10 @@ Brooks et al. SCRaMBLE chromosome 9 — spec `benchmarks/brooks_scramble.md`.
   3,000 bp vs Shorkie 14,336 bp), so the cross-model shape numbers are invalid —
   JS especially is support-size dependent. Score them over a fixed common window
   (≤ 3 kb, CDS-centred) for every model; the full receptive field still goes in
-  as input, only the scored region is shared. Cleanest implementation: a single
-  max-width distribution each model crops to its `seq_len` for input and to the
-  common window for scoring — replaces the current per-receptive-field TSVs
-  (`brooks_scramble_v1.tsv` @ 4992 bp / `brooks_scramble_v1_w16384.tsv` @ 16384 bp;
-  tasks `brooks_scramble` / `brooks_scramble_shorkie`).
+  as input, only the scored region is shared. The window-agnostic artifact now
+  makes this cheap: the benchmark already slices each construct at run time
+  (`window_slice`), so add a second fixed scored-region slice for the shape
+  metric. (Re-baselines shape numbers — deliberately — hence a separate step.)
 
 ### Foreign-DNA integration
 

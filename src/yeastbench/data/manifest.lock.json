@@ -2,13 +2,17 @@
   "artifacts": {
     "brooks_scramble": {
       "files": {
-        "brooks_scramble_v1.tsv": {
-          "sha256": "10f9c7d17cc3631e117d69c3c6a12c9bfea6a9ad9ec1960067fac3482cb43d84",
-          "size": 23652126
+        "brooks_constructs.fasta": {
+          "sha256": "9cb576a77aef314fdadb21e5bc47ca3cf547ecf38aa933b01b9aafd24ac19c45",
+          "size": 57880800
         },
-        "brooks_scramble_v1_w16384.tsv": {
-          "sha256": "2404cd5db73e073eab7a777d56c0d7ac7c32dba77506079835fa2bdf4b8f89e7",
-          "size": 115177128
+        "brooks_cov.npz": {
+          "sha256": "e9c1117d609477c46553643d03fe6f563cf576a863369aae3458b3011281a55d",
+          "size": 2938079
+        },
+        "brooks_index.tsv": {
+          "sha256": "ecd336c505e871298e73653e96b5442f927612a4e2bf95628eaaacd600763fa9",
+          "size": 405645
         }
       }
     },

@@ -1,10 +1,13 @@
 # Brooks et al. — SCRaMBLE structural-rearrangement expression effect
 
-> **Status: shipped in PR #2 (2026-05-20).** Both Yorzoi and Shorkie
-> evaluate via `CoverageTrackPredictor`. Two distribution files (one
-> per receptive field): `brooks_scramble_v1.tsv` at 4992 bp (698
-> samples, Yorzoi) and `brooks_scramble_v1_w16384.tsv` at 16384 bp
-> (1055 samples, Shorkie). Cross-model headline numbers come from
+> **Status: shipped in PR #2 (2026-05-20); unified to one task (2026-06-16).**
+> Both Yorzoi and Shorkie evaluate via `CoverageTrackPredictor` on the single
+> `brooks_scramble` task. One window-agnostic artifact (`brooks_index.tsv` +
+> `brooks_constructs.fasta` + `brooks_cov.npz`); the benchmark re-cuts each
+> construct to the model's receptive field at run time (`window_slice`),
+> reproducing the per-window membership/dedup — 698 constructs at 4992 (Yorzoi),
+> 1055 at 16384 (Shorkie), bit-identical to the old per-window TSVs. Cross-model
+> headline numbers come from
 > the **shared sample set** via `ybench compare` (Brooks shared-cohort
 > logic in `src/yeastbench/benchmarks/brooks.py`);
 > per-model full-set numbers reported as secondary. Headline (shared
@@ -140,17 +143,20 @@ assembly/GFF:
 4. not byte-identical to another retained copy within the window;
 5. **deletions excluded**.
 
-**Single self-contained distribution file.** The build script (run once,
-needs the bucket) resolves every sample and bakes everything the
-benchmark needs at eval time into **one file**,
-`data/tasks/brooks_scramble/brooks_scramble_v1.tsv` — one row per
-`(gene, strain, copy)` sample with: ids/strand/rearrangement-class, the
-**full alt and native construct sequences**, the in-window CDS interval,
-`true_lfc`, the per-run JS94 replicate normalised CDS coverages (so the
-reproducibility ceiling is derivable from the same file — no sidecar),
-strain/JS94 read counts, and the native-genome size factors. At run time
-the benchmark depends on **this file alone** — no GCS, no per-strain
-genomes/GFF/BED, no R64 reference. No re-selection at run time.
+**Window-agnostic, self-contained artifact.** The build script (run once,
+needs the bucket) resolves every `(gene, strain, copy)` candidate and bakes a
+**three-file** artifact under `data/tasks/brooks_scramble/`:
+`brooks_index.tsv` (one row per construct: ids/strand/class, the **absolute**
+alt + native coords and provenance — source genome / contig / slice offset —
+`true_lfc`, the per-run JS94 replicate normalised CDS coverages so the
+reproducibility ceiling is derivable, strain/JS94 read counts, native-genome
+size factors), `brooks_constructs.fasta` (a generous gene-centred slice of alt
++ native sequence, ±FLANK bp), and `brooks_cov.npz` (the matching per-base
+coverage). At eval time the benchmark re-cuts each construct to the model's
+receptive field (`window_slice`) and re-applies the window-dependent membership
+(alt + native fit, `alt != native`, dedup byte-identical copies per gene). It
+depends on **these files alone** — no GCS, no per-strain genomes/GFF/BED, no
+R64 reference. One artifact serves any model with window ≤ FLANK (16384).
 
 ## Constructs
 
@@ -248,15 +254,22 @@ proxy track is deferred (open question).
   constructs, `true_lfc` + per-run JS94 coverages → the single file.
 
 ### Processed distribution (the sole run-time dependency)
-- `data/tasks/brooks_scramble/brooks_scramble_v1.tsv` — **built**, one
-  row per sample, fully self-contained: `alt_seq`, `native_seq` (both
-  4992 bp, gene-centred), `cds_*_in_window`, `true_lfc`,
-  `norm_cov_js94_runs` (comma-list of the deep-run values → ceiling
-  derivable from this file alone), `low_support`, ids/strand/
-  `rearr_class`/`n_copies`/size factor. The benchmark reads nothing
-  else (no GCS, no genomes, no R64). v1 build = 37 samples (objective
-  rule over the 4 ROADMAP strains that yielded samples; JS707 → 0);
-  scaling to the full ~58-strain panel is `--strains all`.
+Window-agnostic three-file artifact under `data/tasks/brooks_scramble/`, all
+**built**, the benchmark reads nothing else (no GCS, no genomes, no R64):
+- `brooks_index.tsv` — one row per `(gene, strain, copy)` candidate: ids/strand/
+  `rearr_class`/`n_copies`, the absolute alt + native coords and provenance
+  (`*_source_genome`, `*_contig`, `*_contig_len`, `*_cds_start/end`,
+  `*_slice_start`), `true_lfc`, `norm_cov_js94_runs` (→ ceiling derivable),
+  read counts, size factor, `low_support`.
+- `brooks_constructs.fasta` — `alt~<sample_id>` / `native~<gene_id>` generous
+  gene-centred slices (±FLANK = 16384 bp, clamped to the contig; native deduped
+  per gene).
+- `brooks_cov.npz` — per-base int32 coverage, same record keys.
+
+The benchmark re-cuts each construct to the adapter's receptive field at run
+time and re-applies the per-window membership/dedup (bit-identical to the old
+4992 / 16384 TSVs: 698 / 1055 constructs). Full panel built with `--strains all`
+(~56 strains → 1786 candidate constructs).
 
 ## Open questions / TODO
 

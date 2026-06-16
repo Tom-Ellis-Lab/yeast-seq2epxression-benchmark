@@ -49,12 +49,6 @@ from yeastbench.benchmarks.base import (
     model_color,
 )
 
-WINDOW_LEN = 4992          # Legacy Yorzoi window — kept as an importable
-                           # default for tests and scripts. The benchmark
-                           # itself reads the window length from the loaded
-                           # TSV's `window_len` column so a single benchmark
-                           # class supports both the Yorzoi (4992) and the
-                           # Shorkie (16384) distributions.
 PSEUDOCOUNT = 1.0
 MIN_READS_PER_RUN = 10     # per-JS94-run raw read floor for that run to
                            # contribute a per-replicate true_lfc for the sample
@@ -106,6 +100,56 @@ class BrooksResults:
     shape_js_mean: float
 
 
+# ── gene-centred windowing (shared by the build + the benchmark) ─────
+#
+# The single source of truth for how a gene-centred window is cut, so the
+# build-time slice extraction and the runtime re-slicing can never drift.
+# ``cds_start``/``cds_end`` are 1-based GFF coords (start inclusive), matching
+# the build's per-CDS ``start``/``end``.
+
+
+def cov_key(kind: str, ident: str) -> str:
+    """Record name for a construct's sequence (FASTA) / coverage (npz) track.
+    ``kind`` is ``"alt"`` or ``"native"``; ``ident`` is the sample_id (alt) or
+    gene_id (native). Colons/bars are mapped to ``~`` so the key is safe as a
+    FASTA header token and an npz member name."""
+    return f"{kind}:{ident}".replace(":", "~").replace("|", "~")
+
+
+def window_slice(
+    contig_len: int, cds_start: int, cds_end: int, window: int
+) -> tuple[int, int, int] | None:
+    """Reproduce the build's ``gene_window`` clamp. Returns
+    ``(w0, cds_start_in_window, cds_end_in_window)`` — where ``w0`` is the
+    window's 0-based contig start — or ``None`` if the contig can't fill a
+    full window around the gene, or the CDS doesn't fit inside it. The window
+    is gene-centred but clamped to stay inside the contig, so a gene near a
+    contig end sits off-centre (and the window is all real sequence, no pad)."""
+    if contig_len < window:
+        return None
+    centre = (cds_start - 1 + cds_end) // 2
+    w0 = max(0, min(centre - window // 2, contig_len - window))
+    cs = (cds_start - 1) - w0
+    ce = cds_end - w0
+    if cs < 0 or ce > window:
+        return None
+    return w0, cs, ce
+
+
+def _read_fasta(path: Path) -> dict[str, str]:
+    """Map FASTA record name → sequence (header token up to first whitespace)."""
+    seqs: dict[str, list[str]] = {}
+    cur: str | None = None
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                cur = line[1:].split()[0]
+                seqs[cur] = []
+            elif cur is not None:
+                seqs[cur].append(line.strip())
+    return {k: "".join(v) for k, v in seqs.items()}
+
+
 # ── shape metric helpers ─────────────────────────────────────
 
 
@@ -133,28 +177,92 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
     adapter_protocol: ClassVar[type] = CoverageTrackPredictor
 
     def __init__(self, data_path: Path, info: BenchmarkInfo) -> None:
-        self.data_path = Path(data_path)
+        # ``data_path`` is the task data directory. The window-agnostic artifact
+        # is three files: a per-construct index, a FASTA of generous gene-centred
+        # slices (alt + native), and per-base coverage. The benchmark re-cuts
+        # each model's window from the slices at eval time (``_materialize``).
+        p = Path(data_path)
+        self.data_path = p
         self.info = info
-        df = pd.read_csv(self.data_path, sep="\t")
-        for col in ("alt_seq", "native_seq", "cds_start_in_window",
-                    "cds_end_in_window", "norm_cov_strain",
-                    "norm_cov_js94_runs", "js94_reads_runs",
-                    "true_cov_alt", "true_cov_native", "low_support",
-                    "strand", "sample_id", "window_len"):
-            assert col in df.columns, f"{col} missing from {self.data_path}"
-        # Window length is set by the builder per distribution file. A
-        # single TSV must use one consistent window length.
-        window_len = int(df.window_len.iloc[0])
-        assert (df.window_len == window_len).all(), (
-            f"all rows of {self.data_path} must share window_len"
+        self.data_dir = p if p.is_dir() else p.parent
+        idx_path = self.data_dir / "brooks_index.tsv"
+        assert idx_path.exists(), (
+            f"no brooks_index.tsv in {self.data_dir} — fetch the distribution "
+            "with `ybench data get`"
         )
-        assert (df.alt_seq.str.len() == window_len).all()
-        assert (df.native_seq.str.len() == window_len).all()
-        self.window_len = window_len
-        self.df = df.reset_index(drop=True)
+        self.index = pd.read_csv(idx_path, sep="\t").reset_index(drop=True)
+        for col in ("sample_id", "gene_id", "strain", "copy_idx", "strand",
+                    "alt_contig_len", "alt_cds_start", "alt_cds_end",
+                    "alt_slice_start", "native_contig_len", "native_cds_start",
+                    "native_cds_end", "native_slice_start", "norm_cov_strain",
+                    "norm_cov_js94_runs", "js94_reads_runs", "low_support"):
+            assert col in self.index.columns, f"{col} missing from {idx_path}"
+        self._fasta = _read_fasta(self.data_dir / "brooks_constructs.fasta")
+        # Lazy NpzFile — per-construct coverage is decompressed on access.
+        self._cov = np.load(self.data_dir / "brooks_cov.npz")
 
-    def _parse_cov(self, s: str) -> np.ndarray:
-        return np.fromstring(s, sep=",", dtype=np.int32)
+    def _materialize(self, window: int) -> pd.DataFrame:
+        """Re-cut every construct to ``window``, reproducing the build's
+        membership: alt + native windows must fit, ``alt != native`` within the
+        window, and byte-identical alt copies of a gene are deduped (kept in
+        copy order). Returns one row per surviving construct with the windowed
+        alt/native sequence, windowed alt coverage, in-window CDS interval, and
+        the window-agnostic truth scalars the scorer needs. Bit-identical to the
+        old per-window TSVs (pinned by the golden test)."""
+        recs: list[dict] = []
+        for (strain, gid), grp in self.index.groupby(
+            ["strain", "gene_id"], sort=False
+        ):
+            nrow = grp.iloc[0]
+            nws = window_slice(
+                int(nrow.native_contig_len), int(nrow.native_cds_start),
+                int(nrow.native_cds_end), window,
+            )
+            if nws is None:
+                continue  # native window doesn't fit → whole gene drops
+            nw0, _ncs, _nce = nws
+            nk = cov_key("native", gid)
+            noff = nw0 - int(nrow.native_slice_start)
+            nat_full = self._fasta[nk]
+            assert 0 <= noff and noff + window <= len(nat_full), (
+                f"window {window} exceeds the stored slice for native {gid}; "
+                "rebuild the distribution with a larger --flank"
+            )
+            native_seq = nat_full[noff:noff + window]
+            seen: set[str] = set()
+            for _, row in grp.sort_values("copy_idx").iterrows():
+                aws = window_slice(
+                    int(row.alt_contig_len), int(row.alt_cds_start),
+                    int(row.alt_cds_end), window,
+                )
+                if aws is None:
+                    continue
+                aw0, acs, ace = aws
+                ak = cov_key("alt", row.sample_id)
+                aoff = aw0 - int(row.alt_slice_start)
+                alt_full = self._fasta[ak]
+                assert 0 <= aoff and aoff + window <= len(alt_full), (
+                    f"window {window} exceeds the stored slice for "
+                    f"{row.sample_id}; rebuild with a larger --flank"
+                )
+                alt_seq = alt_full[aoff:aoff + window]
+                if alt_seq == native_seq:
+                    continue          # no cis change in-window → not a sample
+                if alt_seq in seen:
+                    continue          # byte-identical duplicate copy
+                seen.add(alt_seq)
+                recs.append({
+                    "sample_id": row.sample_id, "strain": strain,
+                    "strand": row.strand,
+                    "alt_seq": alt_seq, "native_seq": native_seq,
+                    "true_cov_alt": self._cov[ak][aoff:aoff + window],
+                    "cds_start_in_window": acs, "cds_end_in_window": ace,
+                    "norm_cov_strain": row.norm_cov_strain,
+                    "norm_cov_js94_runs": row.norm_cov_js94_runs,
+                    "js94_reads_runs": row.js94_reads_runs,
+                    "low_support": bool(row.low_support),
+                })
+        return pd.DataFrame(recs).reset_index(drop=True)
 
     def _parse_norm_runs(self, s: str) -> np.ndarray:
         return np.fromstring(s, sep=",", dtype=np.float64)
@@ -191,7 +299,13 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         return np.concatenate(out_chunks, axis=0)
 
     def evaluate(self, adapter: CoverageTrackPredictor) -> BrooksResults:
-        n = len(self.df)
+        crop = adapter.crop_bp_each_side
+        out_len = adapter.seq_len - 2 * crop  # per-base prediction length
+        # Re-cut every construct to the adapter's receptive field (membership +
+        # dedup reproduced inside). One task serves any model with window <= the
+        # build flank.
+        df = self._materialize(adapter.seq_len)
+        n = len(df)
         n_reps = len(JS94_REPLICATE_STRAIN_KEYS)
         # Per-replicate prediction + truth LFCs, same (N, 3) shape.
         pred_lfc_runs = np.full((n, n_reps), np.nan, dtype=np.float64)
@@ -199,19 +313,11 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         shape_pearson = np.full(n, np.nan)
         shape_js = np.full(n, np.nan)
 
-        crop = adapter.crop_bp_each_side
-        out_len = adapter.seq_len - 2 * crop  # per-base prediction length
-        assert adapter.seq_len == self.window_len, (
-            f"adapter seq_len {adapter.seq_len} != distribution window_len "
-            f"{self.window_len}; pick a TSV that matches the model "
-            "(`brooks_scramble_v1.tsv` for Yorzoi @ 4992, "
-            "`brooks_scramble_v1_w16384.tsv` for Shorkie @ 16384)."
-        )
         varies_by_strain = bool(getattr(adapter, "varies_by_strain", True))
 
         # ── Phase 1: per-replicate true LFCs (no GPU work) ──
         j_raws_all = np.zeros((n, n_reps), dtype=np.int64)
-        for i, row in self.df.iterrows():
+        for i, row in df.iterrows():
             s_norm = float(row.norm_cov_strain)
             j_norms = self._parse_norm_runs(row.norm_cov_js94_runs)
             j_raws = self._parse_raw_runs(row.js94_reads_runs)
@@ -224,9 +330,9 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                 ))
 
         # ── Phase 2: batched alt predictions across all samples ──
-        all_alt_seqs = self.df.alt_seq.tolist()
-        all_strands = self.df.strand.tolist()
-        all_strains = self.df.strain.tolist()
+        all_alt_seqs = df.alt_seq.tolist()
+        all_strands = df.strand.tolist()
+        all_strains = df.strain.tolist()
         pred_alt_all = self._run_batched(
             adapter, all_alt_seqs, all_strands, all_strains,
             desc=f"alt   (n={n})",
@@ -241,7 +347,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         # against JS94 replicate k. NaN where unused (truth NaN).
         pred_nat_runs = np.full((n, n_reps, out_len), np.nan,
                                  dtype=np.float64)
-        all_native_seqs = self.df.native_seq.tolist()
+        all_native_seqs = df.native_seq.tolist()
         if varies_by_strain:
             # One batched call per JS94 replicate; restrict to samples
             # that need this replicate (truth is finite for it).
@@ -272,7 +378,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                 pred_nat_runs[mask, k] = pred_nat_one[mask]
 
         # ── Phase 4: per-sample LFCs + shape (CPU only) ──
-        for i, row in self.df.iterrows():
+        for i, row in df.iterrows():
             pred_alt = pred_alt_all[i]
             cs = max(0, int(row.cds_start_in_window) - crop)
             ce = min(out_len, int(row.cds_end_in_window) - crop)
@@ -289,7 +395,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                 ))
 
             true_alt = _crop_to_output(
-                self._parse_cov(row.true_cov_alt), crop, out_len
+                np.asarray(row.true_cov_alt, dtype=np.int32), crop, out_len
             )
             if true_alt.sum() > 0 and pred_alt.sum() > 0:
                 shape_pearson[i] = float(
@@ -317,7 +423,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                 np.nan,
             )
 
-        low = self.df.low_support.to_numpy(dtype=bool)
+        low = df.low_support.to_numpy(dtype=bool)
         scored_mask = (
             (~low) & (n_reps_supported >= 1)
             & np.isfinite(mean_pred) & np.isfinite(mean_true)
@@ -403,7 +509,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                if n_scored else float("nan"))
 
         return BrooksResults(
-            sample_ids=self.df.sample_id.tolist(),
+            sample_ids=df.sample_id.tolist(),
             pred_lfc_runs=pred_lfc_runs,
             true_lfc_runs=true_lfc_runs,
             n_reps_supported=n_reps_supported,
@@ -692,21 +798,11 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
 
     # ── Cross-model comparison override ──────────────────────────────────
     #
-    # Different receptive fields → different sample sets per model
-    # (Yorzoi @ 4992 bp dedups byte-identical copies that Shorkie @
-    # 16,384 bp keeps separate). Headline numbers are computed on the
-    # **intersection of sample_ids** so the comparison is apples-to-
-    # apples; per-model full-set metrics are recorded as secondary.
-    # Generalises to N models, not just two.
-
-    @property
-    def compare_task_name(self) -> str:
-        """Brooks ships two registry entries (`brooks_scramble` for
-        Yorzoi @ 4992, `brooks_scramble_shorkie` for Shorkie @ 16384)
-        because the two models need differently-sized distributions.
-        Cross-model comparisons should treat them as the same task —
-        the canonical name is `brooks_scramble`."""
-        return "brooks_scramble"
+    # One registry task now, but the two models still produce different sample
+    # sets at run time (a model with a larger window keeps byte-identical copies
+    # that a smaller window dedups), so the headline is computed on the
+    # **intersection of sample_ids** for an apples-to-apples comparison;
+    # per-model full-set metrics are recorded as secondary. Generalises to N.
 
     def compare_plot(
         self,

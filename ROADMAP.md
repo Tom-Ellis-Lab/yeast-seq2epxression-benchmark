@@ -231,20 +231,20 @@ Brooks et al. SCRaMBLE chromosome 9 — spec `benchmarks/brooks_scramble.md`.
 - [x] Shorkie adapter `ShorkieBrooksPredictor`: 8-fold, T0 tracks, softplus raw
   counts, 16 bp unbin, `varies_by_strain = False`
 - [x] `BrooksScrambleBenchmark`: per-replicate LFC design (0–3 true + 0–3
-  predicted LFCs per sample); two-tier headline (scored: r / ρ / dir-acc;
-  calibration: within-range + mean |z|); Tier-2 shape (per-base r + JS
+  predicted LFCs per sample); LFC headline (scored: r / ρ / dir-acc;
+  calibration: within-range + mean |z|); shape metrics (per-base r + JS
   divergence); LOO noise ceiling. JS94 replicate aliases in `_yorzoi_constants.py`
 - [x] Cross-model shared-cohort convention: headline on the intersection of the
   two models' sample sets; `ybench compare` Brooks logic in `benchmarks/brooks.py`
-  writes the shared-cohort summary + charts. Reconciles the sample set + Tier-1
-  LFC only — Tier-2 shape is still scored over each model's own window (not yet
+  writes the shared-cohort summary + charts. Reconciles the sample set + LFC
+  only — the shape metrics are still scored over each model's own window (not yet
   cross-model comparable; v1 blocker below)
 - [x] Diagnostics recorded: inter-run JS94 reproducibility (noise floor) and
   asymmetric LFC over-prediction (details in spec / notebooks)
-- [ ] **Blocker — fix before release: common Tier-2 readout window.** Tier-2
-  (Pearson + JS) is scored over each model's full output region (Yorzoi 3,000 bp
-  vs Shorkie 14,336 bp), so the cross-model shape numbers are invalid — JS
-  especially is support-size dependent. Score Tier-2 over a fixed common window
+- [ ] **Blocker — fix before release: common shape readout window.** The shape
+  metrics (Pearson + JS) are scored over each model's full output region (Yorzoi
+  3,000 bp vs Shorkie 14,336 bp), so the cross-model shape numbers are invalid —
+  JS especially is support-size dependent. Score them over a fixed common window
   (≤ 3 kb, CDS-centred) for every model; the full receptive field still goes in
   as input, only the scored region is shared. Cleanest implementation: a single
   max-width distribution each model crops to its `seq_len` for input and to the
@@ -464,7 +464,7 @@ Follow-ups to the implemented Brooks SCRaMBLE benchmark (spec
 
 **Leakage-free Yorzoi evaluation.** Yorzoi's training targets include the Brooks
 Nanopore tracks (manifest verified 2026-05-20), so its headline is partly a
-leakage measurement, not zero-shot — both the Tier-1 LFCs and the Tier-2 shape
+leakage measurement, not zero-shot — both the LFCs and the shape
 metrics read back tracks the model was trained on. Shorkie is clean (T0 RNA-seq
 tracks only). The hard part: Brooks is genuinely informative training data, so a
 clean test set that still permits training is unresolved. The native genome is

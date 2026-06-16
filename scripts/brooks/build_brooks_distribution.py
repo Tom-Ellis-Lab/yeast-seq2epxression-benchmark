@@ -326,7 +326,7 @@ def main() -> None:
           f"{[d for d, _, _ in kept]}")
 
     # Per-base native coverage on JS94_1 (= JS96_1 coord system),
-    # summed across the deep JS94 runs — used for Tier-2 native-truth.
+    # summed across the deep JS94 runs — used for shape native-truth.
     js94_syn_len = len(par_fa[par_syn])
     js94_native_cov = {
         s: sum(per_base_cov(b, js94_read_contig, s, js94_syn_len)

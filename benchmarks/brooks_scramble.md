@@ -19,7 +19,7 @@
 > **per-replicate LFC framing** (0–3 predicted + truth LFCs per
 > sample, one per JS94 deep-WT run), strain-side-only `low_support`
 > flag, LOO ceiling, calibration metrics on the n_reps ≥ 2 cohort,
-> Tier-2 per-base shape (Pearson + Jensen–Shannon) on the alt
+> per-base shape (Pearson + Jensen–Shannon) on the alt
 > construct. Diverges from the initial design (mean-denominator LFC
 > + scalar control-noise ceiling), which is the version that was
 > "design-locked" 2026-05-19 — both the framing and the metrics
@@ -29,14 +29,14 @@
 
 | | |
 | --- | --- |
-| **Task** | Predict how a SCRaMBLE structural rearrangement changes a synIXR gene's expression, from sequence. Two tiers: (1) scalar log-fold-change of CDS coverage (rearranged vs unscrambled control); (2, Yorzoi-only) the predicted coverage *profile* over the gene window. |
+| **Task** | Predict how a SCRaMBLE structural rearrangement changes a synIXR gene's expression, from sequence. Two equally-weighted metric families: (1) scalar log-fold-change of CDS coverage (rearranged vs unscrambled control); (2, Yorzoi-only) the predicted coverage *profile* over the gene window. |
 | **Source** | Brooks *et al.* 2022, *Transcriptional neighborhoods regulate transcript isoform lengths and expression levels*, Science 375(6584). DOI: [10.1126/science.abg0162](https://doi.org/10.1126/science.abg0162). Paper screenshots in `archive/brooks/`. |
 | **Data** | `gs://brooks-nanopore/` — per-strain genome FASTA (`genomes/`), per-strain GFF (`annotations/`), per-strain Nanopore direct-RNA read alignments (`alignment/*.bed`). |
 | **Assay** | Synthetic chr IX right arm (synIXR, ~91 kb, 43 loxPsym segments; loxPsym sits 3 bp after the stop codon of every nonessential CDS). Cre induces deletions / duplications / inversions / translocations. A rearranged CDS **keeps its native promoter but is decoupled from its native 3′UTR/downstream** — so the cis-predictable effect is principally the *new downstream context*. Long-read Oxford Nanopore **direct RNA-seq** per strain. |
 | **Control** | **JS94** = parental −SCRaMBLE strain (synIXR, no induced recombination). Same genetic background; the only valid "before" for the rearrangement effect (not BY4741, which has native chr IX). |
 | **Unit of evaluation** | One **(gene × strain × copy)** sample — see *Per-copy sampling*. ~58 SCRaMBLE strains available (not the Yorzoi-paper 5); sample set defined by an objective locked rule, not hand-picked. |
-| **Primary metric** | Tier 1: **direction balanced accuracy** of sign(LFC), then Spearman ρ, then Pearson r, all on (pred, true) LFC across samples, read against the JS94 reproducibility ceiling. |
-| **Adapter protocol** | New `CoverageTrackPredictor.predict_coverage(construct_seq, strand) -> np.ndarray` (per-bin window coverage). The benchmark derives the Tier-1 CDS scalar and the Tier-2 shape from it. |
+| **Primary metric** | LFC: **direction balanced accuracy** of sign(LFC), then Spearman ρ, then Pearson r, all on (pred, true) LFC across samples, read against the JS94 reproducibility ceiling. |
+| **Adapter protocol** | New `CoverageTrackPredictor.predict_coverage(construct_seq, strand) -> np.ndarray` (per-bin window coverage). The benchmark derives the LFC CDS scalar and the shape profile from it. |
 
 ## Why this benchmark exists
 
@@ -162,11 +162,11 @@ genomes/GFF/BED, no R64 reference. No re-selection at run time.
 - Window length per model (Yorzoi 4992 bp); gene-centred so up- and
   downstream context are balanced (CDS itself is short; the informative
   variation is at TSS/TES and the new junction, *outside* the CDS — see
-  Tier 2 domain).
+  the shape-metric domain below).
 
 ## Evaluation protocol
 
-### Tier 1 — scalar LFC (Yorzoi primary; Shorkie via deferred substitute)
+### LFC — scalar effect size (Yorzoi primary; Shorkie via deferred substitute)
 
 1. Per sample: `pred_LFC = log2( Σ_pred(alt CDS bins) / Σ_pred(native
    CDS bins) )`; `true_LFC` from native-normalised Nanopore CDS coverage
@@ -178,7 +178,7 @@ genomes/GFF/BED, no R64 reference. No re-selection at run time.
    **JS94×3 reproducibility band** overlaid, r/ρ/acc annotated; plus a
    per-rearrangement-class breakdown.
 
-### Tier 2 — coverage-shape (Yorzoi-only)
+### Shape — coverage profile (Yorzoi-only)
 
 Over the **full gene-centred window** (not CDS-only — the CDS profile is
 usually flat; the signal is at TSS/TES/junction), at Yorzoi bin
@@ -198,7 +198,7 @@ baseline):
   headline because it is asymmetric, unbounded, undefined on zeros, and
   not comparable across samples — see the KL-vs-JS note below.
 
-Report Tier-2 metrics against the **JS94×3 control–control** Pearson/JS
+Report shape metrics against the **JS94×3 control–control** Pearson/JS
 ceiling. Example loci plotted (true vs predicted profile, alt and native
 overlaid), as in the Yorzoi Wu dump notebook.
 
@@ -210,7 +210,7 @@ overlaid), as in the Yorzoi Wu dump notebook.
 > to a ceiling. `JSD = ½D_KL(P‖M)+½D_KL(Q‖M)`, `M=½(P+Q)`, is
 > symmetric, always finite without smoothing, and bounded `[0,1]` (bits)
 > — so per-sample values aggregate and compare to the reproducibility
-> ceiling cleanly. Both ignore magnitude (Tier 1 carries that); Pearson
+> ceiling cleanly. Both ignore magnitude (the LFC metrics carry that); Pearson
 > and JS are complementary (peak co-location vs mass-placement).
 
 ### Reference baseline
@@ -232,9 +232,9 @@ class CoverageTrackPredictor(Protocol):
 
 The benchmark builds the gene-centred alt and native window strings and
 the in-window CDS interval; calls `predict_coverage` for each; forms the
-Tier-1 CDS-sum LFC and the Tier-2 full-window shape. Shorkie cannot do
-Tier 2 (not trained on Nanopore direct-RNA); a Shorkie Tier-1 substitute
-using a proxy track is deferred (open question).
+CDS-sum LFC and the full-window shape. Shorkie cannot do the shape metric
+(not trained on Nanopore direct-RNA); a Shorkie LFC substitute using a
+proxy track is deferred (open question).
 
 ## Files
 
@@ -278,7 +278,7 @@ using a proxy track is deferred (open question).
 1c. **Median-of-ratios size factor** — total-native-reads is the v1
    normaliser (simple/portable); MoR over native genes is a documented
    v2 refinement if a global trans shift is observed.
-2. **Shorkie Tier-1 substitute** — deferred. Shorkie can't see Nanopore
+2. **Shorkie LFC substitute** — deferred. Shorkie can't see Nanopore
    direct-RNA; decide whether a proxy-track LFC-vs-native comparison is
    worth defining once Yorzoi numbers exist.
 3. **Rearrangement-type classification** — derive from `JS<S>_1` vs
@@ -286,7 +286,7 @@ using a proxy track is deferred (open question).
    bucket).
 4. **Antisense / both-strand coverage** — the paper uses both-strand
    cosine similarity for neighbourhood. v1 is gene-strand only; revisit
-   adding the antisense channel to Tier 2 as a v2 extension.
+   adding the antisense channel to the shape metric as a v2 extension.
 5. **Receptive-field window length** — Yorzoi 4992 bp; confirm the
    gene-centred placement keeps the relevant new junction in-window for
    the bulk of samples (drop / flag those where it doesn't).

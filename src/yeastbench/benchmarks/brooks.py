@@ -1,10 +1,10 @@
 """Brooks et al. SCRaMBLE structural-rearrangement expression benchmark.
 
-Two tiers (see ``benchmarks/brooks_scramble.md``):
+Two metric families, equally weighted (see ``benchmarks/brooks_scramble.md``):
 
-  Tier 1 — scalar LFC.  **Per-replicate** true LFCs: for each sample,
-    compute ``log2((norm_cov_strain + 1) / (norm_cov_js94_k + 1))`` for
-    each JS94 deep run ``k`` whose raw CDS read count for the gene
+  LFC (``lfc_*``) — scalar effect size.  **Per-replicate** true LFCs: for
+    each sample, compute ``log2((norm_cov_strain + 1) / (norm_cov_js94_k + 1))``
+    for each JS94 deep run ``k`` whose raw CDS read count for the gene
     meets ``MIN_READS_PER_RUN`` (default 10). Yields 0–3 supporting
     LFCs per sample. Predicted LFC is a single scalar (from per-base
     predicted-count units, alt CDS sum vs native CDS sum).
@@ -17,8 +17,8 @@ Two tiers (see ``benchmarks/brooks_scramble.md``):
       * Mean standardised residual ``|z|`` where
         ``z = (pred - mean) / max(range, eps)``.
 
-  Tier 2 — coverage shape.  Per-base predicted vs per-base true
-    Nanopore pileup over the central ``seq_len - 2 * crop`` region;
+  Shape (``shape_*``) — coverage profile.  Per-base predicted vs per-base
+    true Nanopore pileup over the central ``seq_len - 2 * crop`` region;
     metrics: Pearson + Jensen–Shannon divergence per sample, mean across
     the ``n_reps ≥ 1`` AND not ``low_support`` cohort.
 
@@ -101,9 +101,9 @@ class BrooksResults:
     # Calibration on the sample-level mean LFCs (n_reps >= 2 cohort)
     within_range_rate: float
     mean_abs_z: float
-    # Tier-2 (mean over n_scored; alt construct, full predicted region)
-    tier2_pearson_mean: float
-    tier2_js_mean: float
+    # Shape (mean over n_scored; alt construct, full predicted region)
+    shape_pearson_mean: float
+    shape_js_mean: float
 
 
 # ── shape metric helpers ─────────────────────────────────────
@@ -196,8 +196,8 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         # Per-replicate prediction + truth LFCs, same (N, 3) shape.
         pred_lfc_runs = np.full((n, n_reps), np.nan, dtype=np.float64)
         true_lfc_runs = np.full((n, n_reps), np.nan, dtype=np.float64)
-        tier2_pearson = np.full(n, np.nan)
-        tier2_js = np.full(n, np.nan)
+        shape_pearson = np.full(n, np.nan)
+        shape_js = np.full(n, np.nan)
 
         crop = adapter.crop_bp_each_side
         out_len = adapter.seq_len - 2 * crop  # per-base prediction length
@@ -271,7 +271,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                 mask = np.isfinite(true_lfc_runs[:, k])
                 pred_nat_runs[mask, k] = pred_nat_one[mask]
 
-        # ── Phase 4: per-sample LFCs + Tier-2 shape (CPU only) ──
+        # ── Phase 4: per-sample LFCs + shape (CPU only) ──
         for i, row in self.df.iterrows():
             pred_alt = pred_alt_all[i]
             cs = max(0, int(row.cds_start_in_window) - crop)
@@ -292,12 +292,12 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
                 self._parse_cov(row.true_cov_alt), crop, out_len
             )
             if true_alt.sum() > 0 and pred_alt.sum() > 0:
-                tier2_pearson[i] = float(
+                shape_pearson[i] = float(
                     pearsonr(true_alt, pred_alt).statistic
                 )
                 p = true_alt / true_alt.sum()
                 q = pred_alt / pred_alt.sum()
-                tier2_js[i] = _js_divergence(p, q)
+                shape_js[i] = _js_divergence(p, q)
 
         # Per-sample replicate counts (truth side; pred side mirrors it
         # by construction since we only ran pred when truth was finite).
@@ -397,9 +397,9 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             within_range_rate = hits / n_calibration
             mean_abs_z = float(np.mean(zs))
 
-        t2p = (float(np.nanmean(tier2_pearson[scored_mask]))
+        t2p = (float(np.nanmean(shape_pearson[scored_mask]))
                if n_scored else float("nan"))
-        t2j = (float(np.nanmean(tier2_js[scored_mask]))
+        t2j = (float(np.nanmean(shape_js[scored_mask]))
                if n_scored else float("nan"))
 
         return BrooksResults(
@@ -417,7 +417,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             pearson_r=pr, spearman_rho=sr, dir_balanced_acc=da,
             ceiling_pearson_r=ceiling_pr, ceiling_dir_balanced_acc=ceiling_da,
             within_range_rate=within_range_rate, mean_abs_z=mean_abs_z,
-            tier2_pearson_mean=t2p, tier2_js_mean=t2j,
+            shape_pearson_mean=t2p, shape_js_mean=t2j,
         )
 
     def plot(self, results: BrooksResults, out_dir: Path) -> None:
@@ -444,7 +444,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         m = (~results.low_support) & (results.n_reps_supported >= 1) \
             & np.isfinite(mean_pred) & np.isfinite(mean_true)
 
-        # ── Tier-1 scatter — mean pred vs mean true, with replicate
+        # ── LFC scatter — mean pred vs mean true, with replicate
         # envelopes shown as crosshair error bars on both axes ──
         p_arr, t_arr = mean_pred[m], mean_true[m]
         true_lo = np.array([
@@ -485,7 +485,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         ax.set_xlabel("true log2 LFC (mean over supporting JS94 runs)")
         ax.set_ylabel("predicted log2 LFC (mean over supporting JS94 runs)")
         ax.set_title(
-            f"Brooks SCRaMBLE — Tier 1"
+            f"Brooks SCRaMBLE — LFC"
             + (f" — {title_model}" if title_model else "")
             + f"\nn_scored={results.n_scored}  "
             f"dir-acc={results.dir_balanced_acc:.3f} "
@@ -497,7 +497,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             f"within-range={results.within_range_rate:.3f}  "
             f"|z|={results.mean_abs_z:.3f}"
         )
-        fig.tight_layout(); fig.savefig(out_dir / "tier1_scatter.png", dpi=150)
+        fig.tight_layout(); fig.savefig(out_dir / "lfc_scatter.png", dpi=150)
         plt.close(fig)
 
         # ── Per-sample interval plot — every scored sample side by
@@ -554,7 +554,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             )
             ax.legend(loc="upper left", fontsize=9)
             fig.tight_layout()
-            fig.savefig(out_dir / "tier1_per_sample.png", dpi=100)
+            fig.savefig(out_dir / "lfc_per_sample.png", dpi=100)
             plt.close(fig)
 
     def save_results(self, results: BrooksResults, out_dir: Path) -> None:
@@ -647,7 +647,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             ceiling_pearson_r=float(np.nanmean(ceil_pr_per)) if np.any(np.isfinite(ceil_pr_per)) else float("nan"),
             ceiling_dir_balanced_acc=float(np.nanmean(ceil_da_per)) if np.any(np.isfinite(ceil_da_per)) else float("nan"),
             within_range_rate=within, mean_abs_z=mz,
-            tier2_pearson_mean=float("nan"), tier2_js_mean=float("nan"),
+            shape_pearson_mean=float("nan"), shape_js_mean=float("nan"),
         )
 
     def summary_dict(self, results: BrooksResults) -> dict[str, Any]:
@@ -657,27 +657,27 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             "n_calibration": results.n_calibration,
             "n_weak_baseline": results.n_weak_baseline,
             "n_low_support": results.n_low_support,
-            "tier1_dir_balanced_acc": results.dir_balanced_acc,
-            "tier1_pearson_r": results.pearson_r,
-            "tier1_spearman_rho": results.spearman_rho,
-            "tier1_ceiling_dir_balanced_acc": results.ceiling_dir_balanced_acc,
-            "tier1_ceiling_pearson_r": results.ceiling_pearson_r,
-            "tier1_pearson_r_per_rep": results.pearson_r_per_rep.tolist(),
-            "tier1_spearman_rho_per_rep": results.spearman_rho_per_rep.tolist(),
-            "tier1_dir_balanced_acc_per_rep":
+            "lfc_dir_balanced_acc": results.dir_balanced_acc,
+            "lfc_pearson_r": results.pearson_r,
+            "lfc_spearman_rho": results.spearman_rho,
+            "lfc_ceiling_dir_balanced_acc": results.ceiling_dir_balanced_acc,
+            "lfc_ceiling_pearson_r": results.ceiling_pearson_r,
+            "lfc_pearson_r_per_rep": results.pearson_r_per_rep.tolist(),
+            "lfc_spearman_rho_per_rep": results.spearman_rho_per_rep.tolist(),
+            "lfc_dir_balanced_acc_per_rep":
                 results.dir_balanced_acc_per_rep.tolist(),
-            "tier1_ceiling_r_per_rep": results.ceiling_r_per_rep.tolist(),
-            "tier1_ceiling_dir_acc_per_rep":
+            "lfc_ceiling_r_per_rep": results.ceiling_r_per_rep.tolist(),
+            "lfc_ceiling_dir_acc_per_rep":
                 results.ceiling_dir_acc_per_rep.tolist(),
-            "tier1_within_range_rate": results.within_range_rate,
-            "tier1_mean_abs_z": results.mean_abs_z,
-            "tier2_pearson_mean": results.tier2_pearson_mean,
-            "tier2_js_mean": results.tier2_js_mean,
+            "lfc_within_range_rate": results.within_range_rate,
+            "lfc_mean_abs_z": results.mean_abs_z,
+            "shape_pearson_mean": results.shape_pearson_mean,
+            "shape_js_mean": results.shape_js_mean,
         }
 
     def headline(self, results: BrooksResults) -> str:
         return (
-            f"Tier-1 (n_scored={results.n_scored}): "
+            f"LFC (n_scored={results.n_scored}): "
             f"dir-acc {results.dir_balanced_acc:.3f} "
             f"(ceiling {results.ceiling_dir_balanced_acc:.3f})  "
             f"r {results.pearson_r:.3f} "
@@ -686,8 +686,8 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             f"calibration (n={results.n_calibration}): "
             f"within-range {results.within_range_rate:.3f}  "
             f"|z| {results.mean_abs_z:.3f}  | "
-            f"Tier-2: r̄ {results.tier2_pearson_mean:.3f}  "
-            f"JS̄ {results.tier2_js_mean:.3f}"
+            f"shape: r̄ {results.shape_pearson_mean:.3f}  "
+            f"JS̄ {results.shape_js_mean:.3f}"
         )
 
     # ── Cross-model comparison override ──────────────────────────────────
@@ -715,7 +715,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
     ) -> Path | None:
         """Shared-cohort comparison across N models. Writes:
 
-          - ``shared_tier1.png``: bar chart of Pearson r / Spearman ρ /
+          - ``shared_lfc.svg``: bar chart of Pearson r / Spearman ρ /
             dir-acc per model on the shared cohort, with the LOO
             reproducibility ceiling marked as a grey dashed line.
           - ``shared_per_sample.png``: per-sample interval plot — every
@@ -724,7 +724,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
           - ``summary.json``: shared-cohort + secondary full-set numbers
             for every model.
 
-        Returns the Tier-1 plot path so the runner can include it in
+        Returns the LFC plot path so the runner can include it in
         the cross-task mosaic."""
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -772,7 +772,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         }
         (out_dir / "summary.json").write_text(json.dumps(out_summary, indent=2))
 
-        plot_path = out_dir / "shared_tier1.svg"
+        plot_path = out_dir / "shared_lfc.svg"
         _plot_brooks_shared_metrics(loaded, indexers, shared_cohort, plot_path)
         _plot_brooks_shared_per_sample(
             loaded, indexers, out_dir / "shared_per_sample.svg"

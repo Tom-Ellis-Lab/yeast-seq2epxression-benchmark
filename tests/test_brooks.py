@@ -1,7 +1,7 @@
 """Tests for the Brooks SCRaMBLE benchmark.
 
 The benchmark depends on a single self-contained TSV; the tests build a
-tiny one and verify Tier-1 LFC + Tier-2 shape end-to-end against a
+tiny one and verify the LFC + shape metrics end-to-end against a
 mock CoverageTrackPredictor.
 """
 from __future__ import annotations
@@ -189,23 +189,23 @@ class TestBrooksBenchmark:
         b = BrooksScrambleBenchmark(brooks_tsv, INFO)
         res = b.evaluate(_MockAdapter(b.df))
         b.plot(res, tmp_path / "p")
-        assert (tmp_path / "p" / "tier1_scatter.png").exists()
+        assert (tmp_path / "p" / "lfc_scatter.png").exists()
         # Also writes the per-sample interval plot
-        assert (tmp_path / "p" / "tier1_per_sample.png").exists()
+        assert (tmp_path / "p" / "lfc_per_sample.png").exists()
         s = b.summary_dict(res)
         for k in ("n_total", "n_scored", "n_calibration", "n_weak_baseline",
-                  "tier1_dir_balanced_acc", "tier1_pearson_r",
-                  "tier1_ceiling_pearson_r",
-                  "tier1_ceiling_dir_balanced_acc",
-                  "tier1_pearson_r_per_rep", "tier1_ceiling_r_per_rep",
-                  "tier1_within_range_rate", "tier1_mean_abs_z",
-                  "tier2_pearson_mean", "tier2_js_mean"):
+                  "lfc_dir_balanced_acc", "lfc_pearson_r",
+                  "lfc_ceiling_pearson_r",
+                  "lfc_ceiling_dir_balanced_acc",
+                  "lfc_pearson_r_per_rep", "lfc_ceiling_r_per_rep",
+                  "lfc_within_range_rate", "lfc_mean_abs_z",
+                  "shape_pearson_mean", "shape_js_mean"):
             assert k in s
         # Per-rep arrays serialise as 3-element lists
-        assert len(s["tier1_pearson_r_per_rep"]) == 3
-        assert len(s["tier1_ceiling_r_per_rep"]) == 3
+        assert len(s["lfc_pearson_r_per_rep"]) == 3
+        assert len(s["lfc_ceiling_r_per_rep"]) == 3
         h = b.headline(res)
-        assert "Tier-1" in h and "ceiling" in h and "Tier-2" in h
+        assert "LFC" in h and "ceiling" in h and "shape" in h
 
     def test_low_support_dropped(self, brooks_tsv):
         # flip one row to low_support and confirm it's excluded

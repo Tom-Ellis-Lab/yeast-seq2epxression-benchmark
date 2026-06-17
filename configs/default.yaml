@@ -132,7 +132,7 @@ runs:
   # Supervised in-distribution reference baseline (reported separately from
   # the zero-shot foundation models). Single DREAM-RNN net trained on this
   # very assay; scored on the insert in its own reporter context, not
-  # marginalized at native loci. See benchmarks/rafi_mpra_promoter.md.
+  # marginalized at native loci. See docs/benchmarks/rafi_mpra_promoter.md.
   - model: dream_rnn
     tasks: [rafi_mpra_marginalized]
     model_config:

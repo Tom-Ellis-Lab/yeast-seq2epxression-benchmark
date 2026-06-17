@@ -7,7 +7,7 @@ DREAM-RNN directly on the insert in its own reporter plasmid context — the
 substrate the model was trained on — and returns the predicted reporter
 expression. The benchmark then correlates that scalar against the measured
 expression per stratum, identically to the foundation models' mean-logSED
-scalar. See ``benchmarks/rafi_mpra_promoter.md``.
+scalar. See ``docs/benchmarks/rafi_mpra_promoter.md``.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Brooks et al. SCRaMBLE structural-rearrangement expression benchmark.
 
-Two tiers (see ``benchmarks/brooks_scramble.md``):
+Two tiers (see ``docs/benchmarks/brooks_scramble.md``):
 
   Tier 1 — scalar LFC.  **Per-replicate** true LFCs: for each sample,
     compute ``log2((norm_cov_strain + 1) / (norm_cov_js94_k + 1))`` for

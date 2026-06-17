@@ -2,7 +2,7 @@
 
 This is the ONLY component that touches `gs://brooks-nanopore`. It
 resolves every (gene, strain, copy) sample under the locked rule
-(benchmarks/brooks_scramble.md) and bakes everything the benchmark needs
+(docs/benchmarks/brooks_scramble.md) and bakes everything the benchmark needs
 at eval time into one TSV — so the benchmark depends on that file alone
 (no GCS, no per-strain genomes/GFF/BED, no R64 reference).
 

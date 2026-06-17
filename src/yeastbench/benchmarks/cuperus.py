@@ -16,7 +16,7 @@ score and ``growth_rate``. Partial correlation: the model's signal beyond
 translation-only (Kozak) features — cross-validated partial correlation +
 incremental R², computed within the clean depth bucket (``t0 >= 101``).
 
-See ``benchmarks/cuperus_mpra_5utr.md``.
+See ``docs/benchmarks/cuperus_mpra_5utr.md``.
 """
 from __future__ import annotations
 

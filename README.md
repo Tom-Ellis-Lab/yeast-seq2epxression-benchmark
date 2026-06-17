@@ -11,31 +11,27 @@
 - [Install](#install)
 - [Getting the data](#getting-the-data)
 - [Running the benchmark](#running-the-benchmark)
-  - [Progress, hardware, and GPU selection](#progress-hardware-and-gpu-selection)
-  - [Output layout](#output-layout)
 - [Extending the benchmark](#extending-the-benchmark)
-  - [Adding a new benchmark](#adding-a-new-benchmark)
-  - [Adding a new model](#adding-a-new-model)
 - [Repository layout](#repository-layout)
 - [Roadmap](#roadmap)
 - [Contact](#contact)
 
 ## Benchmark Tasks
 
-Please find a more comprehensive overview in [benchmarks/](benchmarks).
+Please find a more comprehensive overview in [docs/benchmarks/](docs/benchmarks).
 
 | Benchmark | Description | Task | Primary metric |
 | --- | --- | --- | --- |
-| [Caudal eQTL](benchmarks/caudal_eqtl.md) | single-nucleotide *cis*-eQTLs vs matched controls | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) |
-| [Kita eQTL](benchmarks/kita_eqtl.md) | single-nucleotide *cis*-eQTLs (independent panel) | binary classification | AUROC / AUPRC |
-| [Rafi / deBoer MPRA (promoter)](benchmarks/rafi_mpra_promoter.md) | ~71k random 80 bp promoters in a dual-reporter plasmid GPRA | regression (marginalized logSED) | Pearson / Spearman |
-| [Shalem MPRA (terminator)](benchmarks/shalem_mpra_terminator.md) | designed 3′-end / terminator variants (cleavage & termination) | regression (marginalized logSED) | Pearson *r* (Spearman alongside) |
-| [Chen synonymous MPRA](benchmarks/chen_synonymous.md) | synonymous-codon effect on mRNA abundance | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | 
-| [Wu RFP insertions](benchmarks/wu_rfpins.md) | fixed RFP cassette across ORF-deletion loci (position effect) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | 
-| [Hong IGR insertions](benchmarks/hong_igr.md) | fixed reporter across intergenic loci (position effect) | regression | Spearman ρ on IntProp | 
-| [Brooks SCRaMBLE](benchmarks/brooks_scramble.md) | SCRaMBLE rearrangement (altered neighbour / downstream context) | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | 
-| [Cuperus 5′-UTR](benchmarks/cuperus_mpra_5utr.md) | random 50 bp 5′-UTRs (Kozak, uORFs, structure) | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | 
-| [Meneu foreign DNA](benchmarks/meneu_foreign_dna.md) | whole bacterial chromosomes integrated in yeast (far-OOD sequence) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) |
+| [Caudal eQTL](docs/benchmarks/caudal_eqtl.md) | single-nucleotide *cis*-eQTLs vs matched controls | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) |
+| [Kita eQTL](docs/benchmarks/kita_eqtl.md) | single-nucleotide *cis*-eQTLs (independent panel) | binary classification | AUROC / AUPRC |
+| [Rafi / deBoer MPRA (promoter)](docs/benchmarks/rafi_mpra_promoter.md) | ~71k random 80 bp promoters in a dual-reporter plasmid GPRA | regression (marginalized logSED) | Pearson / Spearman |
+| [Shalem MPRA (terminator)](docs/benchmarks/shalem_mpra_terminator.md) | designed 3′-end / terminator variants (cleavage & termination) | regression (marginalized logSED) | Pearson *r* (Spearman alongside) |
+| [Chen synonymous MPRA](docs/benchmarks/chen_synonymous.md) | synonymous-codon effect on mRNA abundance | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | 
+| [Wu RFP insertions](docs/benchmarks/wu_rfpins.md) | fixed RFP cassette across ORF-deletion loci (position effect) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | 
+| [Hong IGR insertions](docs/benchmarks/hong_igr.md) | fixed reporter across intergenic loci (position effect) | regression | Spearman ρ on IntProp | 
+| [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | SCRaMBLE rearrangement (altered neighbour / downstream context) | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | 
+| [Cuperus 5′-UTR](docs/benchmarks/cuperus_mpra_5utr.md) | random 50 bp 5′-UTRs (Kozak, uORFs, structure) | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | 
+| [Meneu foreign DNA](docs/benchmarks/meneu_foreign_dna.md) | whole bacterial chromosomes integrated in yeast (far-OOD sequence) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) |
 
 ## Models
 
@@ -135,151 +131,23 @@ uv run ybench run --config configs/default.yaml --task  caudal_eqtl
 uv run ybench replot results/default/shorkie__caudal_eqtl
 ```
 
-### Progress, hardware, and GPU selection
-
-`run` opens with a banner — config hash, resolved device (GPU name + free
-VRAM + `CUDA_VISIBLE_DEVICES` when CUDA is available), a data-readiness check,
-and the planned pairs — then prints a `[i/N]` line per pair with a running
-mean-pair-time **ETA** so you can see at a glance what's done and how long is
-left:
-
-```
-hardware:      cuda:0  NVIDIA A100-80GB  (79.2/80.0 GB free)
-data:          ✓ ready  19/19 files (474.0MB)
-runs:          12 pair(s)
-
-[ 1/12] shorkie × caudal_eqtl → results/default/shorkie__caudal_eqtl
-  …
-  ✓ done in 41s · elapsed 41s · mean 41s/pair · ETA ~7m32s
-```
-
-Before executing, `run` pre-flights the data: a real run **stops** if any
-required file is missing or stale (with the `ybench data get` command to fix
-it); `--no-data-check` skips that. Pick the GPU with `--gpu 2` (shorthand for
-`--device cuda:2`) or `--device cpu`. Runs are sequential — one GPU at a time;
-to isolate a physical GPU on a shared box use `CUDA_VISIBLE_DEVICES`.
-
-### Output layout
-
-One directory per `(model, task)` pair, under the config's `out_dir`:
-
-```
-results/default/
-  shorkie__caudal_eqtl/
-    negset_{1..4}_scores.npy   # per-iteration raw scores
-    negset_{1..4}_labels.npy   # per-iteration labels
-    negset_{1..4}_pairs.tsv    # per-pair metadata (pair_id, distances)
-    summary.json               # per-iter + aggregate AUROC / AUPRC
-    run_metadata.json          # config hash, git commit, timestamp
-    primary_roc_pr.png         # ROC + PR on full set (|score|, mean ± SEM, baselines)
-    close_only_roc_pr.png      # same, filtered to pos_distance_to_tss ≤ 2 kb
-    distance_stratified.png    # AUROC / AUPRC per distance-to-TSS bin
-  yorzoi__caudal_eqtl/
-    …
-```
-
-`run_metadata.json` captures everything needed to reproduce that directory's
-numbers — the config hash, repo git commit, resolved model/task configs,
-and timestamp. Raw scores + labels + pair metadata are persisted so
-post-hoc analyses (distance-stratification, signed-vs-absolute comparison,
-etc.) don't require re-running the model.
+See [docs/cli.md](docs/cli.md) for the full CLI reference — all flags, GPU/device
+selection, the progress banner, the output layout, and the `ybench data` commands.
 
 ## Extending the benchmark
 
-The codebase is built around two orthogonal abstractions, wired together
-by a registry:
-
-- **Protocols** (`src/yeastbench/adapters/protocols.py`) — small Python
-  `Protocol`s describing what a model must implement to run a given
-  *type* of benchmark. Current protocols:
-  - `VariantEffectScorer.score_variants(variants) -> np.ndarray`
-    — for eQTL-style benchmarks.
-  - `MarginalizedSequenceExpressionPredictor.predict_marginalized_expressions(seqs) -> np.ndarray`
-    — for native-position marginalized MPRA scoring.
-- **Benchmarks** (`src/yeastbench/benchmarks/`) — a `Benchmark` subclass
-  per task type. Each declares `adapter_protocol` (which protocol it
-  consumes) and implements `evaluate`, `plot`, `save_results`,
-  `load_results`, `summary_dict`, and `headline`.
-- **Adapters** (`src/yeastbench/adapters/`) — one class per
-  `(model, protocol)` pair. Implements the protocol by wrapping the
-  model's forward pass, tokenization, and post-processing.
-
-The CLI's `_run_pair` is task-agnostic: `task = TASKS[name](...)`,
-`adapter = MODELS[name](task, device, ...)`, then
-`task.evaluate(adapter) → task.plot → task.save_results`.
-
-### Adding a new benchmark
-
-Most new benchmarks reuse an existing protocol. The workflow:
-
-1. **Pick or add a protocol.** Can one of the existing protocols score
-   your task? If yes, reuse it. If no — the task needs a
-   semantically-different operation — add a new `@runtime_checkable`
-   `Protocol` in `adapters/protocols.py`.
-2. **Write the Benchmark class** in `src/yeastbench/benchmarks/<name>.py`:
-   - Subclass `Benchmark[AdapterT, ResultT]` with your adapter protocol
-     and results dataclass.
-   - Set `adapter_protocol: ClassVar[type] = YourProtocol`.
-   - Implement `__init__(<task_config_fields>, info)`,
-     `evaluate(adapter) -> Results`, `plot`, `save_results`,
-     `load_results`, `summary_dict`, `headline`.
-3. **Register** the task in `src/yeastbench/registry.py`:
-   ```python
-   def _build_my_task(path_a, path_b) -> Benchmark:
-       return MyBenchmark(..., info=BenchmarkInfo(name="my_task", ...))
-
-   TASKS["my_task"] = _build_my_task
-   ```
-4. **If you added a new protocol**, extend each model's adapter map
-   (see "Adding a new model" below) with an implementation for that
-   protocol.
-5. **Reference the task in `configs/default.yaml`** under both
-   `tasks_config:` (its constructor kwargs) and any `runs:` that should
-   include it.
-6. **Write a spec** in `benchmarks/<name>.md` and add tests in
-   `tests/test_<name>.py`.
-
-### Adding a new model
-
-1. **Implement one adapter class per protocol the model should support**,
-   in `src/yeastbench/adapters/<model>_<task_type>.py`. Each adapter
-   wraps the model's forward pass + any pre/post-processing, and
-   exposes the single method required by its protocol.
-2. **Register the model** in `src/yeastbench/registry.py` by adding a
-   protocol → builder dict:
-   ```python
-   def _mymodel_eqtl(device, fasta_path, gtf_path, **cfg):
-       from yeastbench.adapters.mymodel_eqtl import MyModelScorer
-       return MyModelScorer(fasta_path, gtf_path, device, **cfg)
-
-   MYMODEL_ADAPTERS: dict[type, tuple[Callable, bool]] = {
-       VariantEffectScorer: (_mymodel_eqtl, True),  # True = needs FASTA/GTF
-       # add more protocol entries as you add adapters
-   }
-
-   def _build_mymodel(task, device, **cfg):
-       return _dispatch(MYMODEL_ADAPTERS, task, device, **cfg)
-
-   MODELS["mymodel"] = _build_mymodel
-   ```
-   The `needs_refs` flag controls whether the dispatcher passes the
-   task's `fasta_path`/`gtf_path` to the adapter (true for
-   genomic-context tasks; false for protocol-only adapters that need
-   neither reference, e.g. the Brooks coverage track).
-3. **Reference the model in `configs/default.yaml`** under `runs:`
-   with the model-specific kwargs it accepts (checkpoint paths, batch
-   size, `use_rc`, etc.).
-4. **Optional**: add a `[project.optional-dependencies]` entry for any
-   model-specific packages (e.g., a HuggingFace wheel), so users can
-   install just the adapter they need with `uv sync --extra mymodel`.
-
-No new runner scripts, no new CLI wiring — both tasks and models are
-fully plug-in.
+Tasks and models are plug-ins, wired through a registry of protocols,
+benchmarks, and adapters — adding either needs no new runner scripts or CLI
+wiring. See [docs/extending.md](docs/extending.md) for how to add a benchmark
+or a model.
 
 ## Repository layout
 
 ```
-benchmarks/                benchmark specs (one markdown per task)
+docs/
+  benchmarks/              benchmark specs (one markdown per task)
+  cli.md                   full CLI reference
+  extending.md             how to add a benchmark or a model
 configs/                   YAML run-specs (committed canonical runs)
 data/
   raw/                     raw upstream files (FASTA, GTF, GWAS, gVCF, MPRA)

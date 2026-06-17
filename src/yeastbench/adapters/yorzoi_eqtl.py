@@ -1,7 +1,7 @@
 """Yorzoi variant-effect scorer for the Caudal eQTL benchmark.
 
 Implements the logSED-agg scoring procedure documented in
-``benchmarks/caudal_eqtl.md``'s Yorzoi section:
+``docs/benchmarks/caudal_eqtl.md``'s Yorzoi section:
 - 4,992 bp input window (channels-last), 300 output bins × 10 bp/bin,
   covering the central 3,000 bp.
 - ``+`` (forward) strand tracks only (indices 0..80 of the 162-track

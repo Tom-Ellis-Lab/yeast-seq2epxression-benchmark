@@ -9,7 +9,7 @@ Absolute readout — no REF baseline (Spearman is the scale-free headline).
 Contexts are built and forwarded in streaming batches: the random library is
 ~489k UTRs, so materializing every 16 kb window upfront would blow memory. The
 construct is scored in the single fixed ``HIS3`` context (no marginalization).
-See ``benchmarks/cuperus_mpra_5utr.md``.
+See ``docs/benchmarks/cuperus_mpra_5utr.md``.
 """
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 """Shorkie variant-effect scorer for the Caudal eQTL benchmark.
 
 Implements the ``logSED_agg`` scoring procedure documented in
-``benchmarks/caudal_eqtl.md``: window-placement constraint solve, strict
+``docs/benchmarks/caudal_eqtl.md``: window-placement constraint solve, strict
 ref-allele check, ref/alt one-hot, 8-fold ensemble, panel-track slice,
 cross-track mean → per-base unbin → exon-base sum → log2 fold change.
 (Raw-count scale; Shorkie's softplus head needs no inverse transform, but

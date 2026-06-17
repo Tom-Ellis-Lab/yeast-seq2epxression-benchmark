@@ -5,7 +5,7 @@ S7/S8/S9 (carried through by ``scripts/chen/build_distribution_tsvs.py``)
 and returns it as the score, indexed by the (library_id, variable_seq)
 pair. No reference-set choice, no codon-usage table, no genomic model.
 
-See ``benchmarks/chen_synonymous.md`` for why we use Chen's column rather
+See ``docs/benchmarks/chen_synonymous.md`` for why we use Chen's column rather
 than recomputing CAI ourselves.
 """
 from __future__ import annotations

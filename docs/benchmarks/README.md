@@ -7,7 +7,7 @@ index — read it to see what's here and pick the spec you need.
 Cross-cutting commentary on *why the numbers look the way they do* (model
 failure modes, noise ceilings) lives in [`model_failures.md`](model_failures.md),
 not in the individual specs. The forward-looking task list lives in
-[`../ROADMAP.md`](../ROADMAP.md).
+[`../../ROADMAP.md`](../../ROADMAP.md).
 
 ## At a glance
 
@@ -25,7 +25,7 @@ not in the individual specs. The forward-looking task list lives in
 | [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) | implemented, GPU runs done |
 
 "Implemented" means the benchmark class + both model adapters are registered
-([`src/yeastbench/registry.py`](../src/yeastbench/registry.py)) and covered by
+([`src/yeastbench/registry.py`](../../src/yeastbench/registry.py)) and covered by
 the test suite. The spec header on each file carries the finer-grained status
 and any headline numbers.
 
@@ -80,7 +80,7 @@ numbers rather than the paper's (non-RNA-seq) CNN.
 
 ## Planned / v2
 
-Future benchmarks are tracked in [`../ROADMAP.md`](../ROADMAP.md), not here, until
+Future benchmarks are tracked in [`../../ROADMAP.md`](../../ROADMAP.md), not here, until
 they have a spec file. Notable ones deferred past v1:
 
 - **Species LM (Karollus et al.)** — sequence language-model evaluation, moved to v2.

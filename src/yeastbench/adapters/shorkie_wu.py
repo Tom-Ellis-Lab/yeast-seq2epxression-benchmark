@@ -5,7 +5,7 @@ with the ORF replaced by the constant cassette payload, forward-pass
 (8 folds, optional RC averaging), take the cross-track mean over the T0
 RNA-seq tracks, and sum over the mCherry-CDS bins.  This is an
 **absolute** readout — there is no REF baseline (no "reference" without
-the cassette).  See ``benchmarks/wu_rfpins.md``.
+the cassette).  See ``docs/benchmarks/wu_rfpins.md``.
 """
 from __future__ import annotations
 

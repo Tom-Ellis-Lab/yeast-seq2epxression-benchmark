@@ -2,7 +2,7 @@
 #
 # Far-OOD zero-shot stress test: tile two bacterial chromosomes integrated
 # into S. cerevisiae and predict their per-base RNA-seq coverage, scored per
-# contig against the measured RNA-seq (see benchmarks/meneu_foreign_dna.md).
+# contig against the measured RNA-seq (see docs/benchmarks/meneu_foreign_dna.md).
 #
 # One window-agnostic artifact per contig (meneu_cov_<contig>.npz: seq + fwd/rev).
 # The benchmark tiles each contig to the model's receptive field at run time, so

@@ -2,11 +2,11 @@
 
 ![image](img/readme_banner.svg)
 
-A collection of datasets and scripts to benchmark models that predict gene
-expression from DNA sequence in *S. cerevisiae*. The goal is a single,
-reproducible way to compare sequence-to-expression models across a shared
-set of tasks — eQTL classification, MPRA generalization, and native-genome
-track prediction.
+`ybench` is a comprehensive set of ten tasks to benchmark yeast-focussed sequence-to-function (S2F) models like Shorkie and Yorzoi. Each task covers a different part of the regulatory understanding from eQTLs, promoter/UTR/terminator [MPRAs](https://www.google.com/search?q=mpra+massively+parallel+reporter+assay), reporter gene insertions in different genomic locations to investigate context effects as well as exogenous but linearised bacterial DNA in yeast and structurally rearranged chromosomes.
+
+## Benchmark Tasks
+
+Please find a more comprehensive overview in [bechmarks/](benchmarks).
 
 | Benchmark | Probes | Task | Primary metric |
 | --- | --- | --- | --- |
@@ -20,6 +20,14 @@ track prediction.
 | [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | 
 | [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | 
 | [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) |
+
+## Models
+
+| Model | Description | Paper | Status |
+| --- | --- | --- | --- |
+| Shorkie | Language model based S2F model | [Predicting dynamic expression patterns in budding yeast with a fungal DNA language model](https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1) | done |
+| Yorzoi | Borzoi-based S2F model | [Yorzoi: Predicting RNA-seq coverage from DNA sequence in yeast](https://www.biorxiv.org/content/10.1101/2025.09.20.677345v1) | done |
+| ExoShorkie | Shorkie finetuned on exo. genomes | [ExoShorkie: Predicting RNA-seq coverage of exogenous genomes in yeast by transfer learning](https://www.biorxiv.org/content/10.64898/2026.01.25.701486v1) | in progress |
 
 ## Install
 

@@ -9,8 +9,7 @@
 - [Benchmark Tasks](#benchmark-tasks)
 - [Models](#models)
 - [Quickstart](#quickstart)
-- [Extending the benchmark](#extending-the-benchmark)
-- [Repository layout](#repository-layout)
+- [Architecture](#architecture)
 - [Roadmap](#roadmap)
 - [Contact](#contact)
 
@@ -54,43 +53,33 @@ Results land in `results/default/<model>__<task>/`. For everything else — the
 other models, partial data pulls, GPU selection, every flag, and the output
 layout — see the [CLI reference](docs/cli.md).
 
-## Extending the benchmark
+## Architecture
 
-Tasks and models are plug-ins, wired through a registry of protocols,
-benchmarks, and adapters — adding either needs no new runner scripts or CLI
-wiring. See [docs/extending.md](docs/extending.md) for how to add a benchmark
-or a model.
+Models and benchmarks don't import each other. They connect through small
+**protocol** interfaces: a benchmark says which method it needs a model to
+provide, and each model provides that method separately.
 
-## Repository layout
+- A **benchmark** (one per task, in `src/yeastbench/benchmarks/`) declares the
+  single protocol it needs, then implements `evaluate` / `plot` /
+  `save_results`. It never refers to a specific model.
+- A **protocol** (`src/yeastbench/adapters/protocols.py`) is a one-method
+  interface for a capability a task needs — e.g. `score_variants` (eQTLs),
+  `predict_expression_scores` (MPRAs), `predict_coverage_batch` (RNA-seq tracks).
+- An **adapter** (`src/yeastbench/adapters/`) implements one protocol for one
+  model by wrapping its forward pass. It never refers to a specific task.
+- A **registry** (`src/yeastbench/registry.py`) maps names to tasks and models,
+  and the `ybench` CLI connects them:
 
-```
-docs/
-  benchmarks/              benchmark specs (one markdown per task)
-  cli.md                   full CLI reference
-  extending.md             how to add a benchmark or a model
-  ROADMAP.md               v1/v2 status checklist
-configs/                   YAML run-specs (committed canonical runs)
-data/
-  raw/                     raw upstream files (FASTA, GTF, GWAS, gVCF, MPRA)
-  processed/               versioned processed distributions per task
-  models/                  downloaded model weights + targets sheets
-scripts/                   one-off data-preparation scripts
-src/yeastbench/
-  adapters/
-    protocols.py           protocol definitions (VariantEffectScorer, …)
-    _genome.py             shared FASTA/GTF + one-hot utilities
-    shorkie_*.py           one adapter per (Shorkie, protocol) pair
-    yorzoi_*.py            one adapter per (Yorzoi,  protocol) pair
-  benchmarks/
-    base.py                Benchmark[AdapterT, ResultT] ABC
-    eqtl.py                EQTLClassificationBenchmark
-    mpra.py                MPRA{Regression,Marginalized}Benchmark
-  models/                  vendored pure-PyTorch model ports (Shorkie)
-  registry.py              MODELS + TASKS registries
-  cli.py                   the `ybench` CLI
-  config.py                YAML config loader
-tests/                     pytest suite (86 tests)
-```
+  ```
+  task    = TASKS[task_name](...)               # e.g. caudal_eqtl
+  adapter = MODELS[model_name](task, device)    # the model's adapter for task's protocol
+  task.evaluate(adapter) → save_results → plot
+  ```
+
+Because tasks and models only depend on the protocol in between, adding a model
+means writing one adapter per protocol it supports — not one per task. And a new
+task that reuses an existing protocol needs no model changes at all. See
+[docs/extending.md](docs/extending.md) for the step-by-step.
 
 ## Roadmap
 

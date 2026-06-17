@@ -16,9 +16,10 @@ Pipeline per SCRaMBLE strain S (control = JS94, 3 runs):
   4. `true_lfc = log2( normcov(strain copy) / mean normcov(JS94 gene) )`;
      JS94 per-run normalised coverages kept so the reproducibility ceiling is
      derivable from the same file.
-  5. a generous gene-centred slice (±FLANK, clamped to the contig) of sequence
-     AND per-base coverage, for the alt construct (on `JS<S>_1`) and the native
-     baseline (on `JS94_1`); native is identical across strains → deduped per gene.
+  5. a generous gene-centred slice (±FLANK, clamped to the contig): sequence +
+     per-base coverage for the alt construct (on `JS<S>_1`), and sequence only
+     for the native baseline (on `JS94_1`; native coverage isn't scored). Native
+     is identical across strains → deduped per gene.
 
 No window-specific filtering at build time. The membership rules — alt/native
 window fits, alt != native within the window, dedup byte-identical copies per
@@ -27,7 +28,7 @@ any model with window ≤ FLANK.
 
 Outputs under `data/tasks/brooks_scramble/`:
   - `brooks_constructs.fasta`  — `>alt~<sample_id>` / `>native~<gene_id>` slices
-  - `brooks_cov.npz`           — per-base int32 coverage, same record keys
+  - `brooks_cov.npz`           — per-base int32 coverage for the `alt~*` records
   - `brooks_index.tsv`         — one row per construct (schema in INDEX_COLUMNS)
 
 Run:
@@ -43,7 +44,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from yeastbench.benchmarks.brooks import cov_key
+from yeastbench.benchmarks.brooks import cov_key, gene_centre
 
 ROOT = Path(__file__).resolve().parents[2]
 BUCKET = "gs://brooks-nanopore"
@@ -227,10 +228,6 @@ def per_base_cov(bed: pd.DataFrame, contig: str, strand: str,
     return np.cumsum(delta[:contig_len]).astype(np.int32)
 
 
-def _comma_ints(arr: np.ndarray) -> str:
-    return ",".join(map(str, arr.tolist()))
-
-
 def native_total_reads(bed: pd.DataFrame) -> int:
     """Total reads on the native nuclear contigs (chrI–chrXVI minus the
     synthetic synIXR, plus chrIXL; chrMT and the synthetic contig
@@ -253,9 +250,9 @@ def gene_slice(
     contig_len: int, cds_start: int, cds_end: int, flank: int
 ) -> tuple[int, int]:
     """``[start, end)`` of the ±``flank`` gene-centred slice, clamped to the
-    contig. Centre matches ``benchmarks.brooks.window_slice`` so the benchmark
-    can re-cut any window <= ``flank`` from the stored slice. Absolute coords."""
-    centre = (cds_start - 1 + cds_end) // 2
+    contig. Uses the shared ``gene_centre`` so the benchmark can re-cut any
+    window <= ``flank`` from the stored slice. Absolute coords."""
+    centre = gene_centre(cds_start, cds_end)
     return max(0, centre - flank), min(contig_len, centre + flank)
 
 
@@ -319,14 +316,9 @@ def main() -> None:
           f"{par_syn}); {len(js94_beds)} deep WT runs "
           f"{[d for d, _, _ in kept]}")
 
-    # Per-base native coverage on JS94_1 (= JS96_1 coord system),
-    # summed across the deep JS94 runs — used for shape native-truth.
+    # Length of the parental synIXR contig (JS94_1 = JS96_1 coord system);
+    # used to clamp the native gene slices below.
     js94_syn_len = len(par_fa[par_syn])
-    js94_native_cov = {
-        s: sum(per_base_cov(b, js94_read_contig, s, js94_syn_len)
-               for b in js94_beds)
-        for s in ("+", "-")
-    }
 
     if args.strains == "roadmap":
         strains = ROADMAP_STRAINS
@@ -340,7 +332,7 @@ def main() -> None:
 
     rows: list[dict] = []
     fasta_records: dict[str, str] = {}      # cov_key -> sequence slice
-    cov_arrays: dict[str, np.ndarray] = {}  # cov_key -> per-base int32 coverage
+    cov_arrays: dict[str, np.ndarray] = {}  # alt cov_key -> per-base int32 coverage
     native_done: set[str] = set()           # genes whose native slice is written
     PAR_GENOME = "genomes/JS96_ERCC92.fasta"
 
@@ -378,7 +370,6 @@ def main() -> None:
             if gid not in native_done:
                 nk = cov_key("native", gid)
                 fasta_records[nk] = par_fa[par_syn][n0:n1]
-                cov_arrays[nk] = js94_native_cov[nat_strand][n0:n1].astype(np.int32)
                 native_done.add(gid)
             # JS94 per-run normalised CDS coverage (gene strand), reads on JS94_1.
             j_raws = [

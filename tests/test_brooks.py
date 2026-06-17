@@ -300,6 +300,20 @@ class TestWindowDependentMembership:
         b = BrooksScrambleBenchmark(tmp_path, INFO)
         assert len(b._materialize(300)) == 0     # no cis change in-window
 
+    def test_evaluate_empty_cohort(self, tmp_path):
+        # _materialize → 0 rows must give an empty cohort, not an AttributeError
+        # on the column-less DataFrame.
+        rng = np.random.default_rng(3)
+        same = _rand_seq(rng)
+        cons = [_construct(rng, "JSZ:YG:0", "YG", "JSZ", true_lfc=0.0,
+                           alt_seq=same, native_seq=same)]
+        _write_artifact(tmp_path, cons)
+        b = BrooksScrambleBenchmark(tmp_path, INFO)
+        res = b.evaluate(_MockAdapter({}))
+        assert res.n_total == 0 and res.n_scored == 0
+        assert res.sample_ids == []
+        assert np.isnan(res.shape_pearson_mean)
+
 
 # ── registry ──────────────────────────────────────────────────
 

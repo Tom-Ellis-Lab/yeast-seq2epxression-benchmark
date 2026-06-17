@@ -116,6 +116,14 @@ def cov_key(kind: str, ident: str) -> str:
     return f"{kind}:{ident}".replace(":", "~").replace("|", "~")
 
 
+def gene_centre(cds_start: int, cds_end: int) -> int:
+    """0-based contig coord of the gene centre, from 1-based inclusive CDS
+    coords. The single source of truth for centring — the build's slice
+    extraction and the benchmark's re-cut both call this, so every stored slice
+    offset stays re-cuttable."""
+    return (cds_start - 1 + cds_end) // 2
+
+
 def window_slice(
     contig_len: int, cds_start: int, cds_end: int, window: int
 ) -> tuple[int, int, int] | None:
@@ -127,8 +135,7 @@ def window_slice(
     contig end sits off-centre (and the window is all real sequence, no pad)."""
     if contig_len < window:
         return None
-    centre = (cds_start - 1 + cds_end) // 2
-    w0 = max(0, min(centre - window // 2, contig_len - window))
+    w0 = max(0, min(gene_centre(cds_start, cds_end) - window // 2, contig_len - window))
     cs = (cds_start - 1) - w0
     ce = cds_end - w0
     if cs < 0 or ce > window:
@@ -307,6 +314,30 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         df = self._materialize(adapter.seq_len)
         n = len(df)
         n_reps = len(JS94_REPLICATE_STRAIN_KEYS)
+        if n == 0:
+            # No construct survives the window/membership rules at this seq_len
+            # (e.g. a subset build, or a window larger than every contig). Return
+            # an empty cohort rather than indexing a column-less DataFrame.
+            nan_reps = np.full(n_reps, np.nan)
+            return BrooksResults(
+                sample_ids=[],
+                pred_lfc_runs=np.empty((0, n_reps), dtype=np.float64),
+                true_lfc_runs=np.empty((0, n_reps), dtype=np.float64),
+                n_reps_supported=np.empty(0, dtype=np.int64),
+                low_support=np.empty(0, dtype=bool),
+                n_total=0, n_scored=0, n_calibration=0,
+                n_weak_baseline=0, n_low_support=0,
+                pearson_r_per_rep=nan_reps.copy(),
+                spearman_rho_per_rep=nan_reps.copy(),
+                dir_balanced_acc_per_rep=nan_reps.copy(),
+                ceiling_r_per_rep=nan_reps.copy(),
+                ceiling_dir_acc_per_rep=nan_reps.copy(),
+                pearson_r=float("nan"), spearman_rho=float("nan"),
+                dir_balanced_acc=float("nan"), ceiling_pearson_r=float("nan"),
+                ceiling_dir_balanced_acc=float("nan"),
+                within_range_rate=float("nan"), mean_abs_z=float("nan"),
+                shape_pearson_mean=float("nan"), shape_js_mean=float("nan"),
+            )
         # Per-replicate prediction + truth LFCs, same (N, 3) shape.
         pred_lfc_runs = np.full((n, n_reps), np.nan, dtype=np.float64)
         true_lfc_runs = np.full((n, n_reps), np.nan, dtype=np.float64)
@@ -316,13 +347,11 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
         varies_by_strain = bool(getattr(adapter, "varies_by_strain", True))
 
         # ── Phase 1: per-replicate true LFCs (no GPU work) ──
-        j_raws_all = np.zeros((n, n_reps), dtype=np.int64)
         for i, row in df.iterrows():
             s_norm = float(row.norm_cov_strain)
             j_norms = self._parse_norm_runs(row.norm_cov_js94_runs)
             j_raws = self._parse_raw_runs(row.js94_reads_runs)
             for k in range(min(len(j_norms), len(j_raws), n_reps)):
-                j_raws_all[i, k] = int(j_raws[k])
                 if j_raws[k] < MIN_READS_PER_RUN:
                     continue
                 true_lfc_runs[i, k] = float(np.log2(
@@ -503,10 +532,15 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             within_range_rate = hits / n_calibration
             mean_abs_z = float(np.mean(zs))
 
-        t2p = (float(np.nanmean(shape_pearson[scored_mask]))
-               if n_scored else float("nan"))
-        t2j = (float(np.nanmean(shape_js[scored_mask]))
-               if n_scored else float("nan"))
+        # nanmean over the scored mask can hit an all-NaN slice (every scored
+        # sample had a flat/all-zero pred or true profile) — suppress the
+        # RuntimeWarning the same way the LFC-mean block above does.
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            shape_pearson_mean = (float(np.nanmean(shape_pearson[scored_mask]))
+                                  if n_scored else float("nan"))
+            shape_js_mean = (float(np.nanmean(shape_js[scored_mask]))
+                             if n_scored else float("nan"))
 
         return BrooksResults(
             sample_ids=df.sample_id.tolist(),
@@ -523,7 +557,7 @@ class BrooksScrambleBenchmark(Benchmark[CoverageTrackPredictor, BrooksResults]):
             pearson_r=pr, spearman_rho=sr, dir_balanced_acc=da,
             ceiling_pearson_r=ceiling_pr, ceiling_dir_balanced_acc=ceiling_da,
             within_range_rate=within_range_rate, mean_abs_z=mean_abs_z,
-            shape_pearson_mean=t2p, shape_js_mean=t2j,
+            shape_pearson_mean=shape_pearson_mean, shape_js_mean=shape_js_mean,
         )
 
     def plot(self, results: BrooksResults, out_dir: Path) -> None:

@@ -6,38 +6,36 @@
 
 ## Table of Contents
 
-- [ybench: a benchmark for fungal sequence-to-expression models](#ybench-a-benchmark-for-fungal-sequence-to-expression-models)
-  - [Table of Contents](#table-of-contents)
-  - [Benchmark Tasks](#benchmark-tasks)
-  - [Models](#models)
-  - [Install](#install)
-  - [Getting the data](#getting-the-data)
-  - [Running the benchmark](#running-the-benchmark)
-    - [Progress, hardware, and GPU selection](#progress-hardware-and-gpu-selection)
-    - [Output layout](#output-layout)
-  - [Extending the benchmark](#extending-the-benchmark)
-    - [Adding a new benchmark](#adding-a-new-benchmark)
-    - [Adding a new model](#adding-a-new-model)
-  - [Repository layout](#repository-layout)
-  - [Roadmap](#roadmap)
-  - [Contact](#contact)
+- [Benchmark Tasks](#benchmark-tasks)
+- [Models](#models)
+- [Install](#install)
+- [Getting the data](#getting-the-data)
+- [Running the benchmark](#running-the-benchmark)
+  - [Progress, hardware, and GPU selection](#progress-hardware-and-gpu-selection)
+  - [Output layout](#output-layout)
+- [Extending the benchmark](#extending-the-benchmark)
+  - [Adding a new benchmark](#adding-a-new-benchmark)
+  - [Adding a new model](#adding-a-new-model)
+- [Repository layout](#repository-layout)
+- [Roadmap](#roadmap)
+- [Contact](#contact)
 
 ## Benchmark Tasks
 
-Please find a more comprehensive overview in [bechmarks/](benchmarks).
+Please find a more comprehensive overview in [benchmarks/](benchmarks).
 
-| Benchmark | Probes | Task | Primary metric |
+| Benchmark | Description | Task | Primary metric |
 | --- | --- | --- | --- |
-| [Caudal eQTL](caudal_eqtl.md) | *cis*-regulatory variants | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) |
-| [Kita eQTL](kita_eqtl.md) | *cis*-regulatory variants (independent panel) | binary classification | AUROC / AUPRC |
-| [Rafi / deBoer MPRA (promoter)](rafi_mpra_promoter.md) | promoter grammar | regression (marginalized logSED) | Pearson / Spearman |
-| [Shalem MPRA (terminator)](shalem_mpra_terminator.md) | 3′-end / termination grammar | regression (marginalized logSED) | Pearson *r* (Spearman alongside) |
-| [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | 
-| [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect (ORF-deletion locus) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | 
-| [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on IntProp | 
-| [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | 
-| [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | 
-| [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) |
+| [Caudal eQTL](benchmarks/caudal_eqtl.md) | single-nucleotide *cis*-eQTLs vs matched controls | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) |
+| [Kita eQTL](benchmarks/kita_eqtl.md) | single-nucleotide *cis*-eQTLs (independent panel) | binary classification | AUROC / AUPRC |
+| [Rafi / deBoer MPRA (promoter)](benchmarks/rafi_mpra_promoter.md) | ~71k random 80 bp promoters in a dual-reporter plasmid GPRA | regression (marginalized logSED) | Pearson / Spearman |
+| [Shalem MPRA (terminator)](benchmarks/shalem_mpra_terminator.md) | designed 3′-end / terminator variants (cleavage & termination) | regression (marginalized logSED) | Pearson *r* (Spearman alongside) |
+| [Chen synonymous MPRA](benchmarks/chen_synonymous.md) | synonymous-codon effect on mRNA abundance | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | 
+| [Wu RFP insertions](benchmarks/wu_rfpins.md) | fixed RFP cassette across ORF-deletion loci (position effect) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | 
+| [Hong IGR insertions](benchmarks/hong_igr.md) | fixed reporter across intergenic loci (position effect) | regression | Spearman ρ on IntProp | 
+| [Brooks SCRaMBLE](benchmarks/brooks_scramble.md) | SCRaMBLE rearrangement (altered neighbour / downstream context) | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | 
+| [Cuperus 5′-UTR](benchmarks/cuperus_mpra_5utr.md) | random 50 bp 5′-UTRs (Kozak, uORFs, structure) | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | 
+| [Meneu foreign DNA](benchmarks/meneu_foreign_dna.md) | whole bacterial chromosomes integrated in yeast (far-OOD sequence) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) |
 
 ## Models
 

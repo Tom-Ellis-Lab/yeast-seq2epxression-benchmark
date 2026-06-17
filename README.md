@@ -2,7 +2,25 @@
 
 ![image](img/readme_banner.svg)
 
-`ybench` is a comprehensive set of ten tasks to benchmark yeast-focussed sequence-to-function (S2F) models like Shorkie and Yorzoi. Each task covers a different part of the regulatory understanding from eQTLs, promoter/UTR/terminator [MPRAs](https://www.google.com/search?q=mpra+massively+parallel+reporter+assay), reporter gene insertions in different genomic locations to investigate context effects as well as exogenous but linearised bacterial DNA in yeast and structurally rearranged chromosomes.
+`ybench` is a comprehensive set of ten tasks to benchmark yeast-focussed sequence-to-function (S2F) models like Shorkie and Yorzoi. Each task covers a different part of the genomes regulatory complexity from eQTLs, promoter/UTR/terminator [MPRAs](https://www.google.com/search?q=mpra+massively+parallel+reporter+assay), reporter gene insertions in different genomic locations to investigate context effects as well as exogenous but linearised bacterial DNA in yeast and structurally rearranged chromosomes.
+
+## Table of Contents
+
+- [ybench: a benchmark for fungal sequence-to-expression models](#ybench-a-benchmark-for-fungal-sequence-to-expression-models)
+  - [Table of Contents](#table-of-contents)
+  - [Benchmark Tasks](#benchmark-tasks)
+  - [Models](#models)
+  - [Install](#install)
+  - [Getting the data](#getting-the-data)
+  - [Running the benchmark](#running-the-benchmark)
+    - [Progress, hardware, and GPU selection](#progress-hardware-and-gpu-selection)
+    - [Output layout](#output-layout)
+  - [Extending the benchmark](#extending-the-benchmark)
+    - [Adding a new benchmark](#adding-a-new-benchmark)
+    - [Adding a new model](#adding-a-new-model)
+  - [Repository layout](#repository-layout)
+  - [Roadmap](#roadmap)
+  - [Contact](#contact)
 
 ## Benchmark Tasks
 

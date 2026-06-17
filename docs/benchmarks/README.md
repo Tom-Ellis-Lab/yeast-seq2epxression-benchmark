@@ -7,7 +7,7 @@ index — read it to see what's here and pick the spec you need.
 Cross-cutting commentary on *why the numbers look the way they do* (model
 failure modes, noise ceilings) lives in [`model_failures.md`](model_failures.md),
 not in the individual specs. The forward-looking task list lives in
-[`../../ROADMAP.md`](../../ROADMAP.md).
+[`../ROADMAP.md`](../ROADMAP.md).
 
 ## At a glance
 
@@ -80,7 +80,7 @@ numbers rather than the paper's (non-RNA-seq) CNN.
 
 ## Planned / v2
 
-Future benchmarks are tracked in [`../../ROADMAP.md`](../../ROADMAP.md), not here, until
+Future benchmarks are tracked in [`../ROADMAP.md`](../ROADMAP.md), not here, until
 they have a spec file. Notable ones deferred past v1:
 
 - **Species LM (Karollus et al.)** — sequence language-model evaluation, moved to v2.

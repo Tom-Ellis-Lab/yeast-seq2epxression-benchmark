@@ -68,6 +68,7 @@ docs/
   benchmarks/              benchmark specs (one markdown per task)
   cli.md                   full CLI reference
   extending.md             how to add a benchmark or a model
+  ROADMAP.md               v1/v2 status checklist
 configs/                   YAML run-specs (committed canonical runs)
 data/
   raw/                     raw upstream files (FASTA, GTF, GWAS, gVCF, MPRA)
@@ -93,7 +94,7 @@ tests/                     pytest suite (86 tests)
 
 ## Roadmap
 
-See [`ROADMAP.md`](ROADMAP.md).
+See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Contact
 

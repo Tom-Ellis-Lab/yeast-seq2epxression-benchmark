@@ -83,7 +83,7 @@ numbers rather than the paper's (non-RNA-seq) CNN.
 Future benchmarks are tracked in [`../ROADMAP.md`](../ROADMAP.md), not here, until
 they have a spec file. Notable ones deferred past v1:
 
-- **Species LM (Keren et al.)** — sequence language-model evaluation, moved to v2.
+- **Species LM (Karollus et al.)** — sequence language-model evaluation, moved to v2.
 - **Native-genome track prediction** — cross-model RNA-seq track R² on held-out
   yeast regions.
 - **Condition coherence** — does the model respect promoter-driven OFF states?

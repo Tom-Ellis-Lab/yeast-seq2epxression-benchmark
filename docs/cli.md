@@ -92,8 +92,7 @@ etc.) don't require re-running the model.
 
 Task data and model weights are **not** in git. `ybench data` downloads them
 from a mirror (HuggingFace or GCS) and checksum-verifies every file against a
-committed lock (`src/yeastbench/data/manifest.lock.json`). See
-[`../specs/data-storage.md`](../specs/data-storage.md) for the design.
+committed lock (`src/yeastbench/data/manifest.lock.json`).
 
 ```bash
 uv sync --extra data            # adds huggingface_hub (HF backend)

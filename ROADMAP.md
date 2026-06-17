@@ -293,7 +293,6 @@ Not blocking any benchmark.
 - [ ] Each benchmark gets a figure — a graphical abstract of the task — in its
   `docs/benchmarks/*.md` spec
 - [x] Architecture doc (`archive/architecture.md`)
-- [x] Data-storage spec (`specs/data-storage.md`)
 - [ ] Revamp the main `README.md` — hero image / small logo, headline result
   figures + table, and a pass over the sections for correctness/completeness
 - [ ] Bring the README extension guide ("Adding a new benchmark / model") in line with the code

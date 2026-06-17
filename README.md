@@ -41,11 +41,11 @@ Please find a more comprehensive overview in [docs/benchmarks/](docs/benchmarks)
 
 ## Quickstart
 
-Install the framework with a model's dependencies, fetch the data, then run the
-canonical `configs/default.yaml`:
+Install the framework with every model's dependencies, fetch the data, then run
+the canonical `configs/default.yaml`:
 
 ```bash
-uv sync --extra shorkie --extra data                  # framework + Shorkie + data backend
+uv sync --extra all                                   # framework + all models + data backend
 uv run ybench data get --config configs/default.yaml  # download data + weights
 uv run ybench run --config configs/default.yaml       # score every (model, task) pair
 ```

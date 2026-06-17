@@ -23,8 +23,9 @@ uv sync
 # Add specific model dependencies as needed
 uv sync --extra shorkie   # PyTorch + h5py, for the Shorkie adapter
 uv sync --extra yorzoi    # yorzoi + flash-attn, for the Yorzoi adapter
-uv sync --extra all       # both models
+uv sync --extra dream_rnn # PyTorch, for the DREAM-RNN supervised baseline
 uv sync --extra data      # huggingface_hub, for the `ybench data` backend
+uv sync --extra all       # all models + data backend (everything default.yaml needs)
 ```
 
 ## Running benchmarks

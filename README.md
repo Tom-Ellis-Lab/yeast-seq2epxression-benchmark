@@ -1,4 +1,4 @@
-# Benchmark Yeast Sequence-to-Expression Models
+# ybench: a benchmark for fungal sequence-to-expression models
 
 ![image](img/readme_banner.svg)
 
@@ -8,18 +8,18 @@ reproducible way to compare sequence-to-expression models across a shared
 set of tasks — eQTL classification, MPRA generalization, and native-genome
 track prediction.
 
-| Benchmark | Probes | Task | Primary metric | Status |
-| --- | --- | --- | --- | --- |
-| [Caudal eQTL](caudal_eqtl.md) | *cis*-regulatory variants | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) | implemented |
-| [Kita eQTL](kita_eqtl.md) | *cis*-regulatory variants (independent panel) | binary classification | AUROC / AUPRC | implemented |
-| [Rafi / deBoer MPRA (promoter)](rafi_mpra_promoter.md) | promoter grammar | regression (marginalized logSED) | Pearson / Spearman | implemented (zero-shot); DREAM-RNN supervised baseline spec'd |
-| [Shalem MPRA (terminator)](shalem_mpra_terminator.md) | 3′-end / termination grammar | regression (marginalized logSED) | Pearson *r* (Spearman alongside) | implemented |
-| [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | implemented |
-| [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect (ORF-deletion locus) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | implemented, GPU runs done |
-| [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on IntProp | implemented, GPU runs done |
-| [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | implemented, GPU runs done |
-| [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | implemented, GPU run done |
-| [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) | implemented, GPU runs done |
+| Benchmark | Probes | Task | Primary metric |
+| --- | --- | --- | --- |
+| [Caudal eQTL](caudal_eqtl.md) | *cis*-regulatory variants | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) |
+| [Kita eQTL](kita_eqtl.md) | *cis*-regulatory variants (independent panel) | binary classification | AUROC / AUPRC |
+| [Rafi / deBoer MPRA (promoter)](rafi_mpra_promoter.md) | promoter grammar | regression (marginalized logSED) | Pearson / Spearman |
+| [Shalem MPRA (terminator)](shalem_mpra_terminator.md) | 3′-end / termination grammar | regression (marginalized logSED) | Pearson *r* (Spearman alongside) |
+| [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | 
+| [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect (ORF-deletion locus) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | 
+| [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on IntProp | 
+| [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson | 
+| [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features | 
+| [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) |
 
 ## Install
 

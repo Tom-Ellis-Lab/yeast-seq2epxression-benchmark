@@ -5,10 +5,27 @@ The repo ships a single CLI, `ybench`, driven by a YAML run-spec. The committed
 pairs to evaluate with what per-run settings, and is the single source of truth
 for the numbers we report.
 
+- [Install](#install)
 - [Running benchmarks](#running-benchmarks)
 - [Progress, hardware, and GPU selection](#progress-hardware-and-gpu-selection)
 - [Output layout](#output-layout)
 - [Getting the data](#getting-the-data)
+
+## Install
+
+The framework uses [`uv`](https://docs.astral.sh/uv/). Model-specific
+dependencies (PyTorch, Shorkie weights, Yorzoi) are isolated behind extras:
+
+```bash
+# Minimal install: core benchmark framework + data loaders (no model deps)
+uv sync
+
+# Add specific model dependencies as needed
+uv sync --extra shorkie   # PyTorch + h5py, for the Shorkie adapter
+uv sync --extra yorzoi    # yorzoi + flash-attn, for the Yorzoi adapter
+uv sync --extra all       # both models
+uv sync --extra data      # huggingface_hub, for the `ybench data` backend
+```
 
 ## Running benchmarks
 

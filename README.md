@@ -8,9 +8,7 @@
 
 - [Benchmark Tasks](#benchmark-tasks)
 - [Models](#models)
-- [Install](#install)
-- [Getting the data](#getting-the-data)
-- [Running the benchmark](#running-the-benchmark)
+- [Quickstart](#quickstart)
 - [Extending the benchmark](#extending-the-benchmark)
 - [Repository layout](#repository-layout)
 - [Roadmap](#roadmap)
@@ -41,97 +39,20 @@ Please find a more comprehensive overview in [docs/benchmarks/](docs/benchmarks)
 | Yorzoi | Borzoi-based S2F model | [Yorzoi: Predicting RNA-seq coverage from DNA sequence in yeast](https://www.biorxiv.org/content/10.1101/2025.09.20.677345v1) | done |
 | ExoShorkie | Shorkie finetuned on exo. genomes | [ExoShorkie: Predicting RNA-seq coverage of exogenous genomes in yeast by transfer learning](https://www.biorxiv.org/content/10.64898/2026.01.25.701486v1) | in progress |
 
-## Install
+## Quickstart
 
-The benchmark framework uses [`uv`](https://docs.astral.sh/uv/). Model-specific
-dependencies (PyTorch, Shorkie weights, Yorzoi) are isolated behind extras:
-
-```bash
-# Minimal install: core benchmark framework + data loaders (no model deps)
-uv sync
-
-# Add specific model dependencies as needed
-uv sync --extra shorkie   # PyTorch + h5py, for the Shorkie adapter
-uv sync --extra yorzoi    # yorzoi + flash-attn, for the Yorzoi adapter
-uv sync --extra all       # both models
-```
-
-## Getting the data
-
-Task data and model weights are **not** in git. `ybench data` downloads them
-from a mirror (HuggingFace or GCS) and checksum-verifies every file against a
-committed lock (`src/yeastbench/data/manifest.lock.json`).
+Install the framework with a model's dependencies, fetch the data, then run the
+canonical `configs/default.yaml`:
 
 ```bash
-uv sync --extra data            # adds huggingface_hub (HF backend)
-
-# Pull everything a config's runs need (recommended — same selection as `run`)
-uv run ybench data get --config configs/default.yaml
-
-# Or pull explicit subsets / everything
-uv run ybench data get --tasks cuperus_utr,caudal_eqtl --models shorkie
-uv run ybench data get                     # all artifacts
-uv run ybench data get --dry-run           # show the plan, fetch nothing
-
-# Inspect and check
-uv run ybench data list                    # every artifact, its mirrors, license
-uv run ybench data status                  # what's present locally vs declared
-uv run ybench data verify                  # checksum local files against the lock
+uv sync --extra shorkie --extra data                  # framework + Shorkie + data backend
+uv run ybench data get --config configs/default.yaml  # download data + weights
+uv run ybench run --config configs/default.yaml       # score every (model, task) pair
 ```
 
-`get` is idempotent (skips files already present and valid), picks the first
-reachable mirror (HF first, then GCS; override with `--from hf|gcs`), and writes
-atomically. Shorkie weights, Yorzoi, and CodonTransformer resolve from their
-public homes; the per-task processed data comes from the project mirror. Add
-`--json` to `list`/`status` for machine-readable output.
-
-The HF mirror is free and needs no account — it's the default. The GCS mirror
-(`gs://yeast-seq2expression-benchmark`) is **requester pays**, so `--from gcs`
-needs your own GCP project to bill: pass `--billing-project <project>` or set
-`YBENCH_GCS_BILLING_PROJECT`. If you don't have a project, just use the HF
-default.
-
-**How much you'll download.** The full set is **~690 MB**: Shorkie weights
-(~440 MB), all task data (~215 MB), and the R64 reference genomes (~34 MB). A
-single task is much smaller — from ~11 KB (`hong`) to ~132 MB (`brooks_scramble`)
-— so scope your `get` to the config or `--tasks`/`--models` you actually need.
-Yorzoi and CodonTransformer aren't in that figure: they're pulled into the
-HuggingFace cache the first time you run those models (additional, model-sized).
-Run `ybench data status` for an exact present-vs-total byte count, or
-`ybench data get --dry-run` to see the size before fetching.
-
-> Maintainers: `ybench data lock` re-freezes the checksum lock from a local
-> copy, and `ybench data publish --to hf|gcs` uploads the redistributable
-> artifacts to a mirror (dry-run unless `--yes`). Publishing to GCS needs a
-> billing project (`--billing-project` / `YBENCH_GCS_BILLING_PROJECT`).
-
-## Running the benchmark
-
-The repo ships a unified CLI, `ybench`, driven by a YAML run-spec. The
-committed `configs/default.yaml` is the canonical run — it captures
-which `(model, task)` pairs to evaluate with what per-run settings, and
-is the single source of truth for the numbers we report.
-
-```bash
-# List registered models and tasks
-uv run ybench list
-
-# Preview the planned runs without executing
-uv run ybench run --config configs/default.yaml --dry-run
-
-# Execute every (model, task) pair in the config
-uv run ybench run --config configs/default.yaml
-
-# Filter to a single model or task
-uv run ybench run --config configs/default.yaml --model shorkie
-uv run ybench run --config configs/default.yaml --task  caudal_eqtl
-
-# Regenerate plots for an existing run without re-scoring
-uv run ybench replot results/default/shorkie__caudal_eqtl
-```
-
-See [docs/cli.md](docs/cli.md) for the full CLI reference — all flags, GPU/device
-selection, the progress banner, the output layout, and the `ybench data` commands.
+Results land in `results/default/<model>__<task>/`. For everything else — the
+other models, partial data pulls, GPU selection, every flag, and the output
+layout — see the [CLI reference](docs/cli.md).
 
 ## Extending the benchmark
 

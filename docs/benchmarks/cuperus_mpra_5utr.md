@@ -1,13 +1,6 @@
 # Cuperus et al. — 5′-UTR MPRA expression (HIS3 reporter)
 
-> **Status:** implemented; **v1 GPU run done (2026-06-02)** — see *Results*.
-> Headline: Shorkie clean-bucket Spearman **0.28**, Yorzoi **0.11**; both
-> metrics behaved as designed (per-bucket ρ climbs monotonically with depth for
-> Shorkie; the partial correlation + the depth split show Shorkie carries genuine mRNA signal
-> while Yorzoi is near-noise on the clean data). Scoring is in the **natural
-> HIS3 reporter context** — no marginalization; a divergence check over diverse
-> backgrounds confirmed this is immaterial for the rank metrics (see *Why no
-> marginalization*).
+![image](../../img/cuperus_banner.svg)
 
 ## At a glance
 

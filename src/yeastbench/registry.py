@@ -451,7 +451,12 @@ def _build_hong_igr(
     )
 
 
-def _build_brooks_scramble(data_path: str | Path) -> Benchmark:
+def _build_brooks_scramble(
+    data_path: str | Path = "data/tasks/brooks_scramble",
+) -> Benchmark:
+    """One task for every model: the benchmark re-cuts each construct to the
+    adapter's receptive field at run time from a window-agnostic artifact, so
+    there's no per-window split."""
     from yeastbench.benchmarks.brooks import BrooksScrambleBenchmark
 
     return BrooksScrambleBenchmark(
@@ -460,24 +465,6 @@ def _build_brooks_scramble(data_path: str | Path) -> Benchmark:
             name="brooks_scramble",
             version="v1",
             description="Brooks et al. SCRaMBLE structural-rearrangement effect",
-            distribution_uri="",
-        ),
-    )
-
-
-def _build_brooks_scramble_shorkie(data_path: str | Path) -> Benchmark:
-    """Same benchmark class, but reads the 16,384 bp distribution
-    rebuilt for Shorkie's receptive field. Until we have a unified
-    max-window distribution (ROADMAP), separate task names are how
-    we route the right TSV to the right model."""
-    from yeastbench.benchmarks.brooks import BrooksScrambleBenchmark
-
-    return BrooksScrambleBenchmark(
-        data_path=Path(data_path),
-        info=BenchmarkInfo(
-            name="brooks_scramble_shorkie",
-            version="v1-shorkie",
-            description="Brooks et al. SCRaMBLE — 16,384 bp window (Shorkie)",
             distribution_uri="",
         ),
     )
@@ -559,7 +546,6 @@ TASKS: dict[str, TaskFactory] = {
     "wu_rfpins": _build_wu_rfpins,
     "hong_igr": _build_hong_igr,
     "brooks_scramble": _build_brooks_scramble,
-    "brooks_scramble_shorkie": _build_brooks_scramble_shorkie,
     "meneu_foreign_dna": _build_meneu,
     "chen_gfp_r1": _build_chen,
     "chen_gfp_r2": _build_chen,

@@ -234,9 +234,12 @@ ARTIFACTS: tuple[Artifact, ...] = (
     _task(
         "brooks_scramble",
         dest="data/tasks/brooks_scramble",
-        needed_by=("brooks_scramble", "brooks_scramble_shorkie"),
+        needed_by=("brooks_scramble",),
         license=License.OWN,  # Brooks lab Nanopore data, our processing
-        include=("brooks_scramble_v1.tsv", "brooks_scramble_v1_w16384.tsv"),
+        # Window-agnostic artifact: per-construct index + generous gene-centred
+        # sequence slices + per-base coverage. The benchmark re-cuts each model's
+        # window at run time, so no per-window TSV.
+        include=("brooks_index.tsv", "brooks_constructs.fasta", "brooks_cov.npz"),
     ),
     _task(
         "meneu_foreign_dna",

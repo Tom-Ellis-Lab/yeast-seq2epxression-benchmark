@@ -349,6 +349,6 @@ def build_cmd(
     """[v2] Rebuild processed data from raw inputs and verify against the lock."""
     _echo(
         "`ybench data build` is part of benchmark-v2 (raw → build → reproduce) "
-        "and isn't implemented yet. See specs/data-storage.md."
+        "and isn't implemented yet."
     )
     raise typer.Exit(code=2)

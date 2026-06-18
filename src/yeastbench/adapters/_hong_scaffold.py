@@ -3,7 +3,7 @@
 Position-effect task: one *constant* ``TDH3p-mCherry-ADH1t`` cassette
 is CRISPR-Cas9 integrated at 150 intergenic regions in *S. cerevisiae*.
 The cassette is always integrated on the chromosome's ``+`` strand
-(donor PCR-primer orientation; see ``benchmarks/hong_igr.md``), so the
+(donor PCR-primer orientation; see ``docs/benchmarks/hong_igr.md``), so the
 locus dataclass carries no strand field. The splicing + window-
 placement machinery lives in ``_cassette_scaffold.py`` and is shared
 with Wu.

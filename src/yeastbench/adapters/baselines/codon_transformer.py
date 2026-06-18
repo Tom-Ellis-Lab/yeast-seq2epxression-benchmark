@@ -6,7 +6,7 @@ library over an all-`*_unk` merged input (protein only, no codons), and
 scores each variant by summing per-position log-probabilities over the
 12 variable codons.
 
-See ``benchmarks/chen_synonymous.md`` for the math and caveats.
+See ``docs/benchmarks/chen_synonymous.md`` for the math and caveats.
 
 The convenience ``predict_dna_sequence()`` in the upstream package throws
 away the logits we need, so we call the underlying HuggingFace model

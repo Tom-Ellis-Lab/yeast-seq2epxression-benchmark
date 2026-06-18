@@ -10,7 +10,7 @@ distribution under ``data/tasks/cuperus_mpra_5utr/``:
     cohort size, and sha256 of every input and output file.
 
 Depth buckets stratify the random library by input read depth ``t0`` (see
-``benchmarks/cuperus_mpra_5utr.md`` → Read-depth strata). ``is_paper_top5``
+``docs/benchmarks/cuperus_mpra_5utr.md`` → Read-depth strata). ``is_paper_top5``
 marks the exact 24,468-row top-5%-by-``t0`` cohort used for the CNN R2=0.62
 comparison, reproduced via the Seeliglab Notebook_1 index split.
 

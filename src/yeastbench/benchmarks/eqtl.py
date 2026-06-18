@@ -17,7 +17,7 @@ from yeastbench.adapters.protocols import Variant, VariantEffectScorer
 from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 
 
-# Locked in the spec: see benchmarks/caudal_eqtl.md § Evaluation protocol.
+# Locked in the spec: see docs/benchmarks/caudal_eqtl.md § Evaluation protocol.
 DISTANCE_BINS: tuple[tuple[int, int], ...] = (
     (0, 500),
     (500, 1000),

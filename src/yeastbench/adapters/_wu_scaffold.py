@@ -7,7 +7,7 @@ the genomic neighbourhood varies. The cassette payload's geometry
 ``scripts/wu/build_cassette_fasta.py``; the splicing + window-placement
 machinery lives in ``_cassette_scaffold.py`` and is shared with Hong.
 
-Cassette payload (frozen, see ``benchmarks/wu_rfpins.md``):
+Cassette payload (frozen, see ``docs/benchmarks/wu_rfpins.md``):
 
     U1(18) + UPTAG(20=N) + U2(18) + RFP-TU-core(3410) + D2(19) + DNTAG(20=N) + D1(17)
     = 3522 bp.  mCherry CDS at payload offset 554, length 711.

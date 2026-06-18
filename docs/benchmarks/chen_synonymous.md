@@ -1,9 +1,8 @@
 # Chen et al. — Synonymous-mutation MPRA (mRNA level, codon-resolution)
 
-> **Status:** spec, ready to implement. Three libraries; same custom
-> integration construct; one benchmark class parameterized by library
-> name. Headline metric is per-library Pearson *r* on `log2(R/D)`.
+![image](/img/chen_codon_banner.png)
 
+Image from Chen et al. (2017)
 ## At a glance
 
 | | |

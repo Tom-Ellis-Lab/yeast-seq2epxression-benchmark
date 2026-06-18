@@ -5,7 +5,7 @@ reference site ``IntTrain92``) of one constant
 ``TDH3p-mCherry-ADH1t`` cassette integrated at 150 intergenic regions
 in *S. cerevisiae*. Only the integration site varies — this is a
 position-effect probe, the IGR-flavor sibling of the Wu RFP-insertion
-benchmark (see ``benchmarks/hong_igr.md``).
+benchmark (see ``docs/benchmarks/hong_igr.md``).
 
 Two co-primary metrics, both reported as Spearman ρ on the IntProp
 held-out tier:
@@ -23,7 +23,7 @@ held-out tier:
   implementing ``predict_diagnostic_readouts(loci) → dict``;
   adapters without it get only Primary reported.
 
-See ``benchmarks/hong_igr.md`` for the full design + caveats about
+See ``docs/benchmarks/hong_igr.md`` for the full design + caveats about
 the 0.847 cross-promoter ceiling vs noise-limited within-promoter
 ceiling.
 """

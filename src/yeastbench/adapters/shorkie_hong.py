@@ -18,7 +18,7 @@ regions span the cassette and immediate native flanks. Biological
 signs are applied: active marks and RNA-seq get sign +1; nucleosome
 density (H3) gets sign −1.
 
-See ``benchmarks/hong_igr.md`` for the full Primary +
+See ``docs/benchmarks/hong_igr.md`` for the full Primary +
 IntTrain-fitted design.
 """
 from __future__ import annotations

@@ -1,7 +1,6 @@
 # Caudal et al. — yeast cis-eQTL classification
 
-> **Status:** draft. This is the worked example used to develop the benchmark
-> entry template — fields and wording are still in flux.
+![image](../../img/eQTL_task.svg)
 
 ## At a glance
 
@@ -565,7 +564,7 @@ No new `run_*.py` scripts; no new CLI wiring.
 | Yorzoi adapter | `src/yeastbench/adapters/yorzoi_eqtl.py` |
 | Shared genome utilities (GTF parse, FASTA windowing, one-hot, exon-bin selection) | `src/yeastbench/adapters/_genome.py` |
 | Model + task registry | `src/yeastbench/registry.py` |
-| Canonical run config | [`configs/default.yaml`](../configs/default.yaml) |
+| Canonical run config | [`configs/default.yaml`](../../configs/default.yaml) |
 | CLI | `ybench` (`src/yeastbench/cli.py`), installed by `uv sync` |
 | Architecture / API sketch | [`architecture.md`](architecture.md) |
 | `pin N` script | `/tmp/pin_n_caudal.py` (one-off; can be moved into `scripts/eqtl/` if we want it tracked) |

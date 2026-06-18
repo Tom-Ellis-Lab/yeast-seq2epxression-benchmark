@@ -1,22 +1,6 @@
 # Hong et al. — Chromosomal-position effects on IGR-integrated mCherry
 
-> **Status:** **implemented & tested** (`tests/test_hong_igr.py`,
-> 30 tests; full suite 190 green). `HongIGRInsertionBenchmark` +
-> `_hong_scaffold.py` + `_cassette_scaffold.py` +
-> `ShorkieHongPredictor` / `YorzoiHongPredictor` wired into the
-> registry/config (`hong_igr`). Distribution committed at
-> `data/tasks/hong/hong_igr_v1.tsv` (98 IntTrain + 52 IntProp = 150
-> rows, all gRNA-verified against R64-5-1; 2 IntTrain fall back to
-> Table S4 `int_site`). Cassette FASTA + xlsx source committed at
-> `data/tasks/hong/`. **GPU runs done** — headline numbers in the
-> *Results* section below.
-
-Implements the IGR-integration assay from Hong, Cai, Wang, Dong,
-Zhang & Lian 2026, *Exploring Chromosomal Position Effects for
-Predictable Tuning of Metabolic Pathways in Yeast*, bioRxiv
-[10.64898/2026.04.06.716637](https://doi.org/10.64898/2026.04.06.716637).
-Supplementary data vendored at `data/tasks/hong/YeIP_supp_table_R2_20260411.xlsx`;
-YeIP source at https://github.com/daftpunksss/YeIP.
+![image](/img/hong_igr.drawio.svg)
 
 ## At a glance
 
@@ -40,7 +24,7 @@ mCherry fluorescence across 30 (promoter × IGR) combinations
 (Fig. 2H/I). The benchmark records this in `summary.json` as
 `mrna_fluo_ceiling_spcc_published`. Caveats about
 selection-biased / model-specific noise ceilings live in
-[`benchmarks/model_failures.md`](model_failures.md), not here.
+[`docs/benchmarks/model_failures.md`](model_failures.md), not here.
 
 ## Results
 

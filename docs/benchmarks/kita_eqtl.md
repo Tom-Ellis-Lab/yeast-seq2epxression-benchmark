@@ -1,7 +1,6 @@
 # Kita et al. — yeast cis-eQTL classification
 
-> **Status:** draft. Second worked example, used alongside
-> [Caudal](caudal_eqtl.md) to develop the benchmark entry template.
+![image](/img/eQTL_task.svg)
 
 ## At a glance
 
@@ -265,6 +264,6 @@ evaluation), but v1 does **not** ship a per-context report.
   for Caudal and Kita) so the same code path works for both.
 - Once a third eQTL benchmark exists (likely Renganaath), extract the
   shared infrastructure sections (Distribution, Schema, Model contract,
-  Evaluation protocol) into `benchmarks/_template_eqtl.md` and have
+  Evaluation protocol) into `docs/benchmarks/_template_eqtl.md` and have
   Caudal/Kita reference the template instead of cross-referencing
   each other.

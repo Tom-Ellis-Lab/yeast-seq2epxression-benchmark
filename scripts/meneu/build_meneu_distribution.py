@@ -18,7 +18,7 @@ on these built files alone (no figshare).
 Run:
     uv run python scripts/meneu/build_meneu_distribution.py
 
-See ``benchmarks/meneu_foreign_dna.md``.
+See ``docs/benchmarks/meneu_foreign_dna.md``.
 """
 from __future__ import annotations
 

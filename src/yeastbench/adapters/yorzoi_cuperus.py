@@ -7,7 +7,7 @@ track aggregation. The construct is always built on the + strand, so the readout
 uses the plus-strand tracks (0–80); RC averaging swaps strand tracks inside the
 wrapper. Contexts are streamed in batches (the random library is ~489k UTRs).
 The construct is scored in the single fixed ``HIS3`` context (no marginalization).
-See ``benchmarks/cuperus_mpra_5utr.md``.
+See ``docs/benchmarks/cuperus_mpra_5utr.md``.
 """
 from __future__ import annotations
 

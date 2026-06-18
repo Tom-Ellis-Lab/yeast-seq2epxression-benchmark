@@ -12,7 +12,7 @@ R64-5-1, and writes:
     ``TDH3p-mCherry-ADH1t`` cassette from Supp Table S3 row 1, with
     the mCherry CDS offset asserted in the FASTA header.
 
-See ``benchmarks/hong_igr.md`` for full design notes (in particular,
+See ``docs/benchmarks/hong_igr.md`` for full design notes (in particular,
 why Table S5's coordinates are ignored).
 """
 from __future__ import annotations

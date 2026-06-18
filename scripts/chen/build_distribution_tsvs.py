@@ -8,7 +8,7 @@ Reads the published supplementary workbook (Tables S7/S8/S9) and writes:
     data/tasks/chen_synonymous/replicate_ceilings.json
 
 CAI / tAI / MFE / GC3 columns are carried through from the supp tables verbatim
-(see benchmarks/chen_synonymous.md for why we don't recompute CAI).
+(see docs/benchmarks/chen_synonymous.md for why we don't recompute CAI).
 
 Sanity checks (must pass at build time, else the script raises):
     - variable_seq is exactly 36 nt

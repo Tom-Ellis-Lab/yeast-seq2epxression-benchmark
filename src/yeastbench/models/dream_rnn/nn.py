@@ -10,7 +10,7 @@ best combination built around the BHI team's recurrent core:
     final  — Autosome 18-bin soft-classification head → expected-value scalar
 
 The block class names here are deliberately neutral (no team prefixes) — see
-``benchmarks/rafi_mpra_promoter.md``. The **module/attribute hierarchy**,
+``docs/benchmarks/rafi_mpra_promoter.md``. The **module/attribute hierarchy**,
 however, is preserved exactly (``first`` / ``core`` / ``final``, with
 ``conv_list`` / ``lstm`` / ``do`` / ``mapper`` / ``bins`` beneath) so the
 published ``model_best.pth`` state_dict (Zenodo 10633252, dir ``0_1_1_0``)

@@ -1,23 +1,8 @@
 # Meneu et al. — foreign-DNA RNA-seq coverage-track prediction
 
-> **Status:** implemented + unit-tested; first GPU runs done.
-> Far-OOD **zero-shot** stress test — yeast-trained sequence-to-expression models
-> tile two whole bacterial chromosomes integrated into *S. cerevisiae* and predict
-> their RNA-seq coverage, scored per chromosome against the measured RNA-seq.
-> Leakage-free by construction.
->
-> **First zero-shot numbers** (per-chromosome median per-window raw Pearson, 5 kb /
-> 1 bp): **Yorzoi** (illumina_exo) Mpneumo **0.110** / Mmmyco **0.384**;
-> **Shorkie** (T0) Mpneumo **0.091** / Mmmyco **0.264**. These sit well below the
-> ExoShorkie references (NatShorkie / ExoYorzoi ~0.4–0.6) — expected, since our
-> 1 bp / 5 kb raw-Pearson metric is materially more stringent than ExoShorkie's
-> 16 bp / 14.3 kb median-Spearman, so those numbers are orientation only, not
-> targets. The **Mmmyco > Mpneumo** ordering matches ExoShorkie.
->
-> Data is built from the ExoShorkie figshare (per-base coverage `.npz` + genome
-> FASTAs). Deferred to v2: reproducibility ceiling, Yorzoi track-group sweep
-> (only `illumina_exo` run so far), yeast in-distribution anchor — see
-> *Open questions*.
+![image](/img/meneu_banner.svg)
+
+Figure partially from [Meneu et al.](https://doi.org/10.1126/science.adm9466)
 
 ## At a glance
 

@@ -1,5 +1,7 @@
 # Rafi / deBoer — random-promoter MPRA expression
 
+![image](/img/mpra_banner.svg)
+
 > **Status:** zero-shot marginalized eval **implemented** (Shorkie, Yorzoi).
 > DREAM-RNN supervised baseline — **implemented + verified** (`dream_rnn` model;
 > `tests/test_dream_rnn.py`). The published `0_1_1_0` checkpoint loads

@@ -2,7 +2,7 @@
 
 Reads the raw per-iteration TSVs produced by
 ``scripts/eqtl/0_data_generation/1_generate_negs.py`` and converts them into
-the processed schema documented in ``benchmarks/caudal_eqtl.md``:
+the processed schema documented in ``docs/benchmarks/caudal_eqtl.md``:
 
 - Chromosome names normalized to Arabic numerals (``"1"``..``"16"``).
 - ``pair_id`` column added (0..N-1 after sorting by ``(pos_chrom, pos_pos)``).
@@ -131,7 +131,7 @@ def write_readme(out_dir: Path, n_per_iter: int, iterations: int, commit: str) -
         f"""# caudal_eqtl_v1
 
 Processed distribution for the Caudal et al. yeast cis-eQTL classification
-benchmark. See `benchmarks/caudal_eqtl.md` for the full spec.
+benchmark. See `docs/benchmarks/caudal_eqtl.md` for the full spec.
 
 - **Version:** v1
 - **Generated:** {date.today().isoformat()}

@@ -1,32 +1,6 @@
 # Brooks et al. — SCRaMBLE structural-rearrangement expression effect
 
-> **Status: shipped in PR #2 (2026-05-20); unified to one task (2026-06-16).**
-> Both Yorzoi and Shorkie evaluate via `CoverageTrackPredictor` on the single
-> `brooks_scramble` task. One window-agnostic artifact (`brooks_index.tsv` +
-> `brooks_constructs.fasta` + `brooks_cov.npz`); the benchmark re-cuts each
-> construct to the model's receptive field at run time (`window_slice`),
-> reproducing the per-window membership/dedup — 698 constructs at 4992 (Yorzoi),
-> 1055 at 16384 (Shorkie), bit-identical to the old per-window TSVs. Cross-model
-> headline numbers come from
-> the **shared sample set** via `ybench compare` (Brooks shared-cohort
-> logic in `src/yeastbench/benchmarks/brooks.py`);
-> per-model full-set numbers reported as secondary. Headline (shared
-> cohort, n_scored = 327): Yorzoi r = 0.222 / dir-acc = 0.635;
-> Shorkie r ≈ 0 / dir-acc = 0.553; LOO noise ceiling r = 0.805 /
-> dir-acc = 0.806. The Yorzoi training manifest (verified
-> 2026-05-20) does include the Brooks Nanopore tracks — Yorzoi
-> numbers are partly a leakage measurement (caveat recorded; not
-> remediated in v1).
->
-> Implementation details below describe the shipping benchmark:
-> **per-replicate LFC framing** (0–3 predicted + truth LFCs per
-> sample, one per JS94 deep-WT run), strain-side-only `low_support`
-> flag, LOO ceiling, calibration metrics on the n_reps ≥ 2 cohort,
-> per-base shape (Pearson + Jensen–Shannon) on the alt
-> construct. Diverges from the initial design (mean-denominator LFC
-> + scalar control-noise ceiling), which is the version that was
-> "design-locked" 2026-05-19 — both the framing and the metrics
-> changed during implementation.
+![image](/img/scramble_vertical.drawio.svg)
 
 ## At a glance
 

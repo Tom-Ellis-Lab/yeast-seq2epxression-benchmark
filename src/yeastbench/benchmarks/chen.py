@@ -10,7 +10,7 @@ report **Pearson and Spearman separately for each replicate**, never a
 pre-averaged label, so we can compare both numbers against the
 published replicate-replicate ceiling.
 
-See ``benchmarks/chen_synonymous.md`` for the spec.
+See ``docs/benchmarks/chen_synonymous.md`` for the spec.
 """
 from __future__ import annotations
 

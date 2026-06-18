@@ -1,7 +1,7 @@
 """Shorkie adapter for the Chen synonymous-mutation MPRA benchmark.
 
 Marginalises variant scoring over 20 native yeast loci active in YPD
-(see ``benchmarks/chen_synonymous.md`` for the motivation and
+(see ``docs/benchmarks/chen_synonymous.md`` for the motivation and
 host-selection criteria). For each variant and each host:
 
 1. Splice the variant gene CDS + TADH1 into the host's CDS span

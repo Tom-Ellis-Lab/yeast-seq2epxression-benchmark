@@ -1,6 +1,6 @@
 # Shalem et al. — 3′-end / terminator MPRA expression (marginalized)
 
-> **Status:** spec, ready to implement.
+![image](/img/mpra_banner.svg)
 
 ## At a glance
 

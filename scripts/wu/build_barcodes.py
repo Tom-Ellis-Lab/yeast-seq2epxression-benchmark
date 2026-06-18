@@ -22,7 +22,7 @@ original works too.)  Vendored alongside the other Wu build inputs at
 These are the **as-designed** tags — the deep-sequenced/recharacterized
 Smith 2009 set is not retrievable (host down, no archive snapshots, and
 it is only a ~20 % correction delta anyway).  ~3 % of strains differ from
-this design in reality; documented as a caveat in ``benchmarks/wu_rfpins.md``.
+this design in reality; documented as a caveat in ``docs/benchmarks/wu_rfpins.md``.
 
 Orientation
 -----------

@@ -25,7 +25,7 @@ not in the individual specs. The forward-looking task list lives in
 | [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) | implemented, GPU runs done |
 
 "Implemented" means the benchmark class + both model adapters are registered
-([`src/yeastbench/registry.py`](../src/yeastbench/registry.py)) and covered by
+([`src/yeastbench/registry.py`](../../src/yeastbench/registry.py)) and covered by
 the test suite. The spec header on each file carries the finer-grained status
 and any headline numbers.
 
@@ -83,7 +83,7 @@ numbers rather than the paper's (non-RNA-seq) CNN.
 Future benchmarks are tracked in [`../ROADMAP.md`](../ROADMAP.md), not here, until
 they have a spec file. Notable ones deferred past v1:
 
-- **Species LM (Keren et al.)** — sequence language-model evaluation, moved to v2.
+- **Species LM (Karollus et al.)** — sequence language-model evaluation, moved to v2.
 - **Native-genome track prediction** — cross-model RNA-seq track R² on held-out
   yeast regions.
 - **Condition coherence** — does the model respect promoter-driven OFF states?

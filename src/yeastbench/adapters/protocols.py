@@ -79,7 +79,7 @@ class SequenceExpressionScorer(Protocol):
       predicted reporter expression of the insert in its own reporter context.
 
     They are scored on the same axis but fed their native substrate; any figure
-    placing them together must say so (see ``benchmarks/rafi_mpra_promoter.md``)."""
+    placing them together must say so (see ``docs/benchmarks/rafi_mpra_promoter.md``)."""
 
     def predict_expression_scores(self, seqs: Sequence[str]) -> np.ndarray: ...
 
@@ -196,7 +196,7 @@ class LocalCodingVariantPredictor(Protocol):
     correspondence to the measured label for Pearson scoring.
 
     Used by the Chen et al. 2017 synonymous-mutation MPRA benchmark.
-    See ``benchmarks/chen_synonymous.md``.
+    See ``docs/benchmarks/chen_synonymous.md``.
 
     Contract:
     - ``library_ids[i]`` is one of the strings the adapter advertises via
@@ -229,6 +229,6 @@ class FivePrimeUtrReporterExpressionPredictor(Protocol):
     readout in any monotone-faithful units.
 
     Used by the Cuperus et al. 2017 5'-UTR MPRA benchmark.
-    See ``benchmarks/cuperus_mpra_5utr.md``."""
+    See ``docs/benchmarks/cuperus_mpra_5utr.md``."""
 
     def predict_utr_expressions(self, utrs: Sequence[str]) -> np.ndarray: ...

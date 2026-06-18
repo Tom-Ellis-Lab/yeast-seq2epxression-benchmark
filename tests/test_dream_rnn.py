@@ -1,6 +1,6 @@
 """Tests for the DREAM-RNN supervised baseline (Rafi/deBoer MPRA).
 
-See ``benchmarks/rafi_mpra_promoter.md``. The architecture/predictor tests run
+See ``docs/benchmarks/rafi_mpra_promoter.md``. The architecture/predictor tests run
 on CPU with random weights; the strict-weight-load test is skipped unless the
 published checkpoint has been staged at ``data/models/dream_rnn/``.
 """

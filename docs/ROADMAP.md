@@ -29,7 +29,7 @@
 - [CI smoke-test](#ci-smoke-test)
 
 Per-benchmark detail (scoring design, sources, results) lives in the spec
-files under `benchmarks/`. This roadmap tracks status only.
+files under `docs/benchmarks/`. This roadmap tracks status only.
 
 ## v1 release
 
@@ -92,7 +92,7 @@ files under `benchmarks/`. This roadmap tracks status only.
 
 #### Kita et al. eQTL
 
-- [x] Spec (`benchmarks/kita_eqtl.md`)
+- [x] Spec (`docs/benchmarks/kita_eqtl.md`)
 - [x] Generalized eQTL data-prep handles Kita (`scripts/eqtl/0_data_generation/*`
   with `--dataset kita`)
 - [x] Distribution committed (`data/tasks/kita_eqtl/`, negset_{1..4}.tsv,
@@ -116,12 +116,12 @@ files under `benchmarks/`. This roadmap tracks status only.
 - [x] Pair-difference Pearson for SNV / motif pair strata (`per_pair_stratum`
   with `diff_pearson_r` in both summaries)
 - [x] DREAM-RNN supervised baseline — single in-distribution model, reported
-  separately from zero-shot (spec: `benchmarks/rafi_mpra_promoter.md`); weights
+  separately from zero-shot (spec: `docs/benchmarks/rafi_mpra_promoter.md`); weights
   pending publish to mirrors
 
 #### Shalem / Segal (terminator)
 
-- [x] Spec (`benchmarks/shalem_mpra_terminator.md`): marginalized-only, 150 bp
+- [x] Spec (`docs/benchmarks/shalem_mpra_terminator.md`): marginalized-only, 150 bp
   insert + 300 bp CYC1 no-term filler, 450 bp replacement at stop + 1
 - [x] cycl-512 mutant UTR reconstruction (Guo 1995)
 - [x] DEE2 per-gene median TPM table (`data/tasks/dee2_gene_median_tpm.tsv`)
@@ -133,7 +133,7 @@ files under `benchmarks/`. This roadmap tracks status only.
 
 #### Chen et al. (synonymous CDS)
 
-- [x] Spec (`benchmarks/chen_synonymous.md`): marginalized over 20 YPD hosts,
+- [x] Spec (`docs/benchmarks/chen_synonymous.md`): marginalized over 20 YPD hosts,
   per-replicate labels, per-library replicate ceilings
 - [x] `LocalCodingVariantPredictor` protocol (`predict_local_variants`)
 - [x] `ChenSynonymousBenchmark` (`benchmarks/chen.py`); tasks `chen_gfp_r1`,
@@ -149,7 +149,7 @@ files under `benchmarks/`. This roadmap tracks status only.
 
 #### Wu et al. (RFP insertions)
 
-- [x] Spec (`benchmarks/wu_rfpins.md`)
+- [x] Spec (`docs/benchmarks/wu_rfpins.md`)
 - [x] Labels (`table_s2_fluorescence_1044_loci.csv`, 1044 loci)
 - [x] Cassette verified + frozen (`scripts/wu/verify_cassette.py`,
   `expression_cassette.fasta`, `scripts/wu/build_cassette_fasta.py`)
@@ -170,11 +170,11 @@ files under `benchmarks/`. This roadmap tracks status only.
 
 #### Hong et al. (mCherry IGR insertions)
 
-- [x] Spec (`benchmarks/hong_igr.md`): 98 IntTrain + 52 IntProp = 150 loci,
+- [x] Spec (`docs/benchmarks/hong_igr.md`): 98 IntTrain + 52 IntProp = 150 loci,
   mCherry CDS-sum readout, two co-primary metrics (Primary RNA-seq × cassette
   CDS; IntTrain-fitted IntProp ρ)
 - [x] Published ceiling SPCC = 0.847 surfaced in `summary.json`; caveats in
-  `benchmarks/model_failures.md`
+  `docs/benchmarks/model_failures.md`
 - [x] Reference R64-5-1 (`data/tasks/R64-5-1.fa`)
 - [x] Distribution built (`scripts/hong/build_hong_distribution.py`,
   `data/tasks/hong/hong_igr_v1.tsv`, 150 rows; coords from Table S2 gRNAs →
@@ -195,7 +195,7 @@ files under `benchmarks/`. This roadmap tracks status only.
 
 #### Cuperus et al. (5′ UTR)
 
-- [x] Spec (`benchmarks/cuperus_mpra_5utr.md`): HIS3 reporter, no marginalization;
+- [x] Spec (`docs/benchmarks/cuperus_mpra_5utr.md`): HIS3 reporter, no marginalization;
   two metrics (direct corr + Kozak partial-corr)
 - [x] Source data vendored (`archive/cuperus/`; random 489,348 + native 11,856
   variable-length, both primary evals)
@@ -208,7 +208,7 @@ files under `benchmarks/`. This roadmap tracks status only.
 
 ### Structural rearrangements
 
-Brooks et al. SCRaMBLE chromosome 9 — spec `benchmarks/brooks_scramble.md`.
+Brooks et al. SCRaMBLE chromosome 9 — spec `docs/benchmarks/brooks_scramble.md`.
 
 - [x] Spec locked (2026-05-19): per-copy sampling, total-native-reads size
   factor, locked sample rule (alt differs from native in the receptive field,
@@ -257,7 +257,7 @@ Brooks et al. SCRaMBLE chromosome 9 — spec `benchmarks/brooks_scramble.md`.
 ### Foreign-DNA integration
 
 Meneu et al. foreign-DNA chromosome integration — spec
-`benchmarks/meneu_foreign_dna.md`. Implemented; Shorkie + Yorzoi run zero-shot
+`docs/benchmarks/meneu_foreign_dna.md`. Implemented; Shorkie + Yorzoi run zero-shot
 (PR #21).
 
 - [x] Spec, build script, `MeneuForeignDNABenchmark` +
@@ -290,12 +290,11 @@ Not blocking any benchmark.
 
 ### Documentation
 
-- [x] Spec per benchmark (`benchmarks/*.md`) + index (`benchmarks/README.md`)
-- [ ] Final review and corrections of the `benchmarks/*.md` spec files
+- [x] Spec per benchmark (`docs/benchmarks/*.md`) + index (`docs/benchmarks/README.md`)
+- [ ] Final review and corrections of the `docs/benchmarks/*.md` spec files
 - [ ] Each benchmark gets a figure — a graphical abstract of the task — in its
-  `benchmarks/*.md` spec
+  `docs/benchmarks/*.md` spec
 - [x] Architecture doc (`archive/architecture.md`)
-- [x] Data-storage spec (`specs/data-storage.md`)
 - [ ] Revamp the main `README.md` — hero image / small logo, headline result
   figures + table, and a pass over the sections for correctness/completeness
 - [ ] Bring the README extension guide ("Adding a new benchmark / model") in line with the code
@@ -346,6 +345,8 @@ gitignored; remove from local checkouts too.
 - [ ] Verify `git ls-files | xargs grep -l "investigation" -- scripts/ src/` is
   empty and `tests/` imports none of the deleted files
 - [ ] Confirm the specs reference the notebooks only as historical context
+- [ ] Standardize the benchmark tables so they all share the same row names
+  (consistent metric / row labels across every task's results table)
 
 ## v2 release
 
@@ -385,12 +386,12 @@ Migrate back under their benchmark sections when ExoShorkie becomes active.
   median Spearman over 16 bp bins of 14.3 kb windows — then alignment / scale,
   track subsets, NatShorkie strand-adaptation; doubles as the check on why our
   zero-shot Shorkie / Yorzoi sit below the published refs). See
-  `benchmarks/meneu_foreign_dna.md` Open Questions #1
+  `docs/benchmarks/meneu_foreign_dna.md` Open Questions #1
 
 ### Species LM
 
 Sequence language-model evaluation on yeast (Keren et al.). No spec or adapter
-yet; gets `benchmarks/species_lm.md` + a registry entry when it lands.
+yet; gets `docs/benchmarks/species_lm.md` + a registry entry when it lands.
 
 ### Condition coherence
 
@@ -407,7 +408,7 @@ vs constitutive controls (TDH3, PGK1, ACT1, ENO2, ALG9), scored on the unmodifie
 locus. Primary metric: pairwise AUROC (on-gene ranked above off-gene); secondary:
 off-gene CDS-sum normalized to the on-set median, per gene-class.
 
-- [ ] Spec `benchmarks/condition_coherence.md`
+- [ ] Spec `docs/benchmarks/condition_coherence.md`
 - [ ] `LocusExpressionPredictor` protocol + curated gene list + benchmark
 
 ### Caudal eQTL effect-size calibration
@@ -450,7 +451,7 @@ CI or keep it as a conservative band.
 
 ### Hong et al. extensions
 
-Follow-ups to the implemented Hong IGR benchmark (spec `benchmarks/hong_igr.md`).
+Follow-ups to the implemented Hong IGR benchmark (spec `docs/benchmarks/hong_igr.md`).
 
 - [ ] YeIP supervised reference baseline (AutoGluon over Hong Fig. 2A features;
   supervised upper bound; weights + code from the YeIP repo)
@@ -462,7 +463,7 @@ Follow-ups to the implemented Hong IGR benchmark (spec `benchmarks/hong_igr.md`)
 ### Brooks et al. extensions
 
 Follow-ups to the implemented Brooks SCRaMBLE benchmark (spec
-`benchmarks/brooks_scramble.md`).
+`docs/benchmarks/brooks_scramble.md`).
 
 **Leakage-free Yorzoi evaluation.** Yorzoi's training targets include the Brooks
 Nanopore tracks (manifest verified 2026-05-20), so its headline is partly a
@@ -488,7 +489,7 @@ the cis-effect of each strain's new junctions within the receptive field.
 ### Meneu et al. extensions
 
 Follow-ups to the implemented Meneu foreign-DNA benchmark (spec
-`benchmarks/meneu_foreign_dna.md`).
+`docs/benchmarks/meneu_foreign_dna.md`).
 
 - [ ] Yorzoi track-group sweep — add the Nanopore-63 and SRA-1 modes to
   `_plus_axis_indices`, report each, name the best

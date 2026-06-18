@@ -3,7 +3,7 @@
 Zero-shot prediction of OD600-normalised RFP plate-reader intensity for
 one constant cassette integrated at 1044 single-ORF deletion loci.  Only
 the genomic insertion site varies — this is a position-effect probe (see
-``benchmarks/wu_rfpins.md``).
+``docs/benchmarks/wu_rfpins.md``).
 
 Primary metric: Pearson r + Spearman ρ between predicted and measured
 relative fluorescence.  Secondary: two binary tail-classification tasks

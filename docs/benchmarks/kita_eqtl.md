@@ -1,6 +1,6 @@
 # Kita et al. — yeast cis-eQTL classification
 
-![image](/img/kita_eqtl_banner.svg)
+![image](/img/eQTL_task.svg)
 
 ## At a glance
 

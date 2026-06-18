@@ -1,26 +1,6 @@
 # Wu et al. — Genome-wide position effects on RFP cassette expression
 
-![image](/img/wu_rfpins_banner.svg)
-
-> **Status:** **implemented & tested** (`tests/test_rfpins.py`, 20
-> tests; full suite green). `RFPInsertionBenchmark` +
-> `_wu_scaffold.py` + `ShorkieWuPredictor`/`YorzoiWuPredictor` wired
-> into the registry/config (`wu_rfpins`). Cassette content verified and
-> the constant payload frozen
-> (`scripts/wu/{verify,build}_cassette*.py`). End-to-end validated on
-> the real 1044-locus data with a mock adapter (1043 resolved; YIR044C
-> dropped — dubious ORF absent from Ensembl 115). **Per-ORF UPTAG/DNTAG
-> barcodes now injected** (`barcodes.tsv`, `scripts/wu/build_barcodes.py`):
-> the placeholder 20×N slots one-hot-encode to all-zero (out-of-
-> distribution) columns, so they are replaced with the real per-strain
-> tags from the SGTC deletion registry — 1013/1044 loci get both designed
-> tags, 31 are UPTAG-only and get a synthetic 20-mer DNTAG (never N).
-> **GPU runs (RTX A6000) on the N-placeholder scaffold: Shorkie
-> r = −0.006, Yorzoi r = +0.026 (n = 1043)** — the predicted headline
-> negative result (position effect invisible to both models; both still
-> emit locus-varying predictions, so output is not merely constant). A
-> barcode re-run (robustness check that the N→real-tag swap does not move
-> the per-locus scores) is the one step pending. Numbers in ROADMAP.
+![image](/img/wu_banner.svg)
 
 ## At a glance
 

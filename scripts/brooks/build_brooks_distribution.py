@@ -1,35 +1,40 @@
-"""Build the single self-contained Brooks SCRaMBLE distribution file.
+"""Build the window-agnostic Brooks SCRaMBLE distribution (one task, all models).
 
-This is the ONLY component that touches `gs://brooks-nanopore`. It
-resolves every (gene, strain, copy) sample under the locked rule
-(docs/benchmarks/brooks_scramble.md) and bakes everything the benchmark needs
-at eval time into one TSV — so the benchmark depends on that file alone
-(no GCS, no per-strain genomes/GFF/BED, no R64 reference).
+This is the ONLY component that touches `gs://brooks-nanopore`. It resolves every
+(gene, strain, copy) candidate and bakes a **window-agnostic** artifact the
+benchmark slices at eval time — so the benchmark depends on these files alone (no
+GCS, no per-strain genomes/GFF/BED). Instead of one pre-cut TSV per model
+receptive field, it ships a generous gene-centred slice per construct; the
+benchmark re-cuts the model's window (and reproduces membership + the per-window
+dedup) at run time via `benchmarks.brooks.window_slice`.
 
 Pipeline per SCRaMBLE strain S (control = JS94, 3 runs):
   1. per-strain genome FASTA + GFF + read BED from the bucket (cached).
-  2. native-genome **median-of-ratios size factor** per strain/run
-     (native chromosomes are byte-identical across strains, so this
-     removes depth + sequencing-batch confounds).
-  3. per-copy CDS coverage on the strain's synthetic contig `JS<S>_1`,
-     gene-strand, normalised by the size factor.
+  2. native-genome size factor per strain/run (native chromosomes are
+     byte-identical across strains → removes depth + batch confounds).
+  3. per-copy CDS coverage on `JS<S>_1`, gene-strand, size-factor normalised.
   4. `true_lfc = log2( normcov(strain copy) / mean normcov(JS94 gene) )`;
-     JS94 per-run normalised coverages kept so the reproducibility
-     ceiling is derivable from the same file (no sidecar).
-  5. gene-centred alt window (on `JS<S>_1`) and native window (on
-     `JS94_1`), with the in-window CDS interval.
-  6. locked sample rule: gene present in JS94; intact CDS; alt window
-     differs from native within the receptive field (real cis change);
-     dedup byte-identical copies; deletions excluded (no CDS → no row).
+     JS94 per-run normalised coverages kept so the reproducibility ceiling is
+     derivable from the same file.
+  5. a generous gene-centred slice (±FLANK, clamped to the contig): sequence +
+     per-base coverage for the alt construct (on `JS<S>_1`), and sequence only
+     for the native baseline (on `JS94_1`; native coverage isn't scored). Native
+     is identical across strains → deduped per gene.
 
-Output: `data/tasks/brooks_scramble/brooks_scramble_v1.tsv` — one row per
-sample. Column schema in COLUMNS below.
+No window-specific filtering at build time. The membership rules — alt/native
+window fits, alt != native within the window, dedup byte-identical copies per
+gene — are window-dependent and re-applied at eval time, so one artifact serves
+any model with window ≤ FLANK.
+
+Outputs under `data/tasks/brooks_scramble/`:
+  - `brooks_constructs.fasta`  — `>alt~<sample_id>` / `>native~<gene_id>` slices
+  - `brooks_cov.npz`           — per-base int32 coverage for the `alt~*` records
+  - `brooks_index.tsv`         — one row per construct (schema in INDEX_COLUMNS)
 
 Run:
-  uv run python scripts/brooks/build_brooks_distribution.py            # 5 ROADMAP strains, 4992 bp
   uv run python scripts/brooks/build_brooks_distribution.py --strains all
-  uv run python scripts/brooks/build_brooks_distribution.py --strains all --window 16384  # Shorkie
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,54 +45,70 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from yeastbench.benchmarks.brooks import cov_key, gene_centre
+
 ROOT = Path(__file__).resolve().parents[2]
 BUCKET = "gs://brooks-nanopore"
 CACHE = ROOT / "data" / "tasks" / "brooks_scramble" / "_cache"
 OUT_DIR = ROOT / "data" / "tasks" / "brooks_scramble"
-DEFAULT_WINDOW = 4992       # Yorzoi receptive field (default output filename)
-SHORKIE_WINDOW = 16384      # Shorkie receptive field
+# Half-width of the stored gene-centred slice. Guarantees any model window
+# W <= FLANK is contained (incl. contig-edge clamping); covers Yorzoi 4992 +
+# Shorkie 16384. A larger model needs a rebuild with a bigger --flank.
+FLANK = 16384
 
 CONTROL = "JS94"
 ROADMAP_STRAINS = ["JS606", "JS707", "JS711", "JS731", "JS732"]
-NATIVE_CONTIGS = (
-    [f"chr{r}" for r in
-     "I II III IV V VI VII VIII X XI XII XIII XIV XV XVI".split()]
-    + ["chrIXL"]
-)
-WINDOW = DEFAULT_WINDOW    # Yorzoi receptive field; gene-centred. Set
-                           # from `--window` in main(); 4992 (Yorzoi) or
-                           # 16384 (Shorkie) are the two practical
-                           # values today. Coverage extraction, sequence
-                           # extraction, and per-base truth vectors all
-                           # depend on this constant.
+NATIVE_CONTIGS = [
+    f"chr{r}" for r in "I II III IV V VI VII VIII X XI XII XIII XIV XV XVI".split()
+] + ["chrIXL"]
 PSEUDOCOUNT = 1.0
-MIN_READS = 10         # strain-side raw CDS read floor → low_support flag
-                       # on the sample. Same threshold is used per-JS94-run
-                       # inside the benchmark to decide which JS94 runs
-                       # contribute to the per-replicate true_lfc set.
-MIN_RUN_READS = 50_000 # per-run native library-size floor; failed/ultra-
-                       # shallow runs (e.g. JS94 20180607=651, 20181122=
-                       # 3878 reads) are dropped before they corrupt the
-                       # control denominator / size factor / ceiling
+MIN_READS = 10  # strain-side raw CDS read floor → low_support flag
+# on the sample. Same threshold is used per-JS94-run
+# inside the benchmark to decide which JS94 runs
+# contribute to the per-replicate true_lfc set.
+MIN_RUN_READS = 50_000  # per-run native library-size floor; failed/ultra-
+# shallow runs (e.g. JS94 20180607=651, 20181122=
+# 3878 reads) are dropped before they corrupt the
+# control denominator / size factor / ceiling
 SGD_RE = re.compile(r"^Y[A-P][LR]\d{3}[WC](?:-[A-Z])?$")
 
-COLUMNS = [
-    "sample_id", "gene_id", "strain", "copy_idx", "n_copies", "strand",
-    "rearr_class", "syn_contig", "cds_start", "cds_end",
-    "window_len", "cds_start_in_window", "cds_end_in_window",
-    "alt_seq", "native_seq",
-    "true_cov_alt", "true_cov_native",   # comma-list of WINDOW int32 per-base counts
-    "strain_reads", "js94_reads_runs",   # raw counts (strain sum, JS94 per-run)
+# One row per (gene, strain, copy) candidate. Sequence + per-base coverage for
+# the alt/native slices live in the FASTA / npz keyed by `cov_key(...)`; this
+# table carries the window-agnostic coords, provenance, and truth scalars the
+# benchmark needs to re-cut each model's window and score it.
+INDEX_COLUMNS = [
+    "sample_id",
+    "gene_id",
+    "strain",
+    "copy_idx",
+    "n_copies",
+    "strand",
+    "rearr_class",
+    # alt provenance + absolute coords (the strain's genome / synthetic contig)
+    "alt_source_genome",
+    "alt_contig",
+    "alt_contig_len",
+    "alt_cds_start",
+    "alt_cds_end",
+    "alt_slice_start",
+    # native provenance + absolute coords (parental genome; shared per gene)
+    "native_source_genome",
+    "native_contig",
+    "native_contig_len",
+    "native_cds_start",
+    "native_cds_end",
+    "native_slice_start",
+    # window-agnostic truth scalars (CDS-based; independent of the window)
+    "strain_reads",
+    "js94_reads_runs",  # raw counts (strain sum, JS94 per-run)
     "size_factor_strain",
-    "norm_cov_strain", "norm_cov_js94_mean",
+    "norm_cov_strain",
+    "norm_cov_js94_mean",
     "norm_cov_js94_runs",  # comma-list of all WT-run values (ceiling derivable)
     "true_lfc",
-    # `low_support` is strain-side only: drop a single (strain, gene, copy)
-    # sample if the strain's raw CDS-overlap count < MIN_READS. The JS94
-    # side is handled per-replicate inside the benchmark (a JS94 run with
-    # < MIN_READS reads for this gene drops out of the per-replicate LFC
-    # set; n_reps_supported per sample = 0..3 derivable from
-    # `js94_reads_runs`).
+    # `low_support` is strain-side only: a (strain, gene, copy) whose strain raw
+    # CDS-overlap count < MIN_READS. JS94 side is handled per-replicate inside
+    # the benchmark (n_reps_supported derivable from `js94_reads_runs`).
     "low_support",
 ]
 
@@ -184,19 +205,27 @@ def parse_gff_cds(path: Path) -> pd.DataFrame:
 
 def load_bed(path: Path) -> pd.DataFrame:
     return pd.read_csv(
-        path, sep="\t", header=None,
+        path,
+        sep="\t",
+        header=None,
         names=["chrom", "start", "end", "rid", "mapq", "strand"],
         usecols=[0, 1, 2, 4, 5],
-        dtype={"chrom": str, "start": np.int64, "end": np.int64,
-               "mapq": np.int16, "strand": str},
+        dtype={
+            "chrom": str,
+            "start": np.int64,
+            "end": np.int64,
+            "mapq": np.int16,
+            "strand": str,
+        },
     )
 
 
 # ── coverage helpers ──────────────────────────────────────────
 
 
-def count_overlaps(bed: pd.DataFrame, contig: str, lo: int, hi: int,
-                   strand: str) -> int:
+def count_overlaps(
+    bed: pd.DataFrame, contig: str, lo: int, hi: int, strand: str
+) -> int:
     """# reads on `contig`/`strand` overlapping 1-based inclusive [lo,hi]."""
     b = bed[(bed.chrom == contig) & (bed.strand == strand)]
     if b.empty:
@@ -205,8 +234,9 @@ def count_overlaps(bed: pd.DataFrame, contig: str, lo: int, hi: int,
     return int(((b.start < hi) & (b.end > lo - 1)).sum())
 
 
-def per_base_cov(bed: pd.DataFrame, contig: str, strand: str,
-                 contig_len: int) -> np.ndarray:
+def per_base_cov(
+    bed: pd.DataFrame, contig: str, strand: str, contig_len: int
+) -> np.ndarray:
     """Per-base read-depth array for one (contig, strand), via diff+cumsum
     over the BED intervals — O(N reads + contig_len), then `[w0:w0+W]`
     slicing per sample is O(W). Returns int32 array of length `contig_len`."""
@@ -219,10 +249,6 @@ def per_base_cov(bed: pd.DataFrame, contig: str, strand: str,
     np.add.at(delta, starts, 1)
     np.add.at(delta, ends, -1)
     return np.cumsum(delta[:contig_len]).astype(np.int32)
-
-
-def _comma_ints(arr: np.ndarray) -> str:
-    return ",".join(map(str, arr.tolist()))
 
 
 def native_total_reads(bed: pd.DataFrame) -> int:
@@ -240,23 +266,17 @@ def size_factor(strain_total: int, ref_total: float) -> float:
     return float(strain_total / max(ref_total, 1.0))
 
 
-# ── window extraction ─────────────────────────────────────────
+# ── generous gene-centred slice (window-agnostic) ─────────────
 
 
-def gene_window(seq: str, start: int, end: int) -> tuple[str, int, int, int] | None:
-    """Gene-centred WINDOW-bp slice (forward contig orientation).
-    Returns (window_seq, cds_start_in_window, cds_end_in_window) or None
-    if the contig can't fill a full window around the gene."""
-    if len(seq) < WINDOW:
-        return None
-    centre = (start - 1 + end) // 2
-    w0 = centre - WINDOW // 2
-    w0 = max(0, min(w0, len(seq) - WINDOW))
-    win = seq[w0:w0 + WINDOW]
-    cs, ce = (start - 1) - w0, end - w0
-    if cs < 0 or ce > WINDOW:
-        return None
-    return win, cs, ce, w0   # w0 = window genomic 0-based start (for coverage)
+def gene_slice(
+    contig_len: int, cds_start: int, cds_end: int, flank: int
+) -> tuple[int, int]:
+    """``[start, end)`` of the ±``flank`` gene-centred slice, clamped to the
+    contig. Uses the shared ``gene_centre`` so the benchmark can re-cut any
+    window <= ``flank`` from the stored slice. Absolute coords."""
+    centre = gene_centre(cds_start, cds_end)
+    return max(0, centre - flank), min(contig_len, centre + flank)
 
 
 def cluster_copies(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -278,20 +298,19 @@ def cluster_copies(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--strains", default="roadmap",
-                    help="'roadmap' (5), 'all', or comma list")
-    ap.add_argument("--window", type=int, default=DEFAULT_WINDOW,
-                    help=f"Gene-centred window length (bp). "
-                         f"{DEFAULT_WINDOW} for Yorzoi, "
-                         f"{SHORKIE_WINDOW} for Shorkie.")
+    ap.add_argument(
+        "--strains", default="all", help="'roadmap' (5), 'all', or comma list"
+    )
+    ap.add_argument(
+        "--flank",
+        type=int,
+        default=FLANK,
+        help="Half-width of the stored gene-centred slice (bp); must "
+        "be >= the largest model window to support. Default "
+        f"{FLANK} (covers Yorzoi 4992 + Shorkie 16384).",
+    )
     args = ap.parse_args()
-
-    # Set the module-level WINDOW so the helpers (gene_window,
-    # per_base_cov, ...) all use the same value.
-    global WINDOW
-    WINDOW = int(args.window)
-    out_path = (OUT_DIR / "brooks_scramble_v1.tsv" if WINDOW == DEFAULT_WINDOW
-                else OUT_DIR / f"brooks_scramble_v1_w{WINDOW}.tsv")
+    flank = int(args.flank)
 
     # Control = JS94 (−SCRaMBLE). The bucket has NO JS94 FASTA, but
     # JS96_1 is the parental synIXR sequence: identical 98,752 bp length
@@ -301,7 +320,7 @@ def main() -> None:
     par_fa = read_fasta(fetch("genomes/JS96_ERCC92.fasta"))
     par_syn = next(c for c in par_fa if c.startswith("JS96_"))
     js94_gff = parse_gff_cds(fetch("annotations/JS94.gff"))
-    js94_read_contig = "JS94_1"          # JS94 BED chrom for control reads
+    js94_read_contig = "JS94_1"  # JS94 BED chrom for control reads
     assert len(par_fa[par_syn]) == 98752, len(par_fa[par_syn])
     js94_genes = js94_gff[js94_gff.contig == js94_read_contig].set_index("gene_id")
     js94_bed_paths = bed_paths(CONTROL)
@@ -313,38 +332,43 @@ def main() -> None:
         if nt >= MIN_RUN_READS:
             kept.append((date, b, nt))
         else:
-            print(f"  JS94 run {date}: DROPPED (native reads {nt} "
-                  f"< {MIN_RUN_READS})")
+            print(f"  JS94 run {date}: DROPPED (native reads {nt} < {MIN_RUN_READS})")
     if len(kept) < 2:
         raise RuntimeError("need ≥2 deep JS94 control runs for a ceiling")
     js94_beds = [b for _, b, _ in kept]
     js94_native_tot = [nt for _, _, nt in kept]
     ref_total = float(np.mean(js94_native_tot))
     js94_sf = [size_factor(t, ref_total) for t in js94_native_tot]
-    print(f"JS94: {len(js94_genes)} synIXR genes (parental seq from "
-          f"{par_syn}); {len(js94_beds)} deep WT runs "
-          f"{[d for d, _, _ in kept]}")
+    print(
+        f"JS94: {len(js94_genes)} synIXR genes (parental seq from "
+        f"{par_syn}); {len(js94_beds)} deep WT runs "
+        f"{[d for d, _, _ in kept]}"
+    )
 
-    # Per-base native coverage on JS94_1 (= JS96_1 coord system),
-    # summed across the deep JS94 runs — used for Tier-2 native-truth.
+    # Length of the parental synIXR contig (JS94_1 = JS96_1 coord system);
+    # used to clamp the native gene slices below.
     js94_syn_len = len(par_fa[par_syn])
-    js94_native_cov = {
-        s: sum(per_base_cov(b, js94_read_contig, s, js94_syn_len)
-               for b in js94_beds)
-        for s in ("+", "-")
-    }
 
     if args.strains == "roadmap":
         strains = ROADMAP_STRAINS
     elif args.strains == "all":
-        strains = sorted({
-            re.match(r"(JS\d+)_", l.rsplit("/", 1)[1]).group(1)
-            for l in _ls("genomes/") if re.search(r"/JS\d+_ERCC92\.fasta$", l)
-        } - {CONTROL})
+        strains = sorted(
+            {
+                re.match(r"(JS\d+)_", l.rsplit("/", 1)[1]).group(1)
+                for l in _ls("genomes/")
+                if re.search(r"/JS\d+_ERCC92\.fasta$", l)
+            }
+            - {CONTROL}
+        )
     else:
         strains = args.strains.split(",")
 
     rows: list[dict] = []
+    fasta_records: dict[str, str] = {}  # cov_key -> sequence slice
+    cov_arrays: dict[str, np.ndarray] = {}  # alt cov_key -> per-base int32 coverage
+    native_done: set[str] = set()  # genes whose native slice is written
+    PAR_GENOME = "genomes/JS96_ERCC92.fasta"
+
     for S in strains:
         try:
             fa = read_fasta(fetch(f"genomes/{S}_ERCC92.fasta"))
@@ -361,8 +385,8 @@ def main() -> None:
         syn_len = len(fa[syn])
         bed = beds[0] if len(beds) == 1 else pd.concat(beds, ignore_index=True)
         s_sf = size_factor(native_total_reads(bed), ref_total)
-        # Per-base alt coverage on JS<S>_1, both strands (one cumsum per
-        # strand, then O(WINDOW) slicing per sample).
+        # Per-base alt coverage on JS<S>_1, both strands (one cumsum per strand,
+        # then O(slice) extraction per construct).
         strain_alt_cov = {s: per_base_cov(bed, syn, s, syn_len) for s in ("+", "-")}
         g = gff[gff.contig == syn]
         n_kept = 0
@@ -372,69 +396,92 @@ def main() -> None:
             jrow = js94_genes.loc[gid]
             if isinstance(jrow, pd.DataFrame):
                 jrow = jrow.iloc[0]
-            nat = gene_window(par_fa[par_syn], int(jrow.start), int(jrow.end))
-            if nat is None:
-                continue
-            nat_seq, ncs, nce, nat_w0 = nat
-            nat_cov_vec = js94_native_cov[jrow.strand][nat_w0:nat_w0 + WINDOW]
-            # JS94 per-run normalised CDS coverage (gene strand), reads
-            # on JS94_1 (same coord system as the parental sequence)
+            nat_strand = jrow.strand
+            nat_start, nat_end = int(jrow.start), int(jrow.end)
+            # Native generous slice (parental; identical across strains → once).
+            n0, n1 = gene_slice(js94_syn_len, nat_start, nat_end, flank)
+            if gid not in native_done:
+                nk = cov_key("native", gid)
+                fasta_records[nk] = par_fa[par_syn][n0:n1]
+                native_done.add(gid)
+            # JS94 per-run normalised CDS coverage (gene strand), reads on JS94_1.
             j_raws = [
-                count_overlaps(b, js94_read_contig, int(jrow.start),
-                               int(jrow.end), jrow.strand)
+                count_overlaps(b, js94_read_contig, nat_start, nat_end, nat_strand)
                 for b in js94_beds
             ]
             j_norm = [r / sf for r, sf in zip(j_raws, js94_sf)]
             j_mean = float(np.mean(j_norm))
 
             copies = cluster_copies(list(zip(grp.start, grp.end)))
-            seen_windows: set[str] = set()
+            strand = grp.strand.iloc[0]
             for ci, (cs, ce) in enumerate(copies):
-                aw = gene_window(fa[syn], cs, ce)
-                if aw is None:
-                    continue
-                alt_seq, acs, ace, alt_w0 = aw
-                if alt_seq == nat_seq:
-                    continue  # no cis change in-window → not a sample
-                if alt_seq in seen_windows:
-                    continue  # byte-identical duplicate copy
-                seen_windows.add(alt_seq)
-                strand = grp.strand.iloc[0]
+                cs, ce = int(cs), int(ce)
+                a0, a1 = gene_slice(syn_len, cs, ce, flank)
+                sample_id = f"{S}:{gid}:{ci}"
+                ak = cov_key("alt", sample_id)
+                fasta_records[ak] = fa[syn][a0:a1]
+                cov_arrays[ak] = strain_alt_cov[strand][a0:a1].astype(np.int32)
                 s_raw = count_overlaps(bed, syn, cs, ce, strand)
                 s_norm = s_raw / s_sf
-                true_lfc = float(np.log2(
-                    (s_norm + PSEUDOCOUNT) / (j_mean + PSEUDOCOUNT)
-                ))
-                alt_cov_vec = strain_alt_cov[strand][alt_w0:alt_w0 + WINDOW]
-                rows.append({
-                    "sample_id": f"{S}:{gid}:{ci}",
-                    "gene_id": gid, "strain": S, "copy_idx": ci,
-                    "n_copies": len(copies), "strand": strand,
-                    "rearr_class": "duplication" if len(copies) > 1 else "context_change",
-                    "syn_contig": syn, "cds_start": cs, "cds_end": ce,
-                    "window_len": WINDOW,
-                    "cds_start_in_window": acs, "cds_end_in_window": ace,
-                    "alt_seq": alt_seq, "native_seq": nat_seq,
-                    "true_cov_alt": _comma_ints(alt_cov_vec),
-                    "true_cov_native": _comma_ints(nat_cov_vec),
-                    "strain_reads": s_raw,
-                    "js94_reads_runs": ",".join(str(int(v)) for v in j_raws),
-                    "size_factor_strain": round(s_sf, 4),
-                    "norm_cov_strain": round(s_norm, 3),
-                    "norm_cov_js94_mean": round(j_mean, 3),
-                    "norm_cov_js94_runs": ",".join(f"{v:.3f}" for v in j_norm),
-                    "true_lfc": round(true_lfc, 4),
-                    "low_support": bool(s_raw < MIN_READS),
-                })
+                true_lfc = float(
+                    np.log2((s_norm + PSEUDOCOUNT) / (j_mean + PSEUDOCOUNT))
+                )
+                rows.append(
+                    {
+                        "sample_id": sample_id,
+                        "gene_id": gid,
+                        "strain": S,
+                        "copy_idx": ci,
+                        "n_copies": len(copies),
+                        "strand": strand,
+                        "rearr_class": "duplication"
+                        if len(copies) > 1
+                        else "context_change",
+                        "alt_source_genome": f"genomes/{S}_ERCC92.fasta",
+                        "alt_contig": syn,
+                        "alt_contig_len": syn_len,
+                        "alt_cds_start": cs,
+                        "alt_cds_end": ce,
+                        "alt_slice_start": a0,
+                        "native_source_genome": PAR_GENOME,
+                        "native_contig": par_syn,
+                        "native_contig_len": js94_syn_len,
+                        "native_cds_start": nat_start,
+                        "native_cds_end": nat_end,
+                        "native_slice_start": n0,
+                        "strain_reads": s_raw,
+                        "js94_reads_runs": ",".join(str(int(v)) for v in j_raws),
+                        "size_factor_strain": round(s_sf, 4),
+                        "norm_cov_strain": round(s_norm, 3),
+                        "norm_cov_js94_mean": round(j_mean, 3),
+                        "norm_cov_js94_runs": ",".join(f"{v:.3f}" for v in j_norm),
+                        "true_lfc": round(true_lfc, 4),
+                        "low_support": bool(s_raw < MIN_READS),
+                    }
+                )
                 n_kept += 1
-        print(f"  {S}: {n_kept} samples (sf={s_sf:.3f}, {len(beds)} run(s))")
+        print(
+            f"  {S}: {n_kept} candidate constructs (sf={s_sf:.3f}, {len(beds)} run(s))"
+        )
 
-    df = pd.DataFrame(rows, columns=COLUMNS)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out_path, sep="\t", index=False)
-    print(f"\nwrote {out_path}  ({len(df)} samples, "
-          f"{df.low_support.sum() if len(df) else 0} low-support; "
-          f"{out_path.stat().st_size/1e6:.1f} MB)")
+    # ── write the 3-file window-agnostic artifact ──
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    idx = pd.DataFrame(rows, columns=INDEX_COLUMNS)
+    idx_path = OUT_DIR / "brooks_index.tsv"
+    idx.to_csv(idx_path, sep="\t", index=False)
+    fasta_path = OUT_DIR / "brooks_constructs.fasta"
+    with open(fasta_path, "w") as fh:
+        for key in sorted(fasta_records):
+            fh.write(f">{key}\n{fasta_records[key]}\n")
+    cov_path = OUT_DIR / "brooks_cov.npz"
+    np.savez_compressed(cov_path, **cov_arrays)
+    total_mb = sum(p.stat().st_size for p in (idx_path, fasta_path, cov_path)) / 1e6
+    print(
+        f"\nwrote {idx_path.name} ({len(idx)} constructs, "
+        f"{int(idx.low_support.sum()) if len(idx) else 0} low-support), "
+        f"{fasta_path.name} ({len(fasta_records)} records), "
+        f"{cov_path.name}  —  {total_mb:.1f} MB total"
+    )
 
 
 if __name__ == "__main__":

@@ -18,7 +18,6 @@ import csv
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from yeastbench.benchmarks.base import (
@@ -207,54 +206,17 @@ class TestCompareRunner:
 
 
 class TestGroupByCompareTask:
-    def test_brooks_aliasing_collapses_two_registry_tasks(self, tmp_path: Path):
-        # Real BrooksScrambleBenchmark.compare_task_name → "brooks_scramble"
-        # for both `brooks_scramble` (4992) and `brooks_scramble_shorkie`
-        # (16384). Validate via the TASKS factories.
+    def test_brooks_single_task_groups_both_models(self, tmp_path: Path):
+        # Brooks is one registry task now (both models run `brooks_scramble`),
+        # so the two result dirs group together without any aliasing.
         _write_summary(tmp_path / "yorzoi__brooks_scramble", r=0.22)
-        _write_summary(
-            tmp_path / "shorkie__brooks_scramble_shorkie", r=-0.01,
-        )
+        _write_summary(tmp_path / "shorkie__brooks_scramble", r=-0.01)
         by_task = _discover_results(tmp_path)
-        assert set(by_task) == {"brooks_scramble", "brooks_scramble_shorkie"}
-
-        # Build a minimal TSV that satisfies the Brooks loader. We only
-        # need the benchmark to instantiate so we can read its
-        # `compare_task_name`; no `evaluate()` is run.
-        import pandas as pd
-        from yeastbench.benchmarks.brooks import WINDOW_LEN
-
-        rng = np.random.default_rng(0)
-        seq = "".join(rng.choice(list("ACGT"), size=WINDOW_LEN))
-        cov = ",".join(map(str, rng.poisson(0.5, WINDOW_LEN).astype(int).tolist()))
-        df = pd.DataFrame([{
-            "sample_id": "S:G:0", "gene_id": "YIR000W", "strain": "S",
-            "copy_idx": 0, "n_copies": 1, "strand": "+",
-            "rearr_class": "context_change",
-            "syn_contig": "S_1", "cds_start": 100, "cds_end": 1000,
-            "window_len": WINDOW_LEN,
-            "cds_start_in_window": 2000, "cds_end_in_window": 2700,
-            "alt_seq": seq, "native_seq": seq,
-            "true_cov_alt": cov, "true_cov_native": cov,
-            "strain_reads": 50,
-            "js94_reads_runs": "20,30,40",
-            "size_factor_strain": 4.0, "norm_cov_strain": 30.0,
-            "norm_cov_js94_mean": 10.0,
-            "norm_cov_js94_runs": "10.000,10.000,10.000",
-            "true_lfc": 1.5, "low_support": False,
-        }])
-        tsv = tmp_path / "fake_brooks.tsv"
-        df.to_csv(tsv, sep="\t", index=False)
-        tasks_config = {
-            "brooks_scramble": {"data_path": tsv},
-            "brooks_scramble_shorkie": {"data_path": tsv},
-        }
-        groups = _group_by_compare_task(by_task, tasks_config)
-        # Both registry tasks fold into one group "brooks_scramble"
+        assert set(by_task) == {"brooks_scramble"}
+        groups = _group_by_compare_task(by_task, {})
         assert set(groups) == {"brooks_scramble"}
-        assert set(groups["brooks_scramble"]) == {
-            "brooks_scramble", "brooks_scramble_shorkie",
-        }
+        models = {m for d in groups["brooks_scramble"].values() for m in d}
+        assert models == {"yorzoi", "shorkie"}
 
     def test_unknown_task_falls_through_to_registry_name(self, tmp_path: Path):
         _write_summary(tmp_path / "yorzoi__unknown_task", r=0.5)

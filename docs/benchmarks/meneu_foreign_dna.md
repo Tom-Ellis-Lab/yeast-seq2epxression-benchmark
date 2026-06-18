@@ -2,6 +2,8 @@
 
 ![image](/img/meneu_banner.svg)
 
+Figure partially from [Meneu et al.](https://doi.org/10.1126/science.adm9466)
+
 ## At a glance
 
 | | |

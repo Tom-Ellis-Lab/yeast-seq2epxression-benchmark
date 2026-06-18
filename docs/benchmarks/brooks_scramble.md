@@ -1,6 +1,6 @@
 # Brooks et al. — SCRaMBLE structural-rearrangement expression effect
 
-![image](/img/scramble_banner.svg)
+![image](/img/scramble_vertical.drawio.svg)
 
 ## At a glance
 

@@ -1,5 +1,7 @@
 # Wu et al. — Genome-wide position effects on RFP cassette expression
 
+![image](/img/wu_rfpins_banner.svg)
+
 > **Status:** **implemented & tested** (`tests/test_rfpins.py`, 20
 > tests; full suite green). `RFPInsertionBenchmark` +
 > `_wu_scaffold.py` + `ShorkieWuPredictor`/`YorzoiWuPredictor` wired

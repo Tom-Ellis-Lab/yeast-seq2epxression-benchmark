@@ -1,5 +1,7 @@
 # Meneu et al. — foreign-DNA RNA-seq coverage-track prediction
 
+![image](/img/meneu_foreign_dna_banner.svg)
+
 > **Status:** implemented + unit-tested; first GPU runs done.
 > Far-OOD **zero-shot** stress test — yeast-trained sequence-to-expression models
 > tile two whole bacterial chromosomes integrated into *S. cerevisiae* and predict

@@ -1,7 +1,6 @@
 # Kita et al. — yeast cis-eQTL classification
 
-> **Status:** draft. Second worked example, used alongside
-> [Caudal](caudal_eqtl.md) to develop the benchmark entry template.
+![image](/img/kita_eqtl_banner.svg)
 
 ## At a glance
 

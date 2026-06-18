@@ -1,29 +1,6 @@
 # Brooks et al. — SCRaMBLE structural-rearrangement expression effect
 
-> **Status: shipped in PR #2 (2026-05-20).** Both Yorzoi and Shorkie
-> evaluate via `CoverageTrackPredictor`. Two distribution files (one
-> per receptive field): `brooks_scramble_v1.tsv` at 4992 bp (698
-> samples, Yorzoi) and `brooks_scramble_v1_w16384.tsv` at 16384 bp
-> (1055 samples, Shorkie). Cross-model headline numbers come from
-> the **shared sample set** via `ybench compare` (Brooks shared-cohort
-> logic in `src/yeastbench/benchmarks/brooks.py`);
-> per-model full-set numbers reported as secondary. Headline (shared
-> cohort, n_scored = 327): Yorzoi r = 0.222 / dir-acc = 0.635;
-> Shorkie r ≈ 0 / dir-acc = 0.553; LOO noise ceiling r = 0.805 /
-> dir-acc = 0.806. The Yorzoi training manifest (verified
-> 2026-05-20) does include the Brooks Nanopore tracks — Yorzoi
-> numbers are partly a leakage measurement (caveat recorded; not
-> remediated in v1).
->
-> Implementation details below describe the shipping benchmark:
-> **per-replicate LFC framing** (0–3 predicted + truth LFCs per
-> sample, one per JS94 deep-WT run), strain-side-only `low_support`
-> flag, LOO ceiling, calibration metrics on the n_reps ≥ 2 cohort,
-> Tier-2 per-base shape (Pearson + Jensen–Shannon) on the alt
-> construct. Diverges from the initial design (mean-denominator LFC
-> + scalar control-noise ceiling), which is the version that was
-> "design-locked" 2026-05-19 — both the framing and the metrics
-> changed during implementation.
+![image](/img/scramble_banner.svg)
 
 ## At a glance
 

@@ -343,6 +343,8 @@ gitignored; remove from local checkouts too.
 - [ ] Verify `git ls-files | xargs grep -l "investigation" -- scripts/ src/` is
   empty and `tests/` imports none of the deleted files
 - [ ] Confirm the specs reference the notebooks only as historical context
+- [ ] Standardize the benchmark tables so they all share the same row names
+  (consistent metric / row labels across every task's results table)
 
 ## v2 release
 

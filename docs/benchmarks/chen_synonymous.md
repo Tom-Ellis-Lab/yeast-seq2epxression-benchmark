@@ -60,7 +60,7 @@ Chen 2017 gives us a controlled probe of that signal:
 - On the deep GFP r2 library both genomic models clear the CAI floor (Shorkie ρ 0.62, Yorzoi 0.59 vs CAI 0.32) and edge out CodonTransformer.
 - TDH3 is the exception and a measurement-leverage story: CAI's **Pearson** r on TDH3 is 0.675 while its **Spearman** is only 0.389 — the top ~10% of CAI values pull Pearson up. Report both; they only diverge on this library.
 
-Why the numbers look the way they do — including why Yorzoi produces non-trivial r on a glucose-repressed PGAL1 construct it cannot actually model: [`model_failures.md`](model_failures.md). Artifacts: `results/default/{cai,codon_transformer,shorkie,yorzoi}__chen_{gfp_r1,gfp_r2,tdh3}/summary.json`.
+Why the numbers look the way they do — including why Yorzoi produces non-trivial r on a glucose-repressed PGAL1 construct it cannot actually model: [`model_failures.md`](model_failures.md). Artifacts: `results/default/{cai,codon_transformer,shorkie,yorzoi}__chen_synonymous/summary.json` (one task, library-stratified). The numbers above are from the pre-unification three-task run and are bit-identical under the merged task.
 
 ## The construct, in the original experiment vs in v1 scoring
 

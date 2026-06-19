@@ -224,7 +224,7 @@ report.
 | Negative-set source (shipped) | Kuanhao Chao's emailed pipeline (Ensembl Fungi 59, re-annotated to E115); see `data/tasks/kita_eqtl/README.md` |
 | Negative-set regeneration | `scripts/eqtl/0_data_generation/1_generate_negs.py --dataset kita` (regeneration target, not the source of the shipped sets) |
 | Shorkie variant scoring (upstream reference, SeqNN-based) | `scripts/eqtl/2_variant_scoring/score_variants_shorkie.py` — currently hardcoded against Kita's column conventions; reimplemented in the adapter on top of `src/yeastbench/models/shorkie.py`. |
-| Architecture / API sketch | [`architecture.md`](architecture.md) |
+| Architecture / API sketch | [`extending.md`](../extending.md) |
 | Distance-stratified + close-only eval | `EQTLClassificationBenchmark` (shared `DISTANCE_BINS` and `CLOSE_ONLY_THRESHOLD_BP` in `src/yeastbench/benchmarks/eqtl.py`) |
 
 ## Open questions / future work

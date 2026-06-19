@@ -300,7 +300,7 @@ The benchmark loads `negset_{i}.tsv`, builds a `Variant` per positive and
 negative, and calls `adapter.score_variants(variants)` once per iteration;
 the adapter does window placement, ref-allele check, ref/alt one-hot,
 predict, aggregate, and log-fold-change. See
-[`architecture.md`](architecture.md) for the full Python interface sketch
+[`extending.md`](../extending.md) for the full Python interface sketch
 (Protocol definitions, base classes, and harness entry point).
 
 End-to-end usage from a caller's point of view:
@@ -579,7 +579,7 @@ No new `run_*.py` scripts; no new CLI wiring.
 | Model + task registry | `src/yeastbench/registry.py` |
 | Canonical run config | [`configs/default.yaml`](../../configs/default.yaml) |
 | CLI | `ybench` (`src/yeastbench/cli.py`), installed by `uv sync` |
-| Architecture / API sketch | [`architecture.md`](architecture.md) |
+| Architecture / API sketch | [`extending.md`](../extending.md) |
 | Evaluation / plots | `EQTLClassificationBenchmark.plot()` / `.save_results()` in `src/yeastbench/benchmarks/eqtl.py` (ROC/PR, distance-stratified, close-only) |
 
 ## Open questions / future work

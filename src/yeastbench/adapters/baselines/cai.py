@@ -40,11 +40,12 @@ class CAIBaselinePredictor(LocalCodingVariantPredictor):
 
     @classmethod
     def from_task(cls, task, **_ignored) -> "CAIBaselinePredictor":
-        # The Chen task carries ``library`` and ``data_path``. We register
-        # just that library — the benchmark calls predict only with
-        # matching library_ids.
+        # The unified Chen task carries a ``libraries`` list (each with a
+        # ``library`` id + ``data_path``). Register every one so the adapter
+        # can serve whichever library the benchmark scores.
         instance = cls()
-        instance.register_library(task.library, task.data_path)
+        for lib in task.libraries:
+            instance.register_library(lib.library, lib.data_path)
         return instance
 
     def predict_local_variants(

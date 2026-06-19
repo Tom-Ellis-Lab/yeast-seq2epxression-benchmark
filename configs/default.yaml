@@ -42,32 +42,27 @@ tasks_config:
     labels_path: data/tasks/hong/hong_igr_v1.tsv
     cassette_seq: data/tasks/hong/expression_cassette.fasta
     fasta_path: data/tasks/R64-5-1.fa
-  chen_gfp_r1:
-    library: gfp_r1
-    data_path: data/tasks/chen_synonymous/gfp_r1.tsv
+  chen_synonymous:
     fasta_path: data/tasks/R64-1-1.fa
     hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
     data_dir: data/tasks/chen_synonymous
-    replicate_ceiling_pearson: 0.83
-    replicate_ceiling_spearman: 0.71
-  chen_gfp_r2:
-    library: gfp_r2
-    data_path: data/tasks/chen_synonymous/gfp_r2.tsv
-    fasta_path: data/tasks/R64-1-1.fa
-    hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
-    data_dir: data/tasks/chen_synonymous
-    replicate_ceiling_pearson: 0.73
-    replicate_ceiling_spearman: 0.71
-  chen_tdh3:
-    library: tdh3
-    data_path: data/tasks/chen_synonymous/tdh3.tsv
-    fasta_path: data/tasks/R64-1-1.fa
-    hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
-    data_dir: data/tasks/chen_synonymous
-    replicate_ceiling_pearson: 0.72
-    # No Spearman ceiling for TDH3 — Chen ships only one merged log2(mRNA)
-    # column in supp Table S9, so we can't compute one from the data and
-    # the paper doesn't report it. Plots will show only the Pearson band.
+    # One task, three libraries; results are stratified per library and an
+    # aggregate (mean over the 5 replicate columns) is reported alongside.
+    libraries:
+      - library: gfp_r1
+        data_path: data/tasks/chen_synonymous/gfp_r1.tsv
+        replicate_ceiling_pearson: 0.83
+        replicate_ceiling_spearman: 0.71
+      - library: gfp_r2
+        data_path: data/tasks/chen_synonymous/gfp_r2.tsv
+        replicate_ceiling_pearson: 0.73
+        replicate_ceiling_spearman: 0.71
+      - library: tdh3
+        data_path: data/tasks/chen_synonymous/tdh3.tsv
+        replicate_ceiling_pearson: 0.72
+        # No Spearman ceiling for TDH3 — Chen ships only one merged
+        # log2(mRNA) column in supp Table S9, so we can't compute one from
+        # the data and the paper doesn't report it.
   cuperus_utr:
     random_path: data/tasks/cuperus_mpra_5utr/random_utrs.tsv
     native_path: data/tasks/cuperus_mpra_5utr/native_utrs.tsv
@@ -83,9 +78,7 @@ runs:
         shalem_mpra_marginalized,
         wu_rfpins,
         hong_igr,
-        chen_gfp_r1,
-        chen_gfp_r2,
-        chen_tdh3,
+        chen_synonymous,
         cuperus_utr,
       ]
     model_config:
@@ -111,9 +104,7 @@ runs:
         shalem_mpra_marginalized,
         wu_rfpins,
         hong_igr,
-        chen_gfp_r1,
-        chen_gfp_r2,
-        chen_tdh3,
+        chen_synonymous,
         cuperus_utr,
       ]
     model_config:
@@ -122,11 +113,11 @@ runs:
       use_rc: true
 
   - model: cai
-    tasks: [chen_gfp_r1, chen_gfp_r2, chen_tdh3]
+    tasks: [chen_synonymous]
     model_config: {}
 
   - model: codon_transformer
-    tasks: [chen_gfp_r1, chen_gfp_r2, chen_tdh3]
+    tasks: [chen_synonymous]
     model_config: {}
 
   # Supervised in-distribution reference baseline (reported separately from

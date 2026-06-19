@@ -63,8 +63,8 @@ def test_selection_pulls_required_shared_refs():
     assert "refs" in ids  # pulled in via `requires`
 
 
-def test_selection_groups_chen_libraries_into_one_artifact():
-    arts = artifacts_for(tasks=["chen_gfp_r1", "chen_gfp_r2", "chen_tdh3"])
+def test_selection_chen_task_pulls_its_artifact():
+    arts = artifacts_for(tasks=["chen_synonymous"])
     assert sum(a.id == "chen_synonymous" for a in arts) == 1
 
 
@@ -76,7 +76,7 @@ def test_selection_unknown_name_raises():
 def test_selection_tolerates_weightless_baseline():
     # cai has no downloadable artifact; selecting it alongside a real task
     # must not raise.
-    arts = artifacts_for(tasks=["chen_gfp_r1"], models=["cai"])
+    arts = artifacts_for(tasks=["chen_synonymous"], models=["cai"])
     assert any(a.id == "chen_synonymous" for a in arts)
 
 

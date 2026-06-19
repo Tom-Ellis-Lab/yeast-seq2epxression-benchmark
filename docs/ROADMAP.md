@@ -136,8 +136,8 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
 - [x] Spec (`docs/benchmarks/chen_synonymous.md`): marginalized over 20 YPD hosts,
   per-replicate labels, per-library replicate ceilings
 - [x] `LocalCodingVariantPredictor` protocol (`predict_local_variants`)
-- [x] `ChenSynonymousBenchmark` (`benchmarks/chen.py`); tasks `chen_gfp_r1`,
-  `chen_gfp_r2`, `chen_tdh3` in `TASKS` + `configs/default.yaml`
+- [x] `ChenSynonymousBenchmark` (`benchmarks/chen.py`); one task `chen_synonymous`
+  in `TASKS` + `configs/default.yaml`, results stratified per library + aggregate
 - [x] WT avGFP CDS backbone fix (PR #24 / issue #8; `_chen_gfp_reference.py`)
 - [x] Shorkie + Yorzoi adapters (`shorkie_chen_marginalized.py`,
   `yorzoi_chen_marginalized.py`; shared `_chen_marginalized.py`)

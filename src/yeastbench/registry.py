@@ -130,13 +130,12 @@ def _shorkie_wu_adapter(device, fasta_path, gtf_path, **cfg):
 
 
 def _shorkie_chen_adapter(
-    device, fasta_path, library, hosts_path, data_dir, **cfg,
+    device, fasta_path, hosts_path, data_dir, **cfg,
 ):
     from yeastbench.adapters.shorkie_chen_marginalized import ShorkieChenPredictor
 
     return ShorkieChenPredictor.from_checkpoints(
         fasta_path=fasta_path,
-        library=library,
         hosts_path=hosts_path,
         data_dir=data_dir,
         device=device,
@@ -145,13 +144,12 @@ def _shorkie_chen_adapter(
 
 
 def _yorzoi_chen_adapter(
-    device, fasta_path, library, hosts_path, data_dir, **cfg,
+    device, fasta_path, hosts_path, data_dir, **cfg,
 ):
     from yeastbench.adapters.yorzoi_chen_marginalized import YorzoiChenPredictor
 
     return YorzoiChenPredictor.from_pretrained(
         fasta_path=fasta_path,
-        library=library,
         hosts_path=hosts_path,
         data_dir=data_dir,
         device=device,
@@ -236,7 +234,7 @@ def _shorkie_meneu_adapter(device, **cfg):
 REFS_FIELDS: tuple[str, ...] = ("fasta_path", "gtf_path")
 FASTA_ONLY: tuple[str, ...] = ("fasta_path",)
 CHEN_FIELDS: tuple[str, ...] = (
-    "fasta_path", "library", "hosts_path", "data_dir",
+    "fasta_path", "hosts_path", "data_dir",
 )
 
 SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
@@ -492,29 +490,22 @@ def _build_meneu(
 
 
 def _build_chen(
-    library: str,
-    data_path: str | Path,
+    libraries: list[dict],
     fasta_path: str | Path,
     hosts_path: str | Path,
     data_dir: str | Path,
-    replicate_ceiling_pearson: float,
-    replicate_ceiling_spearman: float | None = None,
 ) -> Benchmark:
     return ChenSynonymousBenchmark(
-        library=library,
-        data_path=Path(data_path),
+        libraries=libraries,
         fasta_path=Path(fasta_path),
         hosts_path=Path(hosts_path),
         data_dir=Path(data_dir),
-        replicate_ceiling_pearson=float(replicate_ceiling_pearson),
-        replicate_ceiling_spearman=(
-            None if replicate_ceiling_spearman is None
-            else float(replicate_ceiling_spearman)
-        ),
         info=BenchmarkInfo(
-            name=f"chen_{library}",
+            name="chen_synonymous",
             version="v1",
-            description=f"Chen et al. 2017 synonymous-mutation MPRA ({library})",
+            description=(
+                "Chen et al. 2017 synonymous-mutation MPRA (gfp_r1, gfp_r2, tdh3)"
+            ),
             distribution_uri="",
         ),
     )
@@ -547,8 +538,6 @@ TASKS: dict[str, TaskFactory] = {
     "hong_igr": _build_hong_igr,
     "brooks_scramble": _build_brooks_scramble,
     "meneu_foreign_dna": _build_meneu,
-    "chen_gfp_r1": _build_chen,
-    "chen_gfp_r2": _build_chen,
-    "chen_tdh3": _build_chen,
+    "chen_synonymous": _build_chen,
     "cuperus_utr": _build_cuperus_utr,
 }

@@ -225,7 +225,7 @@ ARTIFACTS: tuple[Artifact, ...] = (
     _task(
         "chen_synonymous",
         dest="data/tasks/chen_synonymous",
-        needed_by=("chen_gfp_r1", "chen_gfp_r2", "chen_tdh3"),
+        needed_by=("chen_synonymous",),
         requires=(_REFS,),
         # gfp_r1/gfp_r2 read for cassette synthesis even by the tdh3 run; hosts
         # json read by the adapter. construct_*.fa/.gtf + library_loci are build.

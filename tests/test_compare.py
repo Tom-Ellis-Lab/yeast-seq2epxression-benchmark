@@ -1,21 +1,20 @@
 """Tests for the cross-model comparison runner.
 
 Covered:
-- `_discover_results` groups `<model>__<task>/` dirs correctly and
-  ignores `compare*` siblings.
+- `_discover_results` groups `<model>__<task>/` dirs correctly, ignores
+  `compare*` siblings, and honours `restrict_to_pairs`.
 - The default `Benchmark.compare_plot` writes an SVG when given two
   fake summary dicts and returns ``None`` for a single model.
-- `compare()` no-ops cleanly on a single-model fixture and writes
-  outputs (per-task plot, summary.csv, summary.md) on a two-model
-  fixture.
-- Group aliasing via ``Benchmark.compare_task_name`` pulls two
-  registry tasks (e.g. ``brooks_scramble`` + ``brooks_scramble_shorkie``)
-  into the same comparison group.
+- `compare()` is scoped to the config's `(model, task)` pairs: it no-ops
+  cleanly on a single-model fixture, writes outputs (per-task plot,
+  summary.csv, summary.md) on a two-model fixture, and ignores stale
+  on-disk results from pairs the config doesn't name.
 """
 from __future__ import annotations
 
 import csv
 import json
+from collections import OrderedDict
 from pathlib import Path
 
 import pytest
@@ -26,10 +25,9 @@ from yeastbench.benchmarks.base import (
 from yeastbench.compare import (
     CompareSummary,
     _discover_results,
-    _group_by_compare_task,
     compare,
 )
-from yeastbench.config import Config
+from yeastbench.config import Config, RunSpec
 
 
 # ── Fixtures ─────────────────────────────────────────────────────
@@ -41,13 +39,23 @@ def _write_summary(dirpath: Path, **metrics: float | int) -> None:
     (dirpath / "summary.json").write_text(json.dumps(metrics, indent=2))
 
 
-def _config_at(out_dir: Path, source: Path) -> Config:
+def _runs(*pairs: tuple[str, str]) -> list[RunSpec]:
+    """Build `config.runs` from `(model, task)` pairs."""
+    by_model: "OrderedDict[str, list[str]]" = OrderedDict()
+    for model, task in pairs:
+        by_model.setdefault(model, []).append(task)
+    return [RunSpec(model=m, tasks=ts) for m, ts in by_model.items()]
+
+
+def _config_at(
+    out_dir: Path, source: Path, runs: list[RunSpec] | None = None,
+) -> Config:
     """Minimal Config pointed at *out_dir*; bypasses YAML loading."""
     return Config(
         out_dir=out_dir,
         device="cpu",
         tasks_config={},
-        runs=[],
+        runs=runs or [],
         source_path=source,
         source_hash="test-hash",
     )
@@ -84,6 +92,15 @@ class TestDiscoverResults:
 
     def test_returns_empty_when_dir_missing(self, tmp_path: Path):
         assert _discover_results(tmp_path / "nope") == {}
+
+    def test_restrict_to_pairs_filters(self, tmp_path: Path):
+        _write_summary(tmp_path / "yorzoi__task_a", r=0.5)
+        _write_summary(tmp_path / "shorkie__task_a", r=0.3)
+        _write_summary(tmp_path / "yorzoi__task_b", r=0.7)
+        got = _discover_results(
+            tmp_path, restrict_to_pairs={("yorzoi", "task_a")},
+        )
+        assert got == {"task_a": {"yorzoi": tmp_path / "yorzoi__task_a"}}
 
 
 # ── _default_compare_plot ────────────────────────────────────────
@@ -155,7 +172,9 @@ class TestDefaultComparePlot:
 class TestCompareRunner:
     def test_silent_no_op_with_single_model(self, tmp_path: Path):
         _write_summary(tmp_path / "yorzoi__task_a", pearson_r=0.5)
-        cfg = _config_at(tmp_path, tmp_path / "fake.yaml")
+        cfg = _config_at(
+            tmp_path, tmp_path / "fake.yaml", runs=_runs(("yorzoi", "task_a")),
+        )
         result = compare(cfg)
         assert isinstance(result, CompareSummary)
         assert result.empty is True
@@ -167,7 +186,10 @@ class TestCompareRunner:
     def test_emits_outputs_with_two_models(self, tmp_path: Path):
         _write_summary(tmp_path / "yorzoi__task_a", pearson_r=0.5, dir_acc=0.8)
         _write_summary(tmp_path / "shorkie__task_a", pearson_r=0.3, dir_acc=0.6)
-        cfg = _config_at(tmp_path, tmp_path / "fake.yaml")
+        cfg = _config_at(
+            tmp_path, tmp_path / "fake.yaml",
+            runs=_runs(("yorzoi", "task_a"), ("shorkie", "task_a")),
+        )
         result = compare(cfg)
         assert result.tasks_compared == ["task_a"]
         assert result.tasks_skipped == []
@@ -176,10 +198,30 @@ class TestCompareRunner:
         assert "task_a" in result.per_task_plots
         assert result.per_task_plots["task_a"].exists()
 
+    def test_ignores_pairs_not_in_config(self, tmp_path: Path):
+        # task_a is in the config (both models); stale_task is a leftover on
+        # disk from another run and must NOT be compared or surface anywhere.
+        _write_summary(tmp_path / "yorzoi__task_a", pearson_r=0.5)
+        _write_summary(tmp_path / "shorkie__task_a", pearson_r=0.3)
+        _write_summary(tmp_path / "yorzoi__stale_task", pearson_r=0.9)
+        _write_summary(tmp_path / "shorkie__stale_task", pearson_r=0.8)
+        cfg = _config_at(
+            tmp_path, tmp_path / "fake.yaml",
+            runs=_runs(("yorzoi", "task_a"), ("shorkie", "task_a")),
+        )
+        result = compare(cfg)
+        assert result.tasks_compared == ["task_a"]
+        assert "stale_task" not in result.per_task_plots
+        assert "stale_task" not in result.tasks_skipped
+        assert "stale_task" not in result.summary_md.read_text()
+
     def test_summary_csv_long_format(self, tmp_path: Path):
         _write_summary(tmp_path / "yorzoi__t", r=0.5, n_scored=100)
         _write_summary(tmp_path / "shorkie__t", r=0.3, n_scored=80)
-        cfg = _config_at(tmp_path, tmp_path / "fake.yaml")
+        cfg = _config_at(
+            tmp_path, tmp_path / "fake.yaml",
+            runs=_runs(("yorzoi", "t"), ("shorkie", "t")),
+        )
         result = compare(cfg)
         rows = list(csv.DictReader(result.summary_csv.open()))
         assert {r["task"] for r in rows} == {"t"}
@@ -192,7 +234,10 @@ class TestCompareRunner:
     def test_summary_md_per_task_section(self, tmp_path: Path):
         _write_summary(tmp_path / "yorzoi__t", r=0.5)
         _write_summary(tmp_path / "shorkie__t", r=0.3)
-        cfg = _config_at(tmp_path, tmp_path / "fake.yaml")
+        cfg = _config_at(
+            tmp_path, tmp_path / "fake.yaml",
+            runs=_runs(("yorzoi", "t"), ("shorkie", "t")),
+        )
         result = compare(cfg)
         text = result.summary_md.read_text()
         assert "## t" in text
@@ -200,27 +245,3 @@ class TestCompareRunner:
         # Both models in the header row, r row present
         assert "shorkie" in text and "yorzoi" in text
         assert "| r |" in text
-
-
-# ── compare_task_name grouping ───────────────────────────────────
-
-
-class TestGroupByCompareTask:
-    def test_brooks_single_task_groups_both_models(self, tmp_path: Path):
-        # Brooks is one registry task now (both models run `brooks_scramble`),
-        # so the two result dirs group together without any aliasing.
-        _write_summary(tmp_path / "yorzoi__brooks_scramble", r=0.22)
-        _write_summary(tmp_path / "shorkie__brooks_scramble", r=-0.01)
-        by_task = _discover_results(tmp_path)
-        assert set(by_task) == {"brooks_scramble"}
-        groups = _group_by_compare_task(by_task, {})
-        assert set(groups) == {"brooks_scramble"}
-        models = {m for d in groups["brooks_scramble"].values() for m in d}
-        assert models == {"yorzoi", "shorkie"}
-
-    def test_unknown_task_falls_through_to_registry_name(self, tmp_path: Path):
-        _write_summary(tmp_path / "yorzoi__unknown_task", r=0.5)
-        _write_summary(tmp_path / "shorkie__unknown_task", r=0.3)
-        by_task = _discover_results(tmp_path)
-        groups = _group_by_compare_task(by_task, {})
-        assert set(groups) == {"unknown_task"}

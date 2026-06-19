@@ -126,7 +126,7 @@ class LocalCodingVariantPredictor(Protocol):
 
     def predict_local_variants(
         self,
-        library_ids: Sequence[str],   # one of {"chen_gfp_r1", "chen_gfp_r2", "chen_tdh3"}
+        library_ids: Sequence[str],   # one of {"gfp_r1", "gfp_r2", "tdh3"}
         variant_seqs: Sequence[str],  # 36 nt each
     ) -> np.ndarray: ...
 ```
@@ -176,18 +176,17 @@ A genomic model that loses to CAI is a strong negative result; one that beats CA
 
 ## Evaluation protocol
 
-For each of the three libraries, independently:
+One task, `chen_synonymous`, evaluates all three libraries and reports results **stratified per library** plus a single aggregate. For each library, independently:
 
 1. Read the per-variant TSV (`data/tasks/chen_synonymous/{gfp_r1,gfp_r2,tdh3}.tsv`).
-2. Hand `(library_id, variant_seq)` for every row to the adapter; receive scalar prediction array.
+2. Hand `(library_id, variant_seq)` for every row to the adapter; receive scalar prediction array. The benchmark makes one call per library, so each library's scores are identical to scoring it on its own.
 3. Drop rows where the relevant `log2mRNA*` column is NaN (defensive — should be 0 drops on the committed distribution).
-4. **Per-library Pearson *r* and Spearman ρ** on `(pred, log2mRNA)`, computed **separately per replicate** for the two-replicate libraries: `pearson_rep1` + `spearman_rep1` and `pearson_rep2` + `spearman_rep2` for GFP r1 / GFP r2; `pearson` + `spearman` for TDH3. Both metrics are reported side-by-side; on most adapters they agree to within a few decimals, but on TDH3 with CAI (and any other heavy-tailed scalar predictor) Pearson can be much higher than Spearman because of leverage from a small high-CAI tail. We deliberately do not pre-average replicates into one label — reporting both metrics against the published replicate-replicate ceiling is more informative than collapsing.
-5. Plot: per-library scatter with regression line + reproducibility-ceiling band (the replicate-replicate Pearson reported by Chen). On the two-replicate libraries, two scatter panels per library — one per replicate column.
+4. **Per-library Pearson *r* and Spearman ρ** on `(pred, log2mRNA)`, computed **separately per replicate** for the two-replicate libraries. Every metric is **library-prefixed** in `summary.json`: `gfp_r1_pearson_rep1` / `gfp_r1_spearman_rep1` / `gfp_r1_pearson_rep2` / … for the GFP libraries, `tdh3_pearson` / `tdh3_spearman` for TDH3, plus per-library `*_ceiling_pearson` (and `*_ceiling_spearman` where published) and `*_n_*` counts. Both metrics are reported side-by-side; on TDH3 with CAI (and any heavy-tailed scalar predictor) Pearson can be much higher than Spearman because of leverage from a small high-CAI tail. We deliberately do not pre-average replicates into one label — reporting both against the published replicate-replicate ceiling is more informative than collapsing.
 
 Across libraries:
 
-6. Per replicate (rep1, rep2): z-score predictions per library (mean 0, std 1) and the same for measured `log2mRNA`. Concatenate and compute one **aggregated Pearson + Spearman**. For TDH3 (single replicate), use its column for both aggregated numbers (it contributes identically to the rep1 and rep2 aggregates).
-7. Plot: three-panel scatter, each annotated with its per-replicate Pearsons and the replicate-ceiling.
+5. **Aggregate**: `pearson_mean` and `spearman_mean` = the nan-aware mean over the **five replicate columns** (GFP r1 rep1+rep2, GFP r2 rep1+rep2, TDH3's single column). The five individual numbers are always reported too; the mean is just a single headline figure (a missing replicate is skipped rather than poisoning it).
+6. Plot: one `scatter.png` with five panels (one per library/replicate column), each a measured-vs-predicted scatter with regression line + the replicate-replicate ceiling band.
 
 ### Bonus assays (optional v1 sub-targets)
 
@@ -198,9 +197,9 @@ Across libraries:
 
 These are reported alongside the headline mRNA Pearson but **not** mixed into the aggregated headline number — they are separate columns in `summary.json`.
 
-### Compare-task grouping
+### Cross-model comparison
 
-v1 keeps each library as its own compare group (`chen_gfp_r1` / `chen_gfp_r2` / `chen_tdh3`). The cross-model compare runner currently assumes one model per group; collapsing the three libraries under one shared `compare_task_name = "chen_synonymous"` confuses it (every model appears in all three sub-tasks). A single 3-panel "Chen panel" with three sub-rows is a v2 enhancement — it needs a custom `compare_plot` override on the benchmark class, which v1 does not ship.
+`chen_synonymous` is a single registry task, so it forms one compare group. The default grouped-bar compare plot puts every model side-by-side across the curated headline metrics — the five per-replicate Pearsons, the five Spearmans, and the two aggregates (see `headline_metric_labels`). The full per-library table (including counts and ceilings) lands in `compare/summary.csv` and `compare/summary.md`.
 
 ### What we're *not* doing in v1
 
@@ -245,27 +244,29 @@ The hosts JSON (`marginalized_hosts.json`) was hand-curated against DEE2 median 
 
 ## Registry surface
 
-Three task entries in `TASKS`, all built by the same factory class with a `library` keyword. Same factory style as Brooks (one benchmark class, two registry entries):
+One task entry, `chen_synonymous`, whose config carries a `libraries:` list (one entry per library, with its own `data_path` + replicate ceilings) plus the shared `fasta_path` / `hosts_path` / `data_dir`:
 
 ```yaml
 tasks_config:
-  chen_gfp_r1:
-    library: gfp_r1
-    data_path: data/tasks/chen_synonymous/gfp_r1.tsv
+  chen_synonymous:
     fasta_path: data/tasks/R64-1-1.fa
     hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
     data_dir: data/tasks/chen_synonymous
-    replicate_ceiling_pearson: 0.83
-    replicate_ceiling_spearman: 0.71
-  chen_gfp_r2:
-    library: gfp_r2
-    ...
-  chen_tdh3:
-    library: tdh3
-    ...
+    libraries:
+      - library: gfp_r1
+        data_path: data/tasks/chen_synonymous/gfp_r1.tsv
+        replicate_ceiling_pearson: 0.83
+        replicate_ceiling_spearman: 0.71
+      - library: gfp_r2
+        data_path: data/tasks/chen_synonymous/gfp_r2.tsv
+        replicate_ceiling_pearson: 0.73
+        replicate_ceiling_spearman: 0.71
+      - library: tdh3
+        data_path: data/tasks/chen_synonymous/tdh3.tsv
+        replicate_ceiling_pearson: 0.72   # no Spearman ceiling (single merged column)
 ```
 
-A single Shorkie adapter and a single Yorzoi adapter cover all three libraries via the `library_ids` argument (no per-library adapter classes).
+`evaluate` scores each library with its own `predict_local_variants` call. A single Shorkie adapter and a single Yorzoi adapter cover all three libraries via the `library_ids` argument (no per-library adapter classes): each builds its per-library host contexts + REF caches on demand and caches them, so a library's scores match a standalone single-library run.
 
 ## Open questions / future work
 

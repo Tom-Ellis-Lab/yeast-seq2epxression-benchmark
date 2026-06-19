@@ -73,6 +73,25 @@ def _benchmark() -> ChenSynonymousBenchmark:
     )
 
 
+def test_requires_exactly_three_libraries():
+    info = BenchmarkInfo(
+        name="chen_synonymous", version="t", description="", distribution_uri="",
+    )
+    # Missing a library (rejected before any TSV is read).
+    with pytest.raises(ValueError, match="exactly the three"):
+        ChenSynonymousBenchmark(
+            libraries=_LIBRARIES[:2], fasta_path=FASTA_PATH,
+            hosts_path=HOSTS_PATH, data_dir=DATA_DIR, info=info,
+        )
+    # Duplicated library (len 3 but wrong set).
+    with pytest.raises(ValueError, match="exactly the three"):
+        ChenSynonymousBenchmark(
+            libraries=[_LIBRARIES[0], _LIBRARIES[0], _LIBRARIES[1]],
+            fasta_path=FASTA_PATH, hosts_path=HOSTS_PATH, data_dir=DATA_DIR,
+            info=info,
+        )
+
+
 def test_evaluates_all_libraries_with_per_library_results():
     bench = _benchmark()
     results = bench.evaluate(_ConstantScorer())

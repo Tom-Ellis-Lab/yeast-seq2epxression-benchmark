@@ -77,8 +77,14 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         data_dir: Path,
         info: BenchmarkInfo,
     ) -> None:
-        if not libraries:
-            raise ValueError("chen_synonymous needs at least one library")
+        # Chen is exactly three libraries — reject anything that isn't all
+        # three exactly once (catches a missing, duplicated, or unknown entry).
+        names = [spec["library"] for spec in libraries]
+        if len(names) != len(_KNOWN_LIBS) or set(names) != _KNOWN_LIBS:
+            raise ValueError(
+                f"chen_synonymous expects exactly the three libraries "
+                f"{sorted(_KNOWN_LIBS)}; got {names}"
+            )
         self._fasta_path = Path(fasta_path)
         self._hosts_path = Path(hosts_path)
         self._data_dir = Path(data_dir)
@@ -87,8 +93,6 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         libs: list[ChenLibrary] = []
         for spec in libraries:
             name = spec["library"]
-            if name not in _KNOWN_LIBS:
-                raise ValueError(f"unknown Chen library: {name!r}")
             data_path = Path(spec["data_path"])
             ceiling_pearson = float(spec["replicate_ceiling_pearson"])
             ceiling_spearman = spec.get("replicate_ceiling_spearman")

@@ -1,18 +1,45 @@
 # Kita et al. — yeast cis-eQTL classification
 
-![image](/img/eQTL_task.svg)
+![image](../../img/eQTL_task.svg)
 
 ## At a glance
 
 | | |
 | --- | --- |
 | **Task** | Binary classification: is this `(variant, gene)` pair a cis-eQTL, or a distance-matched non-eQTL control? Identical task definition to [Caudal](caudal_eqtl.md). |
+| **Assay** | cis-eQTL mapping (Kita et al. panel). |
+| **Eval set** | 619 paired (positive, negative) rows per negative set × 4 sets. |
+| **Adapter protocol** | `VariantEffectScorer.score_variants` (shared with Caudal). |
 | **Source** | Kita, R., Venkataram, S., Zhou, Y. & Fraser, H. B. *High-resolution mapping of cis-regulatory variation in budding yeast.* PNAS 114 (2017), DOI: [10.1073/pnas.1717421114](https://doi.org/10.1073/pnas.1717421114). Summary statistics in supplementary file [`pnas.1717421114.sd01.txt`](https://www.pnas.org/doi/suppl/10.1073/pnas.1717421114/suppl_file/pnas.1717421114.sd01.txt). 1,640 raw eQTLs called from 85 *S. cerevisiae* isolates. |
 | **Reference assembly** | *S. cerevisiae* R64-1-1, Ensembl release 115 (shared with Caudal). |
 | **Background population for negatives** | 1011 yeast isolates panel (`1011Matrix.gvcf`, shared with Caudal). The Kita eQTLs themselves are called from a separate 85-isolate panel; the 1011 panel is used only as the source of distance-matched non-eQTL controls. |
-| **Positives** | 683 cis-eQTLs selected from the raw 1,640, restricted to four genomic contexts — **Promoter, UTR5, UTR3, ORF**. The cis threshold is then applied as `|ChrPos − TSS| ≤ 8000`. The selection of 683 follows the Shorkie paper's reproduction; the upstream Kita release contains more variants but only these four context categories are used in the canonical evaluation. **Note: this is a different cis criterion from Caudal's 25 kb-of-gene-body rule** — see [Open questions](#open-questions--todo). N pairs after the 1011 intersection: TODO. |
+| **Positives** | 683 cis-eQTLs selected from the raw 1,640, restricted to four genomic contexts — **Promoter, UTR5, UTR3, ORF**. The cis threshold is then applied as `|ChrPos − TSS| ≤ 8000`. The selection of 683 follows the Shorkie paper's reproduction; the upstream Kita release contains more variants but only these four context categories are used in the canonical evaluation. **Note: this is a different cis criterion from Caudal's 25 kb-of-gene-body rule** — see [Open questions](#open-questions--future-work). The shipped distribution has 619 pairs per negative set (4 sets). |
 | **Negatives** | Identical procedure to Caudal: REF/ALT-matched non-coding variants from the 1011 panel with AF ≥ 0.05, distance-to-TSS-matched to ±100 bp (fallback ±200 bp), four independent iterations, with the same v1 same-chromosome post-filter. |
 | **Primary metric** | AUROC and AUPRC, no class balancing, mean ± SEM across the four negative-set iterations, **with random and perfect baselines on the plots** (same form as Caudal). |
+
+## Contents
+
+- [At a glance](#at-a-glance)
+- [Results](#results)
+- [Why this benchmark exists](#why-this-benchmark-exists)
+- [Dataset construction](#dataset-construction)
+- [Distribution](#distribution)
+- [Model contract](#model-contract)
+- [Evaluation protocol](#evaluation-protocol)
+- [Files](#files)
+- [Open questions / future work](#open-questions--future-work)
+
+## Results
+
+*No model run yet (TBD).* The processed distribution is built and manifest-locked (4 negative sets), but neither model has been scored on Kita: `results/default/yorzoi__kita_eqtl/` is an empty placeholder and there is no Shorkie run, so Kita has no entry in `results/default/compare/`. Numbers below are filled in once the runs land — do **not** borrow Caudal's.
+
+| `|score|` metric (mean ± SEM, 4 negative sets) | Shorkie | Yorzoi |
+| --- | ---: | ---: |
+| AUROC, full set | TBD | TBD |
+| AUPRC, full set | TBD | TBD |
+| AUROC, close-only (≤ 2 kb) | TBD | TBD |
+
+Once both runs complete, report alongside Caudal (same scoring contract) so the cross-dataset comparison is visible. Why the numbers look the way they do, when present: [`model_failures.md`](model_failures.md).
 
 ## Why this benchmark exists
 
@@ -54,36 +81,31 @@ absolute numbers across them.
    construction.
 4. Retrieve the reference and alternate alleles from `1011Matrix.gvcf`
    to ensure the variant is observed in the population panel that
-   negatives will be drawn from. (Pin the post-intersection count —
-   see [Open questions](#open-questions--todo).)
-5. Each retained row provides a `(chrom, pos, ref, alt, gene, context)`
-   tuple. The `context` annotation (Promoter / UTR5 / UTR3 / ORF) is
-   carried through into the processed distribution as an additional
-   column on the positive side; see [Schema](#schema).
+   negatives will be drawn from.
+5. Each retained row provides a `(chrom, pos, ref, alt, gene)` tuple.
+   The context annotation (Promoter / UTR5 / UTR3 / ORF) drives the
+   683-variant selection but is **not** carried through into the
+   processed distribution — the shipped negsets use the same column
+   set as Caudal; see [Schema](#schema).
 
 ### Negative set
-**Identical procedure to Caudal**, generated by the same script
-(`scripts/eqtl/0_data_generation/1_generate_negs.py --dataset kita`).
-The only Kita-specific bit is the input column parsing — the script
-reads `#Gene` (with the literal `#` prefix) instead of Caudal's
-`Pheno`. The algorithm itself is unchanged:
+**Identical procedure to Caudal** — see
+[Caudal — Negative set](caudal_eqtl.md#negative-set) for the
+five-step distance-/REF-/ALT-/MAF-matched sampling algorithm.
 
-1. Compute distance from each positive's `pos` to its target gene's
-   TSS.
-2. Restrict candidates to non-coding variants in the 1011 panel gVCF
-   with AF ≥ 0.05 and identical `(ref, alt)`.
-3. Pick one candidate whose distance to a randomly chosen
-   same-chromosome gene's TSS matches the positive's distance to
-   within ±100 bp (fallback ±200 bp). The randomly chosen gene
-   becomes the negative's "target gene".
-4. Reject candidates that are themselves positives or that have
-   already been used in the current iteration.
-5. Repeat for four independent iterations.
+The shipped Kita negsets did **not** come from running
+`scripts/eqtl/0_data_generation/1_generate_negs.py --dataset kita`.
+They are the output of Kuanhao Chao's emailed pipeline (Ensembl Fungi
+release 59), re-annotated to Ensembl 115 for `pos_gene_strand` /
+`neg_gene_strand`; all other Kuanhao-generated columns are kept as-is.
+That script is the regeneration target, not the source of record. Its
+only Kita-specific bit is the input column parsing — it reads `#Gene`
+(with the literal `#` prefix) instead of Caudal's `Pheno`.
 
-The same v1 same-chromosome post-filter applies (see
-[Caudal — Same-chromosome constraint](caudal_eqtl.md#same-chromosome-constraint-v1-fix)):
-pairs where `pos_chrom != neg_chrom` are dropped at processed-file
-generation.
+As in Caudal, negatives are drawn genome-wide — the negative variant need
+not share a chromosome with its paired positive (see
+[Caudal — Cross-chromosome negatives](caudal_eqtl.md#cross-chromosome-negatives)).
+In the shipped Kita negsets ~94% of pairs are cross-chromosome.
 
 The matching properties (✅ REF/ALT, ✅ distance, ✅ MAF, ✅
 same-chromosome) apply identically to Kita.
@@ -114,34 +136,30 @@ data/tasks/
 
 ### Schema
 
-**Identical to [Caudal's paired schema](caudal_eqtl.md#schema)**, plus
-one Kita-specific column:
+**Identical to [Caudal's paired schema](caudal_eqtl.md#schema).** The
+shipped `negset_*.tsv` header is exactly the 15 paired columns:
 
-| Column | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `pos_context` | str | ✅ for Kita | One of `Promoter`, `UTR5`, `UTR3`, `ORF`. Describes the positive variant only — there is no `neg_context` because negatives are sampled from non-coding regions and do not carry a Kita context label. |
+```
+pair_id  pos_chrom  pos_pos  pos_ref  pos_alt  pos_gene  pos_gene_strand  pos_distance_to_tss  neg_chrom  neg_pos  neg_ref  neg_alt  neg_gene  neg_gene_strand  neg_distance_to_tss
+```
 
-The full v1 schema is therefore: the 15 paired columns from
-[Caudal's schema](caudal_eqtl.md#schema), plus `pos_context`. Same
-conventions as Caudal: Arabic-numeral chromosomes (`1`..`16`), 1-based
-inclusive coordinates, sort by `(pos_chrom, pos_pos)`, and the
-`pos_chrom == neg_chrom` invariant.
-
-A Caudal-only adapter that ignores the extra column reads Kita's TSV
-without modification.
+There is no `pos_context` column — the context annotation drives the
+683-variant selection upstream but is not carried into the
+distribution. Same conventions as Caudal: Arabic-numeral chromosomes
+(`1`..`16`), 1-based inclusive coordinates, sort by
+`(pos_chrom, pos_pos)`, and the `pos_chrom == neg_chrom` invariant. A
+Caudal adapter reads Kita's TSV without modification.
 
 ### Example head
 
-A few illustrative rows of `negset_1.tsv` (tab-separated; values are
-schema-faithful but synthetic, since the actual processed distribution
-is not yet generated):
+The first rows of `negset_1.tsv` (tab-separated):
 
 ```
-pair_id  pos_chrom  pos_pos  pos_ref  pos_alt  pos_gene  pos_gene_strand  pos_distance_to_tss  pos_context  neg_chrom  neg_pos  neg_ref  neg_alt  neg_gene  neg_gene_strand  neg_distance_to_tss
-0        1          27418    A        T        YAL054C   -                312                  Promoter     1          63911    A        T        YAL060W   +                288
-1        1          88204    G        C        YAL019W   +                104                  ORF          1          141823   G        C        YAL003W   +                97
-2        2          61329    C        T        YBL091C   -                1801                 UTR5         2          207115   C        T        YBL024W   +                1788
-3        3          112447   A        G        YCR012W   +                845                  UTR3         3          188904   A        G        YCR077C   -                832
+pair_id  pos_chrom  pos_pos  pos_ref  pos_alt  pos_gene  pos_gene_strand  pos_distance_to_tss  neg_chrom  neg_pos  neg_ref  neg_alt  neg_gene    neg_gene_strand  neg_distance_to_tss
+0        1          31821    C        T        YAL062W   +                254                  10        294584   C        T        YJL077W-A   +                215
+1        1          33113    G        A        YAL061W   +                335                  13        811472   G        A        YMR272W-B   +                383
+2        1          33140    G        A        YAL061W   +                308                  13        46676    G        A        YML111W     +                266
+3        1          33237    G        A        YAL061W   +                211                  14        250008   G        A        YNL211C     -                307
 ```
 
 ## Model contract
@@ -154,39 +172,10 @@ reduction). The same Shorkie and Yorzoi reference adapters apply
 without modification.
 
 A model that has been wired up to score Caudal can score Kita with **no
-adapter changes** — only the input file path changes:
-
-```python
-from pathlib import Path
-from yeastbench.benchmarks.base import BenchmarkInfo
-from yeastbench.benchmarks.eqtl import EQTLClassificationBenchmark
-from yeastbench.adapters.shorkie_eqtl import (
-    ShorkieVariantScorer,
-    SHORKIE_1011_RNA_SEQ_TRACK_IDS,
-)
-from yeastbench.models.shorkie import Shorkie  # pure-PyTorch port
-from yeastbench import harness
-
-benchmark = EQTLClassificationBenchmark(
-    distribution_dir=Path("data/tasks/kita_eqtl"),
-    fasta_path=Path("data/tasks/R64-1-1.fa"),
-    gtf_path=Path("data/tasks/R64-1-1.115.gtf"),
-    info=BenchmarkInfo(
-        name="kita_eqtl",
-        version="v1",
-        description="Kita et al. yeast cis-eQTL classification",
-        distribution_uri="gs://yeast-seq2expression/kita_eqtl_v1/",
-    ),
-)
-model = Shorkie.from_tf_checkpoint(config, "data/models/shorkie/f0c0.h5")
-adapter = ShorkieVariantScorer(
-    model,
-    fasta_path="data/tasks/R64-1-1.fa",
-    gtf_path="data/tasks/R64-1-1.115.gtf",
-    track_subset=SHORKIE_1011_RNA_SEQ_TRACK_IDS,
-)
-harness.run(benchmark, adapter, out_dir=Path("results/shorkie/kita"))
-```
+adapter changes** — only the `distribution_dir` (and the
+`kita_eqtl` benchmark name) change. See
+[Caudal — Model contract](caudal_eqtl.md#model-contract) for the
+worked `EQTLClassificationBenchmark` + adapter setup.
 
 The same constraint on track aggregation applies: only the aggregate
 is allowed, and per-call track picking is forbidden. Strand handling
@@ -211,15 +200,18 @@ form as Caudal: ROC random = `y = x`, perfect = `(0, 1)` step; PR
 random = horizontal line at base rate, perfect = `(1, 1)` step).
 
 **Standard secondary report:** AUROC and AUPRC stratified by
-distance-to-TSS bin, using Kita-specific bins
-`[0, 500, 1200, 2000, 3000]` (vs. Caudal's
-`[0, 1000, 2000, 3000, 4000, 5000]`). The tighter binning reflects
-that Kita's selected variants are concentrated closer to their target
-genes.
+distance-to-TSS bin, using the shared `DISTANCE_BINS` from
+`eqtl.py` (same bins as Caudal), plus the **close-only view** —
+AUROC/AUPRC restricted to pairs with `pos_distance_to_tss ≤ 2 kb`
+(`CLOSE_ONLY_THRESHOLD_BP`). A Kita-specific tighter bin override
+(reflecting that Kita's selected variants concentrate closer to their
+target genes) is a possible future addition — see
+[Open questions](#open-questions--future-work).
 
-**Note on the `pos_context` column.** Kita's `pos_context` field is
-preserved in the schema for future use (e.g. per-context stratified
-evaluation), but v1 does **not** ship a per-context report.
+**Note on per-context evaluation.** Kita's positives are selected by
+genomic context (Promoter / UTR5 / UTR3 / ORF), but that label is not
+carried into the v1 distribution, so v1 does **not** ship a per-context
+report.
 
 ## Files
 
@@ -228,22 +220,18 @@ evaluation), but v1 does **not** ship a per-context report.
 | Raw Kita sumstats | TBD — not yet committed to `data/tasks/kita_eqtl/`. ([source](https://www.pnas.org/doi/suppl/10.1073/pnas.1717421114/suppl_file/pnas.1717421114.sd01.txt)) |
 | Background gVCF (1011 panel) | `data/tasks/1011Matrix.gvcf.gz` (shared with Caudal) |
 | Reference GTF | `data/tasks/R64-1-1.115.gtf` (shared with Caudal) |
-| Processed benchmark distribution | `gs://yeast-seq2expression/kita_eqtl_v1/` (GCP bucket; URL pinned in v1 release notes) |
-| Negative-set generation | `scripts/eqtl/0_data_generation/1_generate_negs.py --dataset kita` |
+| Processed benchmark distribution | `data/tasks/kita_eqtl/negset_{1..4}.tsv` (built, manifest-locked); also mirrored to `gs://yeast-seq2expression/kita_eqtl_v1/` (GCP bucket; URL pinned in v1 release notes) |
+| Negative-set source (shipped) | Kuanhao Chao's emailed pipeline (Ensembl Fungi 59, re-annotated to E115); see `data/tasks/kita_eqtl/README.md` |
+| Negative-set regeneration | `scripts/eqtl/0_data_generation/1_generate_negs.py --dataset kita` (regeneration target, not the source of the shipped sets) |
 | Shorkie variant scoring (upstream reference, SeqNN-based) | `scripts/eqtl/2_variant_scoring/score_variants_shorkie.py` — currently hardcoded against Kita's column conventions; reimplemented in the adapter on top of `src/yeastbench/models/shorkie.py`. |
 | Architecture / API sketch | [`architecture.md`](architecture.md) |
-| Distance-stratified eval | TBD — to be implemented as part of `EQTLClassificationBenchmark.plot()`, with a Kita override for the bin boundaries. |
+| Distance-stratified + close-only eval | `EQTLClassificationBenchmark` (shared `DISTANCE_BINS` and `CLOSE_ONLY_THRESHOLD_BP` in `src/yeastbench/benchmarks/eqtl.py`) |
 
-## Open questions / TODO
+## Open questions / future work
 
 - The Kita raw sumstats file (`pnas.1717421114.sd01.txt`) is not
   committed to `data/tasks/kita_eqtl/`. Decide whether to vendor it (small) or
   download-on-demand from PNAS.
-- Add the Kita et al. citation in canonical form.
-- **Pin N for Kita.** Now that the 1011 panel gVCF is on disk and
-  verified (used to pin N for Caudal), run the equivalent intersection
-  on Kita's 683 selected variants and report the post-intersection
-  count.
 - **Reconcile the two cis criteria.** Caudal's v1 uses
   `type == 'CIS'` (25 kb of gene body); Kita's v1 uses
   `|ChrPos − TSS| ≤ 8000`. These are not equivalent. For v1 we inherit
@@ -257,6 +245,10 @@ evaluation), but v1 does **not** ship a per-context report.
 - Confirm the negative-generation script's `#Gene` column expectation
   matches the actual upstream file (the literal `#` prefix is unusual
   and may have been introduced by a preprocessing step).
+- **Kita-specific tighter distance bins.** v1 uses the shared
+  `DISTANCE_BINS` plus the close-only (≤ 2 kb) view. A finer Kita
+  override could better resolve the near-TSS concentration of Kita's
+  selected variants; decide whether it earns its keep.
 - The Shorkie variant-scoring script
   (`scripts/eqtl/2_variant_scoring/score_variants_shorkie.py`) is
   currently hardcoded against Kita's column conventions. The adapter

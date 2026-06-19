@@ -26,8 +26,8 @@ OLIGO_LEN = 150
 
 @dataclass(frozen=True)
 class ShalemResults:
-    scores: np.ndarray    # (N=14956,) predicted expression — NaN for adapter-returned NaN (not sampled etc.)
-    labels: np.ndarray    # (N=14956,) measured Expression with NaN for the 784 non-labelled rows
+    scores: np.ndarray    # (N=14955,) predicted expression — NaN for adapter-returned NaN (not sampled etc.)
+    labels: np.ndarray    # (N=14955,) measured Expression with NaN for the 783 non-labelled rows
     overall: MPRAStratumResult
 
 

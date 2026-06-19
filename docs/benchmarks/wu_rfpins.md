@@ -1,6 +1,6 @@
 # Wu et al. — Genome-wide position effects on RFP cassette expression
 
-![image](/img/wu_banner.svg)
+![image](../../img/wu_banner.svg)
 
 ## At a glance
 
@@ -12,9 +12,20 @@
 | **Caveats** | (1) The authors do not convincingly show relative intensity correlates with mRNA level (their high/low comparison is selection-biased). (2) The YKO collection carries known aneuploidies/secondary mutations, introducing *trans* effects no sequence-to-expression model captures ([Giaever 2014](https://doi.org/10.1534/genetics.114.161620)). (3) **The cis-regulatory sequence driving RFP is identical at all 1044 loci** — see *Why this benchmark exists*. |
 | **Reference assembly** | *S. cerevisiae* R64-1-1. The cassette occupies the YKO collection's *kanMX* deletion locus; the splice uses the nominal SGDP precise start-to-stop ORF deletion (the documented per-locus "start codon scar" ≤3 bp ambiguity is immaterial — see *Integration geometry*). |
 | **Expression label** | Scalar per locus: `Relative_Fluorescence_Average` (RFP / OD600), range ≈ `[0.98, 12.98]` (≈ 13-fold), roughly normally distributed (paper Fig. 1b, R² = 0.98 to a normal fit). `Relative_Fluorescence_Error` is provided but its definition is unspecified; not used for scoring in v1. |
-| **Test set size** | 1044 loci (one cassette integrant per locus), uniformly scattered across all 16 chromosomes (~12 kb mean inter-locus spacing). No training set — purely zero-shot. |
-| **Primary metric** | Pearson *r* and Spearman ρ between predicted and measured relative intensity across all 1044 loci. Secondary: two binary tail-classification tasks — detecting the paper's *extreme-low* (< 5) and *extreme-high* (≥ 8) classes from the predicted score (AUROC + AUPRC, rank-based; ROC/PR plots per task). |
+| **Eval set** | 1044 loci (one cassette integrant per locus), uniformly scattered across all 16 chromosomes (~12 kb mean inter-locus spacing). No training set — purely zero-shot. |
+| **Primary metric** | Pearson *r* and Spearman ρ between predicted and measured relative intensity across all 1044 loci. Two binary tail-detection tasks are secondary (see *Evaluation protocol*). |
 | **Adapter protocol** | `CassetteExpressionPredictor`. Track-based models (Shorkie, Yorzoi) splice the cassette into the native genome at each locus and read out the RFP CDS. |
+
+## Contents
+
+- [Why this benchmark exists](#why-this-benchmark-exists)
+- [Results](#results)
+- [Dataset construction](#dataset-construction)
+- [The construct](#the-construct)
+- [Model contract](#model-contract)
+- [Evaluation protocol](#evaluation-protocol)
+- [Files](#files)
+- [Open questions / future work](#open-questions--future-work)
 
 ## Why this benchmark exists
 
@@ -48,6 +59,24 @@ per-locus expression — "chromosomal location is the major determinant of
 reporter gene expression." The benchmark asks whether the models have
 learned that determinant.
 
+## Results
+
+*Zero-shot, 2026-05-29 run (v1). Pearson r / Spearman ρ between predicted and measured relative intensity across all loci; two binary tail-detection tasks scored by AUROC.*
+
+| metric (n = 1,043 scored of 1,044) | Shorkie | Yorzoi |
+| --- | ---: | ---: |
+| Pearson r | −0.033 | 0.016 |
+| Spearman ρ | −0.025 | 0.021 |
+| extreme-low AUROC | 0.510 | 0.490 |
+| extreme-high AUROC | 0.468 | 0.528 |
+
+![Measured vs predicted intensity, Shorkie — a flat, uncorrelated cloud.](../../img/results/wu_rfpins/scatter.png)
+![ROC/PR for extreme-high tail detection (Shorkie): AUROC sits on the random diagonal.](../../img/results/wu_rfpins/roc_pr_extreme_high.png)
+
+- A clean negative result: both models sit at zero correlation with measured intensity, and tail-class detection is at chance (AUROC ≈ 0.5). With the cassette and promoter held fixed and only the genomic insertion site moving, neither model captures position effect.
+
+Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/default/{shorkie,yorzoi}__wu_rfpins/summary.json`.
+
 ## Dataset construction
 
 ### Training data
@@ -73,7 +102,9 @@ plus the GTF fully determines each integration site.
 ### Paper's expression classes
 
 Wu et al. divide the 1044 loci into **five fixed absolute-cutoff
-classes** (Fig. 1b):
+classes** (Fig. 1b). Counts here are over all **1,044** designed loci; the
+run scored **1,043** after dropping one unresolved ORF (YIR044C), so the
+extreme-high tail task has 92 positives among the 1,043 scored loci:
 
 | Class | Cutoff (RFP/OD600) | Count | Share |
 | --- | --- | ---: | ---: |
@@ -171,8 +202,7 @@ flank does.
 
 ### Integration geometry
 
-This is **partly unresolved and material** — the readout depends on what
-native sequence flanks the cassette.
+The readout depends on what native sequence flanks the cassette.
 
 What the Wu Methods (p. 6–7) establish: the reporter plasmid (pUC19
 backbone) carries homology arms **`kanMX-L` / `kanMX-R`**, homologous to
@@ -206,19 +236,13 @@ junction lies ~kb away from the RFP-CDS readout window. A per-locus 3 bp
 difference cannot move a track readout. Verifying the scar per ORF is
 not on the critical path; it is recorded as a caveat, not a blocker.
 
-Post-integration the locus reads:
-
-```
-… native seq up to deletion 5′ boundary │ cassette payload │ native seq from deletion 3′ boundary …
-```
-
-where the two boundaries are the SGDP deletion boundaries (TBD: at the
-ATG / stop, or a few bp inside/outside them). The `5'HA`/`3'HA` arms in
-the GenBank are the genomic-junction sequence (consumed by recombination,
-not extra inserted bases); the adapter splices the **non-homology
-payload** (`U1 … D1` with arms collapsed into the junctions) into native
-genome, oriented so RFP transcription runs in the replaced ORF's
-direction.
+The two boundaries are the SGDP deletion boundaries. The `5'HA`/`3'HA`
+arms in the GenBank are the genomic-junction sequence (consumed by
+recombination, not extra inserted bases); the adapter splices the
+**non-homology payload** (`U1 … D1` with arms collapsed into the
+junctions) into native genome, oriented so RFP transcription runs in the
+replaced ORF's direction (see the post-integration diagram in *The
+construct*).
 
 ## Model contract
 
@@ -234,15 +258,16 @@ Implemented by `ShorkieWuPredictor` / `YorzoiWuPredictor` over the shared
 1. **Window construction.** Splice the cassette payload in place of the
    ORF `[gene_start, gene_end]` (nominal SGDP boundary) into native
    R64-1-1, oriented to the ORF's strand (payload reverse-complemented
-   for − strand ORFs). **The mCherry start codon is centred in the
-   model input window** so up- and downstream genomic context around the
-   reporter's transcription start are balanced (decision: maximise
-   captured position effect on both sides; for − strand ORFs the
-   reporter's transcription start is at the genomic-high end of the
-   RC'd-payload CDS interval and the anchor follows it). Loci too close
-   to a chromosome end to fill a full window are scored NaN and reported
-   (not silently clamped away from the data — they just don't
-   contribute).
+   for − strand ORFs). **The mCherry stop codon is anchored at the
+   downstream edge of the readable crop** (`window_anchor =
+   "readout_at_downstream_edge"`), which maximises the native genomic
+   context visible *upstream* of the reporter — the side where the
+   deleted ORF's natural promoter used to live (decision: that is the
+   position-effect-rich flank; for − strand ORFs the reporter's
+   transcription 3′ end is at the genomic-low end of the RC'd-payload CDS
+   interval and the anchor follows it). Loci too close to a chromosome
+   end to fill a full window are scored NaN and reported (not silently
+   clamped away from the data — they just don't contribute).
 2. **Readout.** Cross-track mean of the per-bin sum over the **mCherry
    CDS bins** (payload offset 554, length 711, mapped into output
    bins) — the `logSED_agg`-style aggregation used elsewhere but as an
@@ -331,80 +356,18 @@ ORF → tracks 0–80, − strand ORF → 81–161.
   orientation; `*_source` ∈ {designed, synthetic}). Built by
   `scripts/wu/build_barcodes.py`.
 
-## Open questions / TODO
+## Open questions / future work
 
-**Cassette verification — done.** Content verified
-(`scripts/wu/verify_cassette.py`): RFP = mCherry, LEU2/tCYC1/pURA3/tADH1
-are the correct native elements, U1/U2/D1/D2 match Giaever 2014 Fig. 1B,
-constant payload frozen. Residual, **non-blocking**:
-- **Per-ORF barcodes — done** (`barcodes.tsv`, `build_barcodes.py`,
-  injected by the adapters via `inject_barcodes`). The placeholder 20×N
-  one-hot-encodes to all-zero columns the models never saw in training
-  (out-of-distribution, and identical across all 1044 loci), so the real
-  per-strain tags are injected instead. Two residual caveats: (1)
-  **as-designed, not resequenced** — the SGTC design tags are used
-  because the deep-sequenced Smith 2009 set is unrecoverable; ~3 % of real
-  strains carry a corrected tag not reflected here. (2) **31 loci are
-  UPTAG-only** and take a deterministic synthetic DNTAG (the real down tag
-  is unknown for those early-deleted strains). Both are immaterial to the
-  readout (inert 20-mers, ~0.5/2.2 kb from mCherry, behind the insulator);
-  the pending GPU re-run confirms the N→real-tag swap does not move the
-  per-locus scores.
-- **MCS gap (GenBank 57–86, ~30 bp)** between `U2` and the 5′ arm
-  (BamHI/SmaI/PacI/AscI cloning sites). Whether these land in the genome
-  depends on the `kanMX-L`/`kanMX-R` swap junctions; excluded from the
-  frozen payload as an uncertain plasmid-cloning artifact (≤30 bp, far
-  from readout, insulated — negligible). Confirm against the source
-  plasmid if it ever becomes available; not on the critical path.
-- **Source-plasmid cross-check (nice-to-have).** A-PWXL-025-PUC19 / the
-  paper Additional files would let us confirm exact endpoints and the
-  barcode/HA junction; not in the repo, not blocking.
+Status: run complete (v1). Cassette verified, barcodes injected, loci
+resolved, both adapters scored. Still open:
 
-- **ORF deletion boundary (start/stop codon fate).** *Resolved* (see
-  *Integration geometry*): proceed on the nominal SGDP precise
-  start-to-stop deletion; the documented per-locus "start codon scar"
-  (Giaever 2014, p. 453) is a ≤3 bp junction ambiguity, immaterial to
-  the RFP readout, recorded as a caveat not a blocker. **Dubious ORFs:**
-  unresolved `ORF_name`s (absent from Ensembl 115) are scored NaN and
-  excluded from metrics (1 such: YIR044C). Still open as v2 refinements:
-  explicit handling for ORFs overlapping a same-strand neighbour.
-- **Cassette orientation.** *Resolved & implemented*: the cassette
-  transcribes in the replaced ORF's direction; payload is
-  reverse-complemented for − strand ORFs, and the mCherry-start-codon
-  centring anchor follows the reporter's transcription start.
-- **Readout convention.** *Pinned*: raw cross-track mean of summed
-  coverage over the mCherry-CDS bins, no `log2`, no REF baseline.
-  Track subset: Shorkie T0 RNA-seq tracks; Yorzoi strand-matched
-  (+ ORF → 0–80, − ORF → 81–161). Sanity-check that the absolute
-  readout meaningfully ranks the 1044 loci is the **first thing to look
-  at in the real GPU run** (a near-constant output across loci would
-  confirm the position-effect signal is largely invisible to the model
-  — itself the headline finding).
-- **Window position.** *Resolved*: mCherry start codon centred in the
-  model input (balanced up/downstream genomic context); strand-aware.
-- **Locus resolution count.** *Resolved*: 1043 / 1044 resolve in
-  `R64-1-1.115.gtf`; YIR044C is the sole drop. Frozen as the evaluated
-  set; reported in `summary.json` (`n_dropped_unresolved`).
 - **`Relative_Fluorescence_Error` semantics.** Chase down whether it is
   SD/SEM/CV across replicates; if interpretable, a v2 error-weighted
   Pearson or a high-error-locus exclusion stratum becomes possible.
-- **Expected ceiling.** Aneuploidy + the weak mRNA↔fluorescence link cap
-  achievable *r*. Note in results that this is the hardest, most
-  adversarial benchmark in the suite for local-context models, and
-  interpret a modest *r* accordingly.
-
-### Implementation gaps — closed
-
-All of the following were fixed in the implementation pass and are
-covered by `tests/test_rfpins.py`:
-
-- Protocol-name typo (`Casette`→`CassetteExpressionPredictor`) unified
-  across `protocols.py`, `rfpins.py`, the `*_wu.py` adapters.
-- `RFPInsertionBenchmark` fully implemented (evaluate / plot /
-  save_results / load_results / summary_dict / headline; `fasta_path`/
-  `gtf_path` properties for the `needs_refs=True` dispatch).
-- Registry/config key drift settled on `wu_rfpins` / `labels_path`;
-  `configs/default.yaml` + `configs/test.yaml` carry full
-  `cassette_seq`/`labels_path`/`fasta_path`/`gtf_path`.
-- `ShorkieWuPredictor`/`YorzoiWuPredictor` implemented over the shared
-  `_wu_scaffold.py`; registry builders pass refs + model_config.
+- **Centromere/telomere stratified correlation** as a scored metric
+  (qualitative plot only in v1; the paper's main biological gradient).
+- **Resequenced barcodes.** v1 uses the as-designed SGTC tags (~3 % of
+  real strains carry a corrected tag); the deep-sequenced Smith 2009 set
+  is unrecoverable. Inert and insulated, so immaterial to the readout.
+- **ORFs overlapping a same-strand neighbour** — explicit handling is a
+  v2 refinement.

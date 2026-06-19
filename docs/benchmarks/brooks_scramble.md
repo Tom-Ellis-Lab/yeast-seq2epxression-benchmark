@@ -1,6 +1,6 @@
 # Brooks et al. — SCRaMBLE structural-rearrangement expression effect
 
-![image](/img/scramble_vertical.drawio.svg)
+![image](../../img/scramble_vertical.drawio.svg)
 
 ## At a glance
 
@@ -11,9 +11,24 @@
 | **Data** | `gs://brooks-nanopore/` — per-strain genome FASTA (`genomes/`), per-strain GFF (`annotations/`), per-strain Nanopore direct-RNA read alignments (`alignment/*.bed`). |
 | **Assay** | Synthetic chr IX right arm (synIXR, ~91 kb, 43 loxPsym segments; loxPsym sits 3 bp after the stop codon of every nonessential CDS). Cre induces deletions / duplications / inversions / translocations. A rearranged CDS **keeps its native promoter but is decoupled from its native 3′UTR/downstream** — so the cis-predictable effect is principally the *new downstream context*. Long-read Oxford Nanopore **direct RNA-seq** per strain. |
 | **Control** | **JS94** = parental −SCRaMBLE strain (synIXR, no induced recombination). Same genetic background; the only valid "before" for the rearrangement effect (not BY4741, which has native chr IX). |
-| **Unit of evaluation** | One **(gene × strain × copy)** sample — see *Per-copy sampling*. ~58 SCRaMBLE strains available (not the Yorzoi-paper 5); sample set defined by an objective locked rule, not hand-picked. |
+| **Eval set** | One **(gene × strain × copy)** sample — see *Per-copy sampling*. ~58 SCRaMBLE strains available (not the Yorzoi-paper 5); sample set defined by an objective locked rule, not hand-picked. |
 | **Primary metric** | LFC: **direction balanced accuracy** of sign(LFC), then Spearman ρ, then Pearson r, all on (pred, true) LFC across samples, read against the JS94 reproducibility ceiling. |
 | **Adapter protocol** | New `CoverageTrackPredictor.predict_coverage(construct_seq, strand) -> np.ndarray` (per-bin window coverage). The benchmark derives the LFC CDS scalar and the shape profile from it. |
+
+## Contents
+
+- [At a glance](#at-a-glance)
+- [Why this benchmark exists](#why-this-benchmark-exists)
+- [Results](#results)
+- [The data (verified from `gs://brooks-nanopore`)](#the-data-verified-from-gsbrooks-nanopore)
+- [Confounds and how each is handled](#confounds-and-how-each-is-handled)
+- [Per-copy sampling (the dosage solution)](#per-copy-sampling-the-dosage-solution)
+- [Sample-set definition (objective, locked)](#sample-set-definition-objective-locked)
+- [Constructs](#constructs)
+- [Evaluation protocol](#evaluation-protocol)
+- [Model contract](#model-contract)
+- [Files](#files)
+- [Open questions / future work](#open-questions--future-work)
 
 ## Why this benchmark exists
 
@@ -29,6 +44,26 @@ model is, in effect, the sequence-only regime — so this benchmark
 measures the **cis-predictable fraction** of rearrangement-induced
 expression change. That ceiling is intrinsic and is reported explicitly
 (below), not hidden.
+
+## Results
+
+*2026-05-28 run. **These numbers predate the refactor:** they were produced from the pre-unification single-TSV inputs with `tier1_*`/`tier2_*` keys and two separate task registrations, before the `lfc_*`/`shape_*` rename and the 3-file artifact. The shared-cohort intersection (n = 327 scored) is the apples-to-apples comparison and should survive a re-run.*
+
+| LFC, shared cohort (n = 327 scored) | Shorkie | Yorzoi | reproducibility ceiling |
+| --- | ---: | ---: | ---: |
+| direction balanced accuracy | 0.553 | 0.635 | 0.806 |
+| Pearson r | −0.020 | 0.221 | 0.805 |
+| Spearman ρ | −0.038 | 0.313 | — |
+
+Coverage-shape (per-model full set): Yorzoi Pearson 0.835 / JS divergence 0.067; Shorkie 0.424 / 0.353 (on its T0 RNA-seq proxy track, not Nanopore).
+
+![Shared-cohort LFC, Shorkie vs Yorzoi, against the leave-one-out reproducibility ceiling.](../../img/results/brooks_scramble/shared_tier1.png)
+![Per-SCRaMBLE-strain LFC agreement on the shared cohort.](../../img/results/brooks_scramble/shared_per_sample.png)
+
+- Yorzoi recovers a real but modest slice of the cis-predictable LFC (dir-acc 0.635, r 0.221) against an 0.806 / 0.805 reproducibility ceiling, and is strong on coverage shape (Pearson 0.835).
+- Shorkie sits at zero on LFC because its adapter scores with `varies_by_strain=False` — one prediction per construct, so the rearrangement is invisible to it. Its magnitude is better-calibrated (mean |z| 2.0 vs Yorzoi's 11.2), but that is calibration, not ranking.
+
+Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/brooks/compare/per_task/brooks_scramble/summary.json` (shared cohort) and `results/brooks/{shorkie,yorzoi}__*/summary.json`.
 
 ## The data (verified from `gs://brooks-nanopore`)
 
@@ -89,10 +124,9 @@ artefacts; the design neutralises each:
 Because loxPsym sits 3 bp past the stop, **every rearrangement junction
 gives the upstream gene a new downstream context** — duplicate copies of
 a gene are virtually always *context-distinct*, not identical-dosage
-duplicates. Reads are uniquely placed (MAPQ ≈ 60), and each copy occupies
+duplicates. Reads are uniquely placed (MAPQ ≈ 60) and each copy occupies
 distinct coordinates on `JS<S>_1`, so per-copy coverage is computable by
-interval. Therefore each **gene copy** in each strain is treated as an
-independent single-copy sample with its own rearranged construct:
+interval:
 
 - `true LFC` for a copy = `log2( norm_cov(this copy's CDS, strain) /
   norm_cov(the gene's single CDS, JS94) )`.
@@ -146,7 +180,7 @@ R64 reference. One artifact serves any model with window ≤ FLANK (16384).
 
 ## Evaluation protocol
 
-### LFC — scalar effect size (Yorzoi primary; Shorkie via deferred substitute)
+### LFC — scalar effect size (Yorzoi primary; Shorkie via T0 RNA-seq proxy track)
 
 1. Per sample: `pred_LFC = log2( Σ_pred(alt CDS bins) / Σ_pred(native
    CDS bins) )`; `true_LFC` from native-normalised Nanopore CDS coverage
@@ -176,22 +210,14 @@ baseline):
 - **KL divergence** `D_KL(true‖pred)` (ε-smoothed) reported only as a
   *secondary* directional view ("model misses real signal"); not the
   headline because it is asymmetric, unbounded, undefined on zeros, and
-  not comparable across samples — see the KL-vs-JS note below.
+  not comparable across samples. (`JSD = ½D_KL(P‖M)+½D_KL(Q‖M)`,
+  `M=½(P+Q)`.) Both metrics ignore magnitude (the LFC metrics carry
+  that); Pearson and JS are complementary — peak co-location vs
+  mass-placement.
 
 Report shape metrics against the **JS94×3 control–control** Pearson/JS
 ceiling. Example loci plotted (true vs predicted profile, alt and native
 overlaid), as in the Yorzoi Wu dump notebook.
-
-> **Why JS, not KL, is the headline shape metric.** `D_KL(P‖Q) =
-> Σ P log(P/Q)` is asymmetric (direction must be chosen and changes the
-> result), unbounded, and `+∞` whenever `Q=0, P>0` — pathological
-> against sparse Nanopore truth with many hard-zero bins, and its scale
-> depends on each sample's sparsity so it cannot be averaged or compared
-> to a ceiling. `JSD = ½D_KL(P‖M)+½D_KL(Q‖M)`, `M=½(P+Q)`, is
-> symmetric, always finite without smoothing, and bounded `[0,1]` (bits)
-> — so per-sample values aggregate and compare to the reproducibility
-> ceiling cleanly. Both ignore magnitude (the LFC metrics carry that); Pearson
-> and JS are complementary (peak co-location vs mass-placement).
 
 ### Reference baseline
 
@@ -212,9 +238,13 @@ class CoverageTrackPredictor(Protocol):
 
 The benchmark builds the gene-centred alt and native window strings and
 the in-window CDS interval; calls `predict_coverage` for each; forms the
-CDS-sum LFC and the full-window shape. Shorkie cannot do the shape metric
-(not trained on Nanopore direct-RNA); a Shorkie LFC substitute using a
-proxy track is deferred (open question).
+CDS-sum LFC and the full-window shape. Shorkie can't do the shape metric
+against Nanopore truth, so it runs LFC on a **T0 RNA-seq proxy track**
+(mean of the 384 unstranded T0 RNA-seq coverage tracks). This ran and
+scored — n = 528 on the full set, 327 on the shared cohort. But its
+adapter is `varies_by_strain=False`: one prediction per construct,
+broadcast across the strain axis, so the rearrangement signal is
+invisible to it and its LFC sits at ~0 (the headline finding).
 
 ## Files
 
@@ -245,13 +275,8 @@ time and re-applies the per-window membership/dedup (bit-identical to the old
 4992 / 16384 TSVs: 698 / 1055 constructs). Full panel built with `--strains all`
 (~56 strains → 1786 candidate constructs).
 
-## Open questions / TODO
+## Open questions / future work
 
-0. **Yorzoi leakage — assumed clean (user, 2026-05-19).** Working
-   assumption: Yorzoi was not trained on any Brooks SCRaMBLEd sequences;
-   treated as zero-shot, no held-out filtering in v1. Revisit only if
-   Yorzoi's training manifest contradicts it (then headline on the
-   held-out subset). Not a blocker under this assumption.
 1. **Thresholds** — `MIN_RUN_READS`=50 k and `MIN_READS`=10 set
    pragmatically; pin empirically from the JS94 deep-run noise floor
    (the count at which control–control LFC variance is acceptable).
@@ -265,9 +290,10 @@ time and re-applies the per-window membership/dedup (bit-identical to the old
 1c. **Median-of-ratios size factor** — total-native-reads is the v1
    normaliser (simple/portable); MoR over native genes is a documented
    v2 refinement if a global trans shift is observed.
-2. **Shorkie LFC substitute** — deferred. Shorkie can't see Nanopore
-   direct-RNA; decide whether a proxy-track LFC-vs-native comparison is
-   worth defining once Yorzoi numbers exist.
+2. **Shorkie LFC on the T0 proxy track** — implemented and ran (n = 528
+   full / 327 shared). It scores ~0 because the adapter is
+   `varies_by_strain=False`; the open question is whether a
+   strain-varying Shorkie path is worth building.
 3. **Rearrangement-type classification** — derive from `JS<S>_1` vs
    `JS94_1` diff; cross-check against Table S3 if obtainable (not in the
    bucket).

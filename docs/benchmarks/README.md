@@ -14,7 +14,7 @@ not in the individual specs. The forward-looking task list lives in
 | Benchmark | Probes | Task | Primary metric | Status |
 | --- | --- | --- | --- | --- |
 | [Caudal eQTL](caudal_eqtl.md) | *cis*-regulatory variants | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) | implemented |
-| [Kita eQTL](kita_eqtl.md) | *cis*-regulatory variants (independent panel) | binary classification | AUROC / AUPRC | implemented |
+| [Kita eQTL](kita_eqtl.md) | *cis*-regulatory variants (independent panel) | binary classification | AUROC / AUPRC (mean ± SEM over 4 negative sets) | implemented; runs pending |
 | [Rafi / deBoer MPRA (promoter)](rafi_mpra_promoter.md) | promoter grammar | regression (marginalized logSED) | Pearson / Spearman | implemented (zero-shot); DREAM-RNN supervised baseline spec'd |
 | [Shalem MPRA (terminator)](shalem_mpra_terminator.md) | 3′-end / termination grammar | regression (marginalized logSED) | Pearson *r* (Spearman alongside) | implemented |
 | [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` | implemented |
@@ -35,8 +35,9 @@ and any headline numbers.
 a `(variant, gene)` pair, rank true *cis*-eQTLs above distance-matched controls
 drawn from the 1011-isolate panel. Same task, same scoring contract, same
 negative-set recipe; they differ only in the source of positives (Caudal: ≤25 kb
-of gene body; Kita: Promoter/UTR5/UTR3/ORF, ≤8 kb of TSS). Report them together
-to see whether a model's skill generalizes or is dataset-specific.
+of gene body; Kita: Promoter/UTR5/UTR3/ORF, ≤8 kb of TSS). Reporting them together
+will show whether a model's skill generalizes or is dataset-specific — once Kita is
+run (its data is built; the model runs are still pending).
 
 **cis-element MPRA — Rafi (promoter), [Shalem](shalem_mpra_terminator.md)
 (terminator), [Chen](chen_synonymous.md) (synonymous CDS).** Each probes a
@@ -51,8 +52,10 @@ every other benchmark: the cassette and its promoter are held constant, only the
 genomic insertion site moves. Asks whether models capture *position* effects or
 only local promoter grammar. Wu integrates at a deleted-ORF locus (~3.5 kb
 cassette); Hong at a preserved intergenic region (~1.6 kb), closer to the
-pathway-engineering question. Both are clean adversarial probes — and so far both
-models score ≈ 0, an informative negative result.
+pathway-engineering question. Both are clean adversarial probes. On Wu both models
+score ≈ 0 (an informative negative result); on Hong the primary readout is also near
+zero, but Shorkie's IntTrain-fitted readout recovers a small positive signal
+(ρ ≈ +0.18).
 
 **Structural rearrangement — [Brooks SCRaMBLE](brooks_scramble.md).** The
 genome-scale companion to the position-effect benchmarks: SCRaMBLE perturbs
@@ -80,11 +83,5 @@ numbers rather than the paper's (non-RNA-seq) CNN.
 
 ## Planned / v2
 
-Future benchmarks are tracked in [`../ROADMAP.md`](../ROADMAP.md), not here, until
-they have a spec file. Notable ones deferred past v1:
-
-- **Species LM (Karollus et al.)** — sequence language-model evaluation, moved to v2.
-- **Native-genome track prediction** — cross-model RNA-seq track R² on held-out
-  yeast regions.
-- **Condition coherence** — does the model respect promoter-driven OFF states?
-  (the first benchmark probing *absolute* calibration rather than variant ranking).
+Future benchmarks live in [`../ROADMAP.md`](../ROADMAP.md), not here, until they have
+a spec file.

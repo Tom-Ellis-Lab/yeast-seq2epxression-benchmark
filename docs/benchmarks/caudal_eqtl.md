@@ -8,11 +8,48 @@
 | --- | --- |
 | **Task** | Binary classification: is this `(variant, gene)` pair a cis-eQTL, or a distance-matched non-eQTL control? |
 | **Source** | Caudal et al. (TODO: full citation + DOI). GWAS summary statistics: `GWAS_combined_lgcCorr_ldPruned_noBonferroni_20221207.tab`, downloaded from the [1002 Yeast Genome Project](http://1002genomes.u-strasbg.fr/files/RNAseq). |
+| **Assay** | cis-eQTL mapping (expression QTLs called across the 1011-isolate panel). |
 | **Reference assembly** | *S. cerevisiae* R64-1-1, Ensembl release 115 (`Saccharomyces_cerevisiae.R64-1-1.115.gtf`) |
+| **Eval set** | N = 1,846 paired rows per set × 4 negative sets (1,901 positives − 55 with no matchable negative); close-only subset (≤ 2 kb) N = 915. |
 | **Background population for negatives** | 1011 yeast isolates panel (`1011Matrix.gvcf`, [1002 Yeast Genome Project](http://1002genomes.u-strasbg.fr/files/)). |
-| **Positives** | **1,901 single-nucleotide cis-eQTL `(variant, gene)` pairs** spanning **1,656 unique variant positions** — i.e. ~245 variants are independently called as cis-eQTLs for more than one gene. SNVs whose variant position lies on the same chromosome as the regulated gene's annotated body and within 25 kb of it. (Mechanically: rows in the upstream Caudal release with `subtype == 'SNP'`, `ld_mask != 'masked'`, and `type == 'CIS'`, where the `type` column encodes "same chromosome AND within 25 kb of `[Pheno_pos, Pheno_pos_end]`".) **All 1,656 unique variant positions are observed in the 1011 panel** — the gVCF intersection drops 0 of 1,901 pairs. |
-| **Negatives** | Common variants from the 1011 panel that fall **outside any annotated CDS or exon interval** (intronic and intergenic eligible; UTRs that are part of annotated exons are excluded), with AF ≥ 0.05, REF/ALT-matched and distance-to-TSS-matched to ±100 bp (fallback ±200 bp). **The negative variant is drawn genome-wide — it is not required to be on the same chromosome as its paired positive** (see [Cross-chromosome negatives](#cross-chromosome-negatives)). Each iteration draws a fresh independent set; four sets are generated and reported on. Of the 1,901 positives, **55 have no `(ref, alt)`-matched variant anywhere in the 1011 panel** and are dropped from every iteration, leaving **N = 1,846 paired rows per iteration**. |
-| **Primary metric** | AUROC and AUPRC, evaluated **without class balancing**, reported as mean ± SEM across the four negative-set iterations. ROC and PR plots include **random and perfect baselines** so the metric value is read in context. Stratification by distance-to-TSS bin and a **close-only subset** for fair comparison with smaller-receptive-window models are reported as standard secondary views. |
+| **Positives** | **1,901 single-nucleotide cis-eQTL `(variant, gene)` pairs** over **1,656 unique variant positions** (~245 variants are eQTLs for more than one gene). All 1,656 positions are observed in the 1011 panel, so the gVCF intersection drops 0 of 1,901 pairs. |
+| **Negatives** | Common variants (AF ≥ 0.05) from the 1011 panel outside any annotated CDS/exon, REF/ALT-matched and distance-to-TSS-matched to the positive. Drawn genome-wide (see [Cross-chromosome negatives](#cross-chromosome-negatives)); four independent sets are generated and reported on. |
+| **Primary metric** | AUROC and AUPRC (no class balancing), mean ± SEM over the 4 negative sets. |
+| **Secondary metric** | Distance-to-TSS-stratified AUROC/AUPRC and a close-only (≤ 2 kb) subset for small-window models. |
+| **Adapter protocol** | `VariantEffectScorer.score_variants` (`src/yeastbench/adapters/protocols.py`). |
+
+## Contents
+
+- [At a glance](#at-a-glance)
+- [Results](#results)
+- [Why this benchmark exists](#why-this-benchmark-exists)
+- [Dataset construction](#dataset-construction)
+- [Distribution](#distribution)
+- [Model contract](#model-contract)
+- [Evaluation protocol](#evaluation-protocol)
+- [Running the benchmark](#running-the-benchmark)
+- [Files](#files)
+- [Open questions / future work](#open-questions--future-work)
+
+## Results
+
+*Zero-shot, 2026-06-13 run (v1). The classification score is `|logSED|` (absolute marginalized effect); AUROC/AUPRC are computed without class balancing and averaged over the 4 negative sets.*
+
+| `|score|` metric (mean ± SEM, 4 negative sets) | Shorkie | Yorzoi |
+| --- | ---: | ---: |
+| AUROC, full set | 0.567 ± 0.002 | 0.530 ± 0.001 |
+| AUPRC, full set (base rate 0.5) | 0.579 ± 0.002 | 0.536 ± 0.002 |
+| zero-score fraction | 0.09 | 0.38 |
+
+![Shorkie |score| AUROC/AUPRC by distance-to-TSS bin (4 negative sets, ±SEM): the signal peaks at 0–1 kb and decays to chance by 16–30 kb.](../../img/results/caudal_eqtl/distance_stratified.png)
+
+![ROC and PR for the full negative set (Shorkie), with random and perfect baselines.](../../img/results/caudal_eqtl/primary_roc_pr.png)
+
+- Both models clear the 0.5 paired baseline, but only just; Shorkie edges Yorzoi on the full set.
+- The signal is local: AUROC peaks at 0–1 kb from the TSS and falls to chance by 16–30 kb (above). On the close-only (≤ 2 kb) subset — the fair view for small-window models — Shorkie rises to ≈ 0.62.
+- Most of the full-set gap is reach, not ranking: Yorzoi scores 0 on 38% of pairs (variant outside its ~4 kb window) versus Shorkie's 9%. The signed score barely ranks at all (AUROC ≈ 0.50); only `|logSED|` carries signal.
+
+Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/default/{shorkie,yorzoi}__caudal_eqtl/summary.json`.
 
 ## Why this benchmark exists
 
@@ -37,7 +74,7 @@ shared, simple task framing.
 2. Drop rows where `ld_mask == "masked"` (LD-pruned-out variants). 49,670
    of the 59,140 raw rows are dropped here, leaving 9,470.
 3. Restrict to `subtype == 'SNP'`. Copy-number variants are out of scope
-   for v1 (see [Open questions](#open-questions--todo)).
+   for v1 (see [Open questions](#open-questions--future-work)).
 4. Restrict to **single-nucleotide cis-eQTLs**: variants on the same
    chromosome as the regulated gene's body and within 25 kb of it. The
    bounds are inclusive and use both ends of the gene `[Pheno_pos,
@@ -66,19 +103,14 @@ chromosome) and cannot be paired with a negative; they are dropped from
 every iteration. The remaining **N = 1,846 pairs** is the size of each
 `negset_{i}.tsv`.
 
-> **Note on biology vs mechanics.** The "within 25 kb of the gene body"
-> framing is the high-level biological criterion; the
-> `type == 'CIS' & subtype == 'SNP'` filter on the upstream file is the
-> mechanical realization of it. Both produce the same 1,901 pairs.
-
-> **Note on the pair vs variant distinction.** Several upstream
-> descriptions of Caudal use "1,901 SNVs", which is ambiguous. The
-> 1,901 number is at the `(variant, gene)` pair level. There are 1,656
-> unique variant positions, of which ~245 each appear in two or more
-> pairs. The benchmark scores at the pair level: every row in the
-> processed file is a `(positive_pair, negative_pair)` matchup, so a
-> variant that is a cis-eQTL for two genes is scored twice (once
-> against a different randomly drawn negative for each target gene).
+> **Note.** The "within 25 kb of the gene body" framing is the biological
+> criterion; the `type == 'CIS' & subtype == 'SNP'` filter on the upstream
+> file is the mechanical realization, and both produce the same 1,901
+> pairs. The 1,901 is a `(variant, gene)` pair count, not a variant count:
+> there are 1,656 unique positions, ~245 of which appear in two or more
+> pairs. The benchmark scores at the pair level, so a variant that is a
+> cis-eQTL for two genes is scored twice (against a different randomly
+> drawn negative for each target gene).
 
 ### Negative set
 Negatives are generated by `scripts/eqtl/0_data_generation/1_generate_negs.py`
@@ -223,8 +255,7 @@ Conventions locked in for v1:
 ### Example head
 
 A few illustrative rows of `negset_1.tsv` (tab-separated; values are
-schema-faithful but synthetic, since the actual processed distribution
-is not yet generated):
+schema-faithful but illustrative):
 
 ```
 pair_id  pos_chrom  pos_pos  pos_ref  pos_alt  pos_gene  pos_gene_strand  pos_distance_to_tss  neg_chrom  neg_pos  neg_ref  neg_alt  neg_gene  neg_gene_strand  neg_distance_to_tss
@@ -252,43 +283,25 @@ A model is evaluated on this benchmark by exposing a Python adapter that
 implements the `VariantEffectScorer` protocol:
 
 ```python
+@dataclass(frozen=True)
+class Variant:
+    chrom: str     # '1'..'16'
+    pos: int       # 1-based, R64-1-1
+    ref: str
+    alt: str
+    gene_id: str   # Ensembl gene ID
+
+
 class VariantEffectScorer(Protocol):
-    def score_variant(
-        self,
-        chrom: str,    # '1'..'16'
-        pos: int,      # 1-based, R64-1-1
-        ref: str,
-        alt: str,
-        gene_id: str,  # Ensembl gene ID
-    ) -> float: ...
+    def score_variants(self, variants: Sequence[Variant]) -> np.ndarray: ...
 ```
 
-See [`architecture.md`](architecture.md) for the full Python interface
-sketch (Protocol definitions, base classes, and harness entry point).
-The data flow for a single Caudal run is:
-
-```
-   ┌─────────────────────────────────┐
-   │ EQTLClassificationBenchmark      │
-   │   .evaluate(adapter)             │
-   │   loads negset_{i}.tsv           │
-   └───────────────┬─────────────────┘
-                   │ for each (positive, negative) pair:
-                   │   adapter.score_variant(pos_chrom, pos_pos, …, pos_gene)
-                   │   adapter.score_variant(neg_chrom, neg_pos, …, neg_gene)
-                   ▼
-   ┌─────────────────────────────────┐
-   │ ModelAdapter                    │
-   │   (e.g. ShorkieVariantScorer)   │
-   └───────────────┬─────────────────┘
-                   │ window placement, ref-allele check,
-                   │ ref/alt one-hot, predict, aggregate, log-fold-change
-                   ▼
-   ┌─────────────────────────────────┐
-   │ Model                           │
-   │   (e.g. PyTorch Shorkie)        │
-   └─────────────────────────────────┘
-```
+The benchmark loads `negset_{i}.tsv`, builds a `Variant` per positive and
+negative, and calls `adapter.score_variants(variants)` once per iteration;
+the adapter does window placement, ref-allele check, ref/alt one-hot,
+predict, aggregate, and log-fold-change. See
+[`architecture.md`](architecture.md) for the full Python interface sketch
+(Protocol definitions, base classes, and harness entry point).
 
 End-to-end usage from a caller's point of view:
 
@@ -314,7 +327,7 @@ benchmark = EQTLClassificationBenchmark(
         distribution_uri="gs://yeast-seq2expression/caudal_eqtl_v1/",
     ),
 )
-model = Shorkie.from_tf_checkpoint(config, "data/models/shorkie/f0c0.h5")
+model = Shorkie.from_tf_checkpoint(config, "data/models/shorkie/checkpoints/f0.h5")
 adapter = ShorkieVariantScorer(
     model,
     fasta_path="data/tasks/R64-1-1.fa",
@@ -361,7 +374,7 @@ The canonical Shorkie scoring procedure for this benchmark is:
    not a rare edge case for the Caudal v1 set: 22% of positives sit
    beyond half the 16 kb input window from their gene's TSS** and are
    thus invisible to Shorkie's architecture — see
-   [Open questions](#open-questions--todo) for the implications.
+   [Open questions](#open-questions--future-work) for the implications.
 2. Verify that the reference base at `pos` matches the `ref` field, and
    **raise on mismatch** — but only when the variant is inside the input
    window. For variants that fall outside the window (per the
@@ -378,7 +391,7 @@ The canonical Shorkie scoring procedure for this benchmark is:
    (`scripts/eqtl/2_variant_scoring/score_variants_shorkie.py`) is
    provided as documentation only; its scoring logic is reimplemented
    on top of the PyTorch model. Predictions are ensemble-averaged
-   across the 8 trained folds (`f0c0`–`f7c0`).
+   across the 8 trained folds (`f0`–`f7`).
 5. **Strand handling.** Shorkie predicts *stranded* RNA-seq tracks, so
    averaging both genome strands is only correct for unstranded
    protocols. The adapter sums coverage on the **single strand the
@@ -567,10 +580,9 @@ No new `run_*.py` scripts; no new CLI wiring.
 | Canonical run config | [`configs/default.yaml`](../../configs/default.yaml) |
 | CLI | `ybench` (`src/yeastbench/cli.py`), installed by `uv sync` |
 | Architecture / API sketch | [`architecture.md`](architecture.md) |
-| `pin N` script | `/tmp/pin_n_caudal.py` (one-off; can be moved into `scripts/eqtl/` if we want it tracked) |
-| Evaluation / curves | TBD — to be implemented as `EQTLClassificationBenchmark.plot()` once the harness lands. |
+| Evaluation / plots | `EQTLClassificationBenchmark.plot()` / `.save_results()` in `src/yeastbench/benchmarks/eqtl.py` (ROC/PR, distance-stratified, close-only) |
 
-## Open questions / TODO
+## Open questions / future work
 
 - Add the Caudal et al. citation and DOI.
 - **CNVs are out of scope for v1.** 47,082 of 59,140 raw rows in the

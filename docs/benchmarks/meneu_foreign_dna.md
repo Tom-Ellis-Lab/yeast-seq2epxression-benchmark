@@ -1,6 +1,6 @@
 # Meneu et al. — foreign-DNA RNA-seq coverage-track prediction
 
-![image](/img/meneu_banner.svg)
+![image](../../img/meneu_banner.svg)
 
 Figure partially from [Meneu et al.](https://doi.org/10.1126/science.adm9466)
 
@@ -13,9 +13,23 @@ Figure partially from [Meneu et al.](https://doi.org/10.1126/science.adm9466)
 | **Data** | Genome FASTAs + per-base normalized RNA-seq coverage (`.npz`, fwd/rev per contig) from the **ExoShorkie figshare** ([10.6084/m9.figshare.31075375](https://doi.org/10.6084/m9.figshare.31075375)) — no bigwig / pyBigWig; the coverage array is keyed by contig and matches the FASTA length. Provenance: GEO **GSE217022**, Zenodo **14024599** / **7198985**. |
 | **Assay** | Stranded directional mRNA RNA-seq (rRNA-depleted, PE150, 3 biological replicates), CPM-normalized per-base coverage. On bacterial DNA the signal follows bacterial gene orientation. |
 | **Expression label** | Per-base **CPM coverage**, unstranded (forward + reverse summed). Scale-free — Pearson/Spearman only need monotone correspondence. |
+| **Reference assembly** | The scored sequences are the two foreign contigs: *M. pneumoniae* M129 (`Mpneumo`, 817,946 bp) and *M. mycoides* PG1 (`Mmmyco`, 1,222,199 bp), from the ExoShorkie figshare FASTAs. Host nuclear context is *S. cerevisiae* R64-1-1 (suite default), but only the foreign contig is tiled and scored. |
 | **Eval set** | **Mpneumo** (*M. pneumoniae* M129, ~818 kb, 40% GC — yeast-like, transcribed) and **Mmmyco** (*M. mycoides* PG1, ~1,222 kb, 24% GC — AT-rich, near-silent). Scored **per chromosome, never pooled.** |
-| **Primary metric** | Per chromosome, 1 bp, over 5 kb windows: **median raw Pearson** + **median JS divergence** of normalized profiles (*within-region shape*) + **per-window-total fold-change error** `log2(Σpred+1)−log2(Σtrue+1)` after genome-wide depth-normalization (*across-region magnitude*, adapting the Yorzoi paper). Low-signal floor on the shape metrics only (magnitude over all windows); whole contig scored (no masking in v1). See *Metrics*. |
+| **Primary metric** | Per chromosome, over non-overlapping 5 kb windows at 1 bp resolution: median raw Pearson + median JS divergence (within-region shape) + per-window fold-change error after depth-normalization (across-region magnitude). See *Metrics*. |
 | **Adapter protocol** | `TiledCoverageTrackPredictor` — new protocol, identical surface to `CoverageTrackPredictor`, so the registry dispatches Meneu to its own adapters without colliding with Brooks. Reused via thin adapter subclasses. |
+
+## Contents
+
+- [At a glance](#at-a-glance)
+- [Why this benchmark exists](#why-this-benchmark-exists)
+- [The sequences scored](#the-sequences-scored)
+- [Data](#data)
+- [Metrics](#metrics)
+- [Results](#results)
+- [Sign convention (verify empirically)](#sign-convention-verify-empirically)
+- [Model contract](#model-contract)
+- [Files (target layout)](#files-target-layout)
+- [Open questions / future work](#open-questions--future-work)
 
 ## Why this benchmark exists
 
@@ -129,9 +143,10 @@ fall outside the central predicted regions anyway. Masking is a v2 refinement.
 After each adapter unbins its prediction to per-base, stitch the tiled predicted
 regions into one whole-contig per-base vector, drop masked / N-padded positions,
 and align to the measured per-base coverage. Each model is tiled **independently
-at its own window** (Shorkie 16,384 bp, Yorzoi 4,992 bp) — there is no shared
-window, so neither model is starved of context nor fed mid-contig Ns (only the two
-contig ends N-pad, and those are excluded). The comparison unit is the
+at its own window / stride** (Shorkie 16,384 / 14,336 bp, Yorzoi 4,992 / 3,000 bp,
+where stride = the predicted-region length) — there is no shared window, so neither
+model is starved of context nor fed mid-contig Ns (only the two contig ends N-pad,
+and those are excluded). The comparison unit is the
 **whole-chromosome** correlation against the same per-base truth; the
 receptive-field difference (Shorkie integrates ~14 kb of context per central
 region, Yorzoi ~3 kb) is an intrinsic model property, reported as such, not an
@@ -143,26 +158,17 @@ Three metrics per chromosome (shape co-variation, shape mass-placement, magnitud
 - **Shape — median per-window Pearson.** Tile the stitched per-base tracks into
   fixed **non-overlapping 5 kb windows** (the same windows for every model,
   independent of each model's prediction tiling), compute **Pearson on the raw
-  per-base coverage** (untransformed, unbinned) within each window, and report the
-  **median across windows**. Equal-weighting windows stops a few high-expression
-  loci from dominating *and* stops the score from being inflated by merely
-  capturing the coarse transcribed-vs-silent landscape — it forces local profile
-  reconstruction. Raw Pearson is scale-invariant, so **no depth-normalization is
-  needed** for this metric (it would be a no-op; the magnitude metric below *does*
+  per-base coverage** within each window, and report the **median across windows**.
+  Equal-weighting windows stops a few high-expression loci from dominating and
+  forces local profile reconstruction. Raw Pearson is scale-invariant, so no
+  depth-normalization is needed here (the magnitude metric below *does*
   depth-normalize). **Zero-variance floor:** skip windows whose *true* coverage is
-  essentially flat (variance ≤ `FLOOR_EPS` = 1e-9 — in practice only the fully-silent
-  windows, where per-window Pearson is undefined; windows with real but low signal
-  are kept, so this guards against undefined correlations, it is not a low-coverage
-  filter), and report the scored-window count per chromosome (`n_windows_kept` /
-  `n_windows_total`). Among
-  kept windows, a flat or all-zero *prediction* makes Pearson undefined (NaN) and is
-  excluded from the median; the count that actually contributes is reported
-  separately as **`n_windows_pearson`** so this drop is explicit, never silent
-  (`n_windows_kept − n_windows_pearson` = windows dropped to a NaN Pearson). On the
-  first runs this was 0 for both models on both chromosomes. (A global
-  whole-chromosome Pearson is
-  rejected — dominated by large-scale structure; per-base Spearman is rejected —
-  low-coverage ranks are arbitrary.)
+  flat (variance ≤ `FLOOR_EPS` = 1e-9 — the fully-silent windows, where Pearson is
+  undefined; windows with real but low signal are kept), and report the
+  scored-window count (`n_windows_kept` / `n_windows_total`). A flat or all-zero
+  *prediction* also makes Pearson NaN and is excluded; the contributing count is
+  reported as **`n_windows_pearson`** (`n_windows_kept − n_windows_pearson` =
+  NaN-Pearson drops, 0 for both models on both chromosomes in the first runs).
 - **Shape, mass-placement — Jensen–Shannon divergence of the normalized profiles.**
   Within each 5 kb window, normalize true and predicted coverage to sum 1 and
   compute the JS divergence (bits); report the **median across surviving windows**
@@ -197,19 +203,35 @@ Three metrics per chromosome (shape co-variation, shape mass-placement, magnitud
   errors gets a slightly *negative* `mag_fc_mean` (Jensen's inequality), so a nonzero
   mean is not on its own evidence of global over- or under-prediction.
 
-v1 fixes **5 kb windows + raw Pearson** (decided). A per-gene metric is *not* used
-— no meaningful genes on the artificial chromosome. The argument against raw
-Pearson — within a window, covariance weights positions by squared distance-to-mean,
-so a single strong peak dominates and the low/medium bulk barely registers — is
-mild at 5 kb (small dynamic range), is offset by the per-window median and the
-separate fold-change error, and is accepted for v1. Residual caveat (not solved in
-v1): a window holding an on- and an off-region scores high partly for the on/off
-contrast rather than quantitative level; a finer shape metric is a separate
-project.
+v1 fixes **5 kb windows + raw Pearson** (decided). No per-gene metric — there are
+no meaningful genes on the artificial chromosome. Residual caveat: a window holding
+an on- and an off-region scores high partly for the on/off contrast rather than
+quantitative level; a finer shape metric is a separate project.
 
 ### Reference baseline
 The ExoShorkie / NatShorkie / ExoYorzoi numbers above, cited as rough orientation,
 not as targets to beat.
+
+## Results
+
+*2026-06-02 run. **These numbers predate the refactor:** they were produced from per-window TSVs with a separate `meneu_foreign_dna_shorkie` task, before the unified `.npz`-sidecar task. Per-window (5 kb) over each foreign chromosome.*
+
+| metric | contig | Shorkie | Yorzoi |
+| --- | --- | ---: | ---: |
+| shape Pearson (median) | *M. pneumoniae* | 0.091 | 0.110 |
+| | *M. mycoides* | 0.264 | 0.384 |
+| shape JS divergence | *M. pneumoniae* | 0.098 | 0.083 |
+| | *M. mycoides* | 0.284 | 0.238 |
+| fold-change error (mean ± sd) | *M. pneumoniae* | −0.07 ± 1.19 | 0.05 ± 1.05 |
+| | *M. mycoides* | 0.70 ± 1.85 | 0.81 ± 1.72 |
+
+![Yorzoi predicted vs measured coverage over the M. mycoides contig (its best case) with the per-window-r histogram.](../../img/results/meneu_foreign_dna/yorzoi_Mmmyco.png)
+![Shorkie over M. pneumoniae (the hardest case).](../../img/results/meneu_foreign_dna/shorkie_Mpneumo.png)
+
+- Both models sit well below the ExoShorkie transfer-learning ladder (≈ 0.46–0.76 shape Pearson) — expected for far-OOD bacterial sequence neither model trained on. Yorzoi edges Shorkie on shape for both contigs.
+- *M. mycoides* (higher GC, closer to yeast) is the easier contig for both; *M. pneumoniae* is near the noise floor. Read the fold-change spread (sd) as the magnitude signal — the means are confounded by over-prediction vs dispersion (see the Metrics caveat).
+
+Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/meneu/{shorkie__meneu_foreign_dna_shorkie,yorzoi__meneu_foreign_dna}/summary.json` and `results/meneu/compare/summary.md`.
 
 ## Sign convention (verify empirically)
 Higher predicted coverage ↔ higher measured coverage → positive correlation.
@@ -268,7 +290,8 @@ strand)` block is stale — this batched API is the live one.)
   `fwd + rev`. One artifact serves every model — there is no per-window TSV any
   more, so this is a single registry task (`meneu_foreign_dna`) regardless of
   receptive field. At run time it depends on these built files alone — no
-  figshare, no GEO.
+  figshare, no GEO. (The committed numbers in *Results* predate this unification —
+  they came from per-window TSVs and a separate `meneu_foreign_dna_shorkie` task.)
 
 ### Track subsets / RC averaging
 - **Shorkie:** the **384-track T0 subset** (`SHORKIE_T0_RNA_SEQ_TRACK_IDS`), for
@@ -294,12 +317,11 @@ strand)` block is stale — this batched API is the live one.)
   time. `uv run python scripts/meneu/build_meneu_distribution.py`.
   No pyBigWig (coverage is already per-base `.npz`); no masking (whole contig scored).
 
-## Open questions / TODO
+## Open questions / future work
 
-1. **Investigate the gap vs ExoShorkie — TOMORROW, triple-check every assumption.**
-   Our zero-shot numbers (median per-window raw Pearson — Yorzoi 0.110 / 0.384,
-   Shorkie 0.091 / 0.264) are well below ExoShorkie's reported NatShorkie / ExoYorzoi
-   (~0.4–0.6). Likely mostly the metric, but verify in order:
+1. **Investigate the gap vs ExoShorkie — triple-check every assumption.**
+   Our zero-shot numbers (see *Results*) are well below ExoShorkie's reported
+   NatShorkie / ExoYorzoi (~0.4–0.6). Likely mostly the metric, but verify in order:
    (a) **Metric** — reproduce ExoShorkie's *exact* metric (per-window **median
    Spearman** over **16 bp bins** of **14,336 bp** windows) on our stitched
    predictions and see how much of the gap that alone closes (Pearson→Spearman,
@@ -331,22 +353,10 @@ strand)` block is stale — this batched API is the live one.)
 5. **Yorzoi track-group selection rule.** Whether to pick the headline group purely
    descriptively (report all, name the best) or via a fixed selection set; chrXVI-
    anchored selection is off the table for v1 (no anchor). Default: descriptive.
-6. **Per-base track metric — decided.** Shape = **median per-window raw Pearson**
-   (co-variation) + **median per-window JS divergence** of sum-1-normalized
-   profiles (mass-placement); both on non-overlapping **5 kb** windows with a
-   true-signal floor + reported scored-window count (no depth-norm for these — raw
-   Pearson is scale-invariant; JS reuses `brooks.py:_js_divergence`). Magnitude =
-   per-window-total fold-change error `log2((Σpred+1)/(Σtrue+1))` **after genome-wide
-   depth-normalization** (`pred *= sum(true)/sum(pred)`), summarized mean ± spread
-   across **all** windows — no shape floor (a true-silent / pred-loud window is a
-   real error that must register; the shared "easy zeros" are fair across models
-   and keep the rule simple) — measuring regional-allocation accuracy controlling
-   for global scale.
-   Rejected: global
-   whole-chromosome Pearson (large-scale structure inflates), Spearman (low-coverage
-   rank noise), per-gene (no genes), `log1p` within-window (raw chosen), **KL
-   divergence** (asymmetric/unbounded/sparsity-dependent — JS chosen). Impl details
-   to pin on real data: the floor ε and the fold-change-error ε.
+6. **Per-base track metric — decided.** See *Metrics* for the full definition
+   (median per-window raw Pearson + JS divergence for shape, per-window fold-change
+   error for magnitude) and the rejected alternatives. Impl details to pin on real
+   data: the floor ε and the fold-change-error ε.
 7. **Per-strand correlation — Yorzoi-only v2.** Tests whether the model transcribes
    bacterial genes in the correct orientation; impossible for strand-blind Shorkie.
    The Meneu RNA-seq *is* stranded (directional library, fwd/rev bigwigs), so the

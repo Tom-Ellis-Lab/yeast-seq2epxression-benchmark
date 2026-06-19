@@ -511,6 +511,27 @@ def _build_chen(
     )
 
 
+def _build_mytk_ints_promoter(
+    data_path: str | Path,
+    fasta_path: str | Path,
+) -> Benchmark:
+    from yeastbench.benchmarks.mytk import MytkBenchmark
+
+    return MytkBenchmark(
+        data_path=Path(data_path),
+        fasta_path=Path(fasta_path),
+        info=BenchmarkInfo(
+            name="mytk_ints_promoter",
+            version="v1",
+            description=(
+                "MYTK toolkit promoter × integration-site position effects "
+                "(mScarlet fold-over-background)"
+            ),
+            distribution_uri="",
+        ),
+    )
+
+
 def _build_cuperus_utr(
     random_path: str | Path,
     native_path: str | Path,
@@ -540,4 +561,5 @@ TASKS: dict[str, TaskFactory] = {
     "meneu_foreign_dna": _build_meneu,
     "chen_synonymous": _build_chen,
     "cuperus_utr": _build_cuperus_utr,
+    "mytk_ints_promoter": _build_mytk_ints_promoter,
 }

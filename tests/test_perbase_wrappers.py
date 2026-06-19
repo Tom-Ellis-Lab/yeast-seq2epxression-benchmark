@@ -199,9 +199,9 @@ def test_yorzoi_chen_exon_sums_on_raw_base_positions():
     out_len = Y_OUT_BINS * Y_BIN
     pred = YorzoiChenPredictor.__new__(YorzoiChenPredictor)  # skip model/data wiring
     pred.model = _StubPerbaseChenModel(out_len)
-    pred.contexts = [_fake_chen_ctx(10, 25)]  # 15 CDS bases
-    pred._track_slices = [(0, N_PLUS_TRACKS)]
-    sums = pred._predict_exon_sums(torch.zeros(1, Y_SEQ_LEN, 4))
+    contexts = [_fake_chen_ctx(10, 25)]  # 15 CDS bases
+    track_slices = [(0, N_PLUS_TRACKS)]
+    sums = pred._predict_exon_sums(torch.zeros(1, Y_SEQ_LEN, 4), contexts, track_slices)
     assert float(sums[0]) == pytest.approx(float(sum(range(10, 25))))
 
 
@@ -213,6 +213,6 @@ def test_shorkie_chen_exon_sums_on_raw_base_positions():
     pred = ShorkieChenPredictor.__new__(ShorkieChenPredictor)
     pred.model = _StubPerbaseChenModel(out_len)
     pred._track_idx_gpu = torch.tensor([0, 1], dtype=torch.long)
-    pred.contexts = [_fake_chen_ctx(10, 25)]
-    sums = pred._predict_exon_sums(torch.zeros(1, 4, pred.model._ol))
+    contexts = [_fake_chen_ctx(10, 25)]
+    sums = pred._predict_exon_sums(torch.zeros(1, 4, pred.model._ol), contexts)
     assert float(sums[0]) == pytest.approx(float(sum(range(10, 25))))

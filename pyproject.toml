@@ -29,7 +29,7 @@ shorkie = [
 ]
 yorzoi = [
     "flash-attn",
-    "yorzoi>=0.0.3",
+    "yorzoi==0.2.1",
 ]
 dream_rnn = [
     "torch>=2.11.0",

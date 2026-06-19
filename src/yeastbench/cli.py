@@ -229,8 +229,8 @@ def _print_data_check(c: RunDataCheck) -> None:
 
 
 def _run_compare(cfg: Config) -> None:
-    """Shared between `ybench run`'s auto-trigger and `ybench compare`.
-    Silent no-op when there's nothing to compare."""
+    """Auto-triggered at the end of `ybench run`. Silent no-op when
+    there's nothing to compare."""
     from yeastbench.compare import compare
 
     result = compare(cfg)
@@ -247,72 +247,6 @@ def _run_compare(cfg: Config) -> None:
         _echo(f"  summary.csv:    {result.summary_csv}")
     if result.summary_md:
         _echo(f"  summary.md:     {result.summary_md}")
-
-
-@app.command("compare")
-def compare_cmd(
-    config: Annotated[
-        Path, typer.Option("--config", "-c", help="YAML run-spec path")
-    ],
-) -> None:
-    """Build cross-model comparison plots / tables from existing results.
-
-    Walks the config's ``out_dir`` for ``<model>__<task>/summary.json``,
-    groups by task, and for every task with ≥ 2 models writes a
-    comparison plot + summary under ``out_dir/compare/per_task/<task>/``.
-    Also emits the cross-task ``summary.csv`` / ``summary.md``. Silent
-    no-op if nothing is comparable."""
-    cfg = load_config(config)
-    _echo(f"config:   {cfg.source_path}  [hash {cfg.source_hash}]")
-    _echo(f"out_dir:  {cfg.out_dir}")
-    _run_compare(cfg)
-
-
-@app.command("replot")
-def replot_cmd(
-    run_dir: Annotated[
-        Path, typer.Argument(help="A run output directory (model__task/)")
-    ],
-    task: Annotated[
-        Optional[str],
-        typer.Option(
-            "--task",
-            help="Task name. Inferred from directory (…__<task>) if omitted.",
-        ),
-    ] = None,
-    task_config: Annotated[
-        Optional[Path],
-        typer.Option(
-            "--task-config",
-            help="Optional YAML config to pull task_config from (for distribution_dir etc.)",
-        ),
-    ] = None,
-) -> None:
-    """Regenerate plots from saved results."""
-    run_dir = run_dir.resolve()
-    if task is None:
-        name = run_dir.name
-        if "__" not in name:
-            raise typer.Exit(
-                f"Cannot infer task from directory name {name!r}. Pass --task."
-            )
-        task = name.split("__", 1)[1]
-    if task not in TASKS:
-        raise typer.Exit(f"Unknown task '{task}'. Known: {sorted(TASKS)}")
-
-    if task_config is None:
-        cfg_kwargs: dict = {}
-        meta = run_dir / "run_metadata.json"
-        if meta.exists():
-            cfg_kwargs = json.loads(meta.read_text()).get("task_config", {})
-    else:
-        cfg = load_config(task_config)
-        cfg_kwargs = cfg.tasks_config.get(task, {})
-
-    benchmark = TASKS[task](**cfg_kwargs)
-    results = benchmark.load_results(run_dir)
-    benchmark.plot(results, run_dir)
-    _echo(f"replotted → {run_dir}")
 
 
 @app.command("list")

@@ -15,7 +15,7 @@ directly. No upstream patch required.
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import torch
@@ -48,26 +48,27 @@ ORGANISM = "Saccharomyces cerevisiae"
 class CodonTransformerBaselinePredictor(LocalCodingVariantPredictor):
     """Score Chen synonymous variants under CodonTransformer's BigBird MLM.
 
-    All work is in ``from_task``: load model + tokenizer once, then run
-    one forward pass over the library's all-``*_unk`` merged input and
-    cache the per-position log-probabilities. ``predict_local_variants``
-    just indexes into that cache for each variant's 12 codons.
+    Load model + tokenizer once in ``from_task``. The per-library
+    log-probabilities (one forward pass over that library's all-``*_unk``
+    merged input) are built lazily on first use and cached, so one adapter
+    serves all three libraries. ``predict_local_variants`` indexes into the
+    cached per-position log-probabilities for each variant's 12 codons.
     """
 
     def __init__(
         self,
         *,
-        library_id: str,
-        protein: str,
-        var_start: int,
-        log_p: np.ndarray,             # [L, vocab]
+        model: "BigBirdForMaskedLM",          # noqa: F821 - lazy import type
+        tokenizer: Any,
         token2index: dict[str, int],
+        device: str | torch.device,
     ) -> None:
-        self.library_id = library_id
-        self.protein = protein
-        self.var_start = var_start
-        self.log_p = log_p
+        self.model = model
+        self.tokenizer = tokenizer
         self.token2index = token2index
+        self.device = device
+        # library_id -> (protein, var_start, log_p[L, vocab])
+        self._cache: dict[str, tuple[str, int, np.ndarray]] = {}
 
     @classmethod
     def from_task(
@@ -76,11 +77,29 @@ class CodonTransformerBaselinePredictor(LocalCodingVariantPredictor):
         device: str | torch.device = "cuda",
         **_ignored,
     ) -> "CodonTransformerBaselinePredictor":
-        from CodonTransformer.CodonData import get_merged_seq
         from CodonTransformer.CodonUtils import TOKEN2INDEX
         from transformers import AutoTokenizer, BigBirdForMaskedLM
 
-        library_id = task.library
+        log.info("loading CodonTransformer (HF: adibvafa/CodonTransformer)")
+        tokenizer = AutoTokenizer.from_pretrained("adibvafa/CodonTransformer")
+        model = BigBirdForMaskedLM.from_pretrained("adibvafa/CodonTransformer")
+        model = model.eval().to(device)
+        return cls(
+            model=model,
+            tokenizer=tokenizer,
+            token2index=dict(TOKEN2INDEX),
+            device=device,
+        )
+
+    def _log_p_for(self, library_id: str) -> tuple[str, int, np.ndarray]:
+        """Per-library per-position log-probabilities, built + cached on
+        first use (one forward pass over the all-``*_unk`` merged input)."""
+        cached = self._cache.get(library_id)
+        if cached is not None:
+            return cached
+
+        from CodonTransformer.CodonData import get_merged_seq
+
         if library_id not in LIBRARY_CONTEXTS:
             raise ValueError(f"unknown Chen library: {library_id!r}")
         ctx = LIBRARY_CONTEXTS[library_id]
@@ -93,22 +112,17 @@ class CodonTransformerBaselinePredictor(LocalCodingVariantPredictor):
                 f"{protein[var_start:var_start+12]!r} != {expected_peptide!r}"
             )
 
-        log.info("loading CodonTransformer (HF: adibvafa/CodonTransformer)")
-        tokenizer = AutoTokenizer.from_pretrained("adibvafa/CodonTransformer")
-        model = BigBirdForMaskedLM.from_pretrained("adibvafa/CodonTransformer")
-        model = model.eval().to(device)
-
         # Use the upstream helper to build the merged "protein + dna" string
         # (with dna="" → every codon collapses to "{aa}_unk"), so the token
         # format exactly matches what the tokenizer expects at inference.
         merged = get_merged_seq(protein=protein, dna="")
-        inputs = tokenizer(
+        inputs = self.tokenizer(
             merged, return_tensors="pt", padding=True, truncation=False,
         )
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
-            logits = model(**inputs, return_dict=True).logits[0, 1:-1, :]
+            logits = self.model(**inputs, return_dict=True).logits[0, 1:-1, :]
         log_p_all = torch.log_softmax(logits, dim=-1).cpu().numpy().astype(np.float64)
         # The merged-seq helper appends a stop-codon token (`__UNK`) so we
         # see len(protein)+1 non-special positions. Slice to the protein
@@ -118,15 +132,9 @@ class CodonTransformerBaselinePredictor(LocalCodingVariantPredictor):
                 f"{library_id}: tokenizer returned {log_p_all.shape[0]} non-special "
                 f"positions; expected {len(protein)} or {len(protein) + 1}"
             )
-        log_p = log_p_all[: len(protein)]
-
-        return cls(
-            library_id=library_id,
-            protein=protein,
-            var_start=var_start,
-            log_p=log_p,
-            token2index=dict(TOKEN2INDEX),
-        )
+        result = (protein, var_start, log_p_all[: len(protein)])
+        self._cache[library_id] = result
+        return result
 
     def predict_local_variants(
         self,
@@ -134,13 +142,9 @@ class CodonTransformerBaselinePredictor(LocalCodingVariantPredictor):
         variant_seqs: Sequence[str],
     ) -> np.ndarray:
         out = np.empty(len(library_ids), dtype=float)
-        var_positions = list(range(self.var_start, self.var_start + 12))
         for i, (lib, seq) in enumerate(zip(library_ids, variant_seqs)):
-            if lib != self.library_id:
-                raise ValueError(
-                    f"CodonTransformer baseline is bound to library "
-                    f"{self.library_id!r}; got {lib!r}"
-                )
+            protein, var_start, log_p = self._log_p_for(lib)
+            var_positions = list(range(var_start, var_start + 12))
             if len(seq) != 36:
                 raise ValueError(
                     f"variant_seq has {len(seq)} nt, expected 36"
@@ -149,7 +153,7 @@ class CodonTransformerBaselinePredictor(LocalCodingVariantPredictor):
             try:
                 token_ids = [
                     self.token2index[
-                        f"{self.protein[var_positions[j]].lower()}_{codons[j]}"
+                        f"{protein[var_positions[j]].lower()}_{codons[j]}"
                     ]
                     for j in range(12)
                 ]
@@ -159,6 +163,6 @@ class CodonTransformerBaselinePredictor(LocalCodingVariantPredictor):
                     f"for variant {seq!r}"
                 ) from e
             out[i] = float(sum(
-                self.log_p[var_positions[j], token_ids[j]] for j in range(12)
+                log_p[var_positions[j], token_ids[j]] for j in range(12)
             ))
         return out

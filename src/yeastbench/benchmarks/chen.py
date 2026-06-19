@@ -1,23 +1,26 @@
 """Chen et al. 2017 synonymous-mutation MPRA benchmark.
 
-One benchmark class, parameterised by ``library`` — registered three
-times in ``yeastbench.registry`` as ``chen_gfp_r1`` / ``chen_gfp_r2`` /
-``chen_tdh3``. All three share ``compare_task_name = "chen_synonymous"``
-so the cross-model compare runner groups them into one panel.
+One task, ``chen_synonymous``, that evaluates all three libraries (GFP r1,
+GFP r2, TDH3) and reports results **stratified per library** plus a single
+aggregate. Each library is scored by its own ``predict_local_variants``
+call, so per-library numbers are identical to scoring the libraries
+separately.
 
-For libraries with two normalised mRNA columns (GFP r1, GFP r2) we
-report **Pearson and Spearman separately for each replicate**, never a
-pre-averaged label, so we can compare both numbers against the
-published replicate-replicate ceiling.
+For libraries with two normalised mRNA columns (GFP r1, GFP r2) we report
+**Pearson and Spearman separately for each replicate**, never a
+pre-averaged label, so we can compare both numbers against the published
+replicate-replicate ceiling. TDH3 ships a single merged ``log2mRNA``
+column (and no Spearman ceiling).
 
 See ``docs/benchmarks/chen_synonymous.md`` for the spec.
 """
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -29,17 +32,38 @@ from yeastbench.benchmarks.base import Benchmark, BenchmarkInfo
 VARIABLE_LEN = 36
 
 TWO_REPLICATE_LIBS = {"gfp_r1", "gfp_r2"}
+_KNOWN_LIBS = {"gfp_r1", "gfp_r2", "tdh3"}
+_DISPLAY = {"gfp_r1": "GFP r1", "gfp_r2": "GFP r2", "tdh3": "TDH3"}
+
+
+@dataclass(frozen=True)
+class ChenLibrary:
+    """One library's measured data + comparison ceilings (loaded at init)."""
+    library: str
+    data_path: Path
+    ceiling_pearson: float
+    ceiling_spearman: float | None
+    label_columns: tuple[str, ...]      # ("log2mRNA_rep1","log2mRNA_rep2") or ("log2mRNA",)
+    variant_ids: np.ndarray             # (N,)
+    variant_seqs: list[str]             # length N, 36-nt blocks
+    labels: np.ndarray                  # (N, len(label_columns))
+
+
+@dataclass(frozen=True)
+class ChenLibraryResult:
+    library_id: str
+    variant_ids: np.ndarray             # (N,)
+    scores: np.ndarray                  # (N,) predicted scalar per variant
+    label_columns: tuple[str, ...]
+    labels: np.ndarray                  # (N, len(label_columns))
+    ceiling_pearson: float
+    ceiling_spearman: float | None
 
 
 @dataclass(frozen=True)
 class ChenResults:
-    library_id: str
-    variant_ids: np.ndarray              # (N,) object array of variant IDs
-    scores: np.ndarray                   # (N,) predicted scalar per variant
-    label_columns: tuple[str, ...]       # ("log2mRNA_rep1", "log2mRNA_rep2") or ("log2mRNA",)
-    labels: np.ndarray                   # (N, len(label_columns)) — per-replicate normalised log2(mRNA)
-    ceiling_pearson: float               # published replicate-replicate Pearson ceiling
-    ceiling_spearman: float | None       # empirical replicate-replicate Spearman ceiling; None on TDH3 (single column in S9)
+    libraries: tuple[str, ...]          # ordered library ids
+    per_library: dict[str, ChenLibraryResult]
 
 
 class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults]):
@@ -47,43 +71,61 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
 
     def __init__(
         self,
-        library: str,
-        data_path: Path,
+        libraries: Sequence[Mapping[str, Any]],
         fasta_path: Path,
         hosts_path: Path,
         data_dir: Path,
-        replicate_ceiling_pearson: float,
         info: BenchmarkInfo,
-        replicate_ceiling_spearman: float | None = None,
     ) -> None:
-        if library not in {"gfp_r1", "gfp_r2", "tdh3"}:
-            raise ValueError(f"unknown Chen library: {library!r}")
-        self.library = library
-        self.data_path = Path(data_path)
+        # Chen is exactly three libraries — reject anything that isn't all
+        # three exactly once (catches a missing, duplicated, or unknown entry).
+        names = [spec["library"] for spec in libraries]
+        if len(names) != len(_KNOWN_LIBS) or set(names) != _KNOWN_LIBS:
+            raise ValueError(
+                f"chen_synonymous expects exactly the three libraries "
+                f"{sorted(_KNOWN_LIBS)}; got {names}"
+            )
         self._fasta_path = Path(fasta_path)
         self._hosts_path = Path(hosts_path)
         self._data_dir = Path(data_dir)
-        self.ceiling_pearson = float(replicate_ceiling_pearson)
-        self.ceiling_spearman = (
-            float(replicate_ceiling_spearman)
-            if replicate_ceiling_spearman is not None
-            else None
-        )
         self.info = info
 
-        df = pd.read_csv(self.data_path, sep="\t")
-        if not (df["variable_seq"].str.len() == VARIABLE_LEN).all():
-            raise ValueError(
-                f"{self.data_path}: not all variable_seq are {VARIABLE_LEN} nt"
+        libs: list[ChenLibrary] = []
+        for spec in libraries:
+            name = spec["library"]
+            data_path = Path(spec["data_path"])
+            ceiling_pearson = float(spec["replicate_ceiling_pearson"])
+            ceiling_spearman = spec.get("replicate_ceiling_spearman")
+            ceiling_spearman = (
+                float(ceiling_spearman) if ceiling_spearman is not None else None
             )
-        self.variant_ids: np.ndarray = df["variant_id"].to_numpy()
-        self.variant_seqs: list[str] = df["variable_seq"].astype(str).str.upper().tolist()
 
-        if library in TWO_REPLICATE_LIBS:
-            self.label_columns = ("log2mRNA_rep1", "log2mRNA_rep2")
-        else:
-            self.label_columns = ("log2mRNA",)
-        self.labels: np.ndarray = df[list(self.label_columns)].to_numpy(dtype=float)
+            df = pd.read_csv(data_path, sep="\t")
+            if not (df["variable_seq"].str.len() == VARIABLE_LEN).all():
+                raise ValueError(
+                    f"{data_path}: not all variable_seq are {VARIABLE_LEN} nt"
+                )
+            label_columns = (
+                ("log2mRNA_rep1", "log2mRNA_rep2")
+                if name in TWO_REPLICATE_LIBS else ("log2mRNA",)
+            )
+            libs.append(ChenLibrary(
+                library=name,
+                data_path=data_path,
+                ceiling_pearson=ceiling_pearson,
+                ceiling_spearman=ceiling_spearman,
+                label_columns=label_columns,
+                variant_ids=df["variant_id"].to_numpy(),
+                variant_seqs=df["variable_seq"].astype(str).str.upper().tolist(),
+                labels=df[list(label_columns)].to_numpy(dtype=float),
+            ))
+        self._libs = libs
+
+    # Attributes read by the adapter dispatch (see registry.CHEN_FIELDS for the
+    # genomic models; the baselines read ``libraries`` via from_task).
+    @property
+    def libraries(self) -> list[ChenLibrary]:
+        return self._libs
 
     @property
     def fasta_path(self) -> Path:
@@ -97,47 +139,44 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
     def data_dir(self) -> Path:
         return self._data_dir
 
-    # We intentionally do *not* override ``compare_task_name``: each Chen
-    # library is its own compare group (chen_gfp_r1 / chen_gfp_r2 /
-    # chen_tdh3). Grouping all three under a single ``chen_synonymous``
-    # name confuses the cross-model compare runner because the same
-    # model appears in three sub-tasks of one group, and the runner's
-    # one-model-per-group assumption rejects all but the first. A single
-    # 3-panel compare figure is a v2 enhancement (custom compare_plot
-    # override).
-
     def evaluate(self, adapter: LocalCodingVariantPredictor) -> ChenResults:
-        library_ids = [self.library] * len(self.variant_seqs)
-        scores = np.asarray(
-            adapter.predict_local_variants(library_ids, self.variant_seqs),
-            dtype=float,
-        )
-        if len(scores) != len(self.variant_seqs):
-            raise ValueError(
-                f"adapter returned {len(scores)} scores for "
-                f"{len(self.variant_seqs)} variants"
+        per: dict[str, ChenLibraryResult] = {}
+        for lib in self._libs:
+            library_ids = [lib.library] * len(lib.variant_seqs)
+            scores = np.asarray(
+                adapter.predict_local_variants(library_ids, lib.variant_seqs),
+                dtype=float,
+            )
+            if len(scores) != len(lib.variant_seqs):
+                raise ValueError(
+                    f"{lib.library}: adapter returned {len(scores)} scores for "
+                    f"{len(lib.variant_seqs)} variants"
+                )
+            per[lib.library] = ChenLibraryResult(
+                library_id=lib.library,
+                variant_ids=lib.variant_ids,
+                scores=scores,
+                label_columns=lib.label_columns,
+                labels=lib.labels,
+                ceiling_pearson=lib.ceiling_pearson,
+                ceiling_spearman=lib.ceiling_spearman,
             )
         return ChenResults(
-            library_id=self.library,
-            variant_ids=self.variant_ids,
-            scores=scores,
-            label_columns=self.label_columns,
-            labels=self.labels,
-            ceiling_pearson=self.ceiling_pearson,
-            ceiling_spearman=self.ceiling_spearman,
+            libraries=tuple(lib.library for lib in self._libs),
+            per_library=per,
         )
 
-    def _per_column_stats(self, results: ChenResults) -> list[dict[str, float]]:
+    def _per_column_stats(self, result: ChenLibraryResult) -> list[dict[str, float]]:
         out = []
-        for j, col in enumerate(results.label_columns):
-            meas = results.labels[:, j]
-            mask = np.isfinite(results.scores) & np.isfinite(meas)
+        for j, col in enumerate(result.label_columns):
+            meas = result.labels[:, j]
+            mask = np.isfinite(result.scores) & np.isfinite(meas)
             n = int(mask.sum())
             if n < 2:
                 out.append({"column": col, "n": n,
                             "pearson": float("nan"), "spearman": float("nan")})
                 continue
-            p = results.scores[mask]
+            p = result.scores[mask]
             m = meas[mask]
             out.append({
                 "column": col,
@@ -154,35 +193,41 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
         out_dir.mkdir(parents=True, exist_ok=True)
         title_model = out_dir.name.split("__")[0] if "__" in out_dir.name else ""
 
-        stats = self._per_column_stats(results)
-        n_panels = len(results.label_columns)
-        fig, axes = plt.subplots(1, n_panels, figsize=(5.5 * n_panels, 5.0), squeeze=False)
+        # One panel per (library, replicate column).
+        panels: list[tuple[str, int, str, ChenLibraryResult]] = []
+        for lib in results.libraries:
+            r = results.per_library[lib]
+            for j, col in enumerate(r.label_columns):
+                panels.append((lib, j, col, r))
 
-        for j, col in enumerate(results.label_columns):
-            ax = axes[0, j]
-            meas = results.labels[:, j]
-            mask = np.isfinite(results.scores) & np.isfinite(meas)
-            pred, m = results.scores[mask], meas[mask]
+        n_panels = len(panels)
+        fig, axes = plt.subplots(
+            1, n_panels, figsize=(5.0 * n_panels, 4.6), squeeze=False,
+        )
+        for k, (lib, j, col, r) in enumerate(panels):
+            ax = axes[0, k]
+            meas = r.labels[:, j]
+            mask = np.isfinite(r.scores) & np.isfinite(meas)
+            pred, m = r.scores[mask], meas[mask]
             ax.scatter(m, pred, s=4, alpha=0.4, rasterized=True)
             if len(m) > 1:
                 slope, b = np.polyfit(m, pred, 1)
                 xs = np.linspace(m.min(), m.max(), 50)
                 ax.plot(xs, slope * xs + b, color="red", linewidth=1, alpha=0.8)
+            s = self._per_column_stats(r)[j]
+            ceiling_text = f"ceiling r ≤ {r.ceiling_pearson:.2f}"
+            if r.ceiling_spearman is not None:
+                ceiling_text += f", ρ ≤ {r.ceiling_spearman:.2f}"
             ax.set_xlabel(f"measured {col}")
             ax.set_ylabel("predicted (adapter scalar)")
-            s = stats[j]
-            ceiling_text = f"ceiling r ≤ {results.ceiling_pearson:.2f}"
-            if results.ceiling_spearman is not None:
-                ceiling_text += f", ρ ≤ {results.ceiling_spearman:.2f}"
             ax.set_title(
-                f"{col}\n"
+                f"{_DISPLAY.get(lib, lib)} · {col}\n"
                 f"n = {s['n']}  r = {s['pearson']:.3f}  "
-                f"ρ = {s['spearman']:.3f}  "
-                f"{ceiling_text}",
+                f"ρ = {s['spearman']:.3f}  {ceiling_text}",
                 fontsize=10,
             )
 
-        sup = f"Chen synonymous MPRA — {results.library_id}"
+        sup = "Chen synonymous MPRA"
         if title_model:
             sup += f"  ({title_model})"
         fig.suptitle(sup, fontsize=11)
@@ -193,87 +238,114 @@ class ChenSynonymousBenchmark(Benchmark[LocalCodingVariantPredictor, ChenResults
     def save_results(self, results: ChenResults, out_dir: Path) -> None:
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        np.save(out_dir / "scores.npy", results.scores)
-        np.save(out_dir / "labels.npy", results.labels)
-        (out_dir / "results_meta.json").write_text(json.dumps({
-            "library_id": results.library_id,
-            "label_columns": list(results.label_columns),
-            "ceiling_pearson": results.ceiling_pearson,
-            "ceiling_spearman": results.ceiling_spearman,
-            "variant_ids": [str(v) for v in results.variant_ids],
-        }))
+        meta: dict[str, Any] = {"libraries": list(results.libraries), "per_library": {}}
+        for lib in results.libraries:
+            r = results.per_library[lib]
+            np.save(out_dir / f"scores_{lib}.npy", r.scores)
+            np.save(out_dir / f"labels_{lib}.npy", r.labels)
+            meta["per_library"][lib] = {
+                "label_columns": list(r.label_columns),
+                "ceiling_pearson": r.ceiling_pearson,
+                "ceiling_spearman": r.ceiling_spearman,
+                "variant_ids": [str(v) for v in r.variant_ids],
+            }
+        (out_dir / "results_meta.json").write_text(json.dumps(meta))
 
     def load_results(self, out_dir: Path) -> ChenResults:
         out_dir = Path(out_dir)
         meta = json.loads((out_dir / "results_meta.json").read_text())
-        ceiling_spearman = meta.get("ceiling_spearman")
-        return ChenResults(
-            library_id=meta["library_id"],
-            variant_ids=np.array(meta["variant_ids"], dtype=object),
-            scores=np.load(out_dir / "scores.npy"),
-            label_columns=tuple(meta["label_columns"]),
-            labels=np.load(out_dir / "labels.npy"),
-            ceiling_pearson=float(meta["ceiling_pearson"]),
-            ceiling_spearman=(
-                float(ceiling_spearman) if ceiling_spearman is not None else None
-            ),
-        )
+        per: dict[str, ChenLibraryResult] = {}
+        for lib in meta["libraries"]:
+            m = meta["per_library"][lib]
+            ceiling_spearman = m.get("ceiling_spearman")
+            per[lib] = ChenLibraryResult(
+                library_id=lib,
+                variant_ids=np.array(m["variant_ids"], dtype=object),
+                scores=np.load(out_dir / f"scores_{lib}.npy"),
+                label_columns=tuple(m["label_columns"]),
+                labels=np.load(out_dir / f"labels_{lib}.npy"),
+                ceiling_pearson=float(m["ceiling_pearson"]),
+                ceiling_spearman=(
+                    float(ceiling_spearman) if ceiling_spearman is not None else None
+                ),
+            )
+        return ChenResults(libraries=tuple(meta["libraries"]), per_library=per)
 
     def summary_dict(self, results: ChenResults) -> dict[str, Any]:
-        stats = self._per_column_stats(results)
-        summary: dict[str, Any] = {
-            "library_id": results.library_id,
-            "n_rows_total": int(len(results.scores)),
-            "ceiling_pearson": results.ceiling_pearson,
-            "ceiling_spearman": results.ceiling_spearman,
-        }
-        if results.library_id in TWO_REPLICATE_LIBS:
-            for s in stats:
-                rep = s["column"].split("_")[-1]   # rep1 / rep2
-                summary[f"pearson_{rep}"]  = s["pearson"]
-                summary[f"spearman_{rep}"] = s["spearman"]
-                summary[f"n_{rep}"]        = s["n"]
-        else:
-            s = stats[0]
-            summary["pearson"]  = s["pearson"]
-            summary["spearman"] = s["spearman"]
-            summary["n_scored"] = s["n"]
+        summary: dict[str, Any] = {}
+        rep_pearsons: list[float] = []
+        rep_spearmans: list[float] = []
+        n_rows_total = 0
+
+        for lib in results.libraries:
+            r = results.per_library[lib]
+            stats = self._per_column_stats(r)
+            n_rows_total += int(len(r.scores))
+            summary[f"{lib}_ceiling_pearson"] = r.ceiling_pearson
+            if r.ceiling_spearman is not None:
+                summary[f"{lib}_ceiling_spearman"] = r.ceiling_spearman
+            if lib in TWO_REPLICATE_LIBS:
+                for s in stats:
+                    rep = s["column"].split("_")[-1]   # rep1 / rep2
+                    summary[f"{lib}_pearson_{rep}"] = s["pearson"]
+                    summary[f"{lib}_spearman_{rep}"] = s["spearman"]
+                    summary[f"{lib}_n_{rep}"] = s["n"]
+                    rep_pearsons.append(s["pearson"])
+                    rep_spearmans.append(s["spearman"])
+            else:
+                s = stats[0]
+                summary[f"{lib}_pearson"] = s["pearson"]
+                summary[f"{lib}_spearman"] = s["spearman"]
+                summary[f"{lib}_n_scored"] = s["n"]
+                rep_pearsons.append(s["pearson"])
+                rep_spearmans.append(s["spearman"])
+
+        # Aggregate over every replicate column (rep1+rep2 for the GFP libs, the
+        # single column for TDH3). nan-aware so one missing replicate doesn't
+        # poison the headline; suppress the all-NaN-slice RuntimeWarning.
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            summary["pearson_mean"] = (
+                float(np.nanmean(rep_pearsons)) if rep_pearsons else float("nan")
+            )
+            summary["spearman_mean"] = (
+                float(np.nanmean(rep_spearmans)) if rep_spearmans else float("nan")
+            )
+        summary["n_rows_total"] = n_rows_total
         return summary
 
     def headline(self, results: ChenResults) -> str:
-        stats = self._per_column_stats(results)
-        ceiling = f"ceiling r ≤ {results.ceiling_pearson:.2f}"
-        if results.ceiling_spearman is not None:
-            ceiling += f", ρ ≤ {results.ceiling_spearman:.2f}"
-        if len(stats) == 1:
-            s = stats[0]
-            return (
-                f"{results.library_id}: Pearson r = {s['pearson']:.4f}  "
-                f"Spearman ρ = {s['spearman']:.4f}  "
-                f"(n = {s['n']}, {ceiling})"
-            )
+        s = self.summary_dict(results)
         parts = []
-        for s in stats:
-            rep = s["column"].split("_")[-1]
-            parts.append(f"{rep} r={s['pearson']:.3f} ρ={s['spearman']:.3f}")
+        for lib in results.libraries:
+            disp = _DISPLAY.get(lib, lib)
+            if lib in TWO_REPLICATE_LIBS:
+                parts.append(
+                    f"{disp} r={s[f'{lib}_pearson_rep1']:.3f}/{s[f'{lib}_pearson_rep2']:.3f}"
+                )
+            else:
+                parts.append(f"{disp} r={s[f'{lib}_pearson']:.3f}")
         return (
-            f"{results.library_id}: "
+            f"Chen synonymous: mean Pearson r = {s['pearson_mean']:.4f}  "
+            f"(mean Spearman ρ = {s['spearman_mean']:.4f})  ·  "
             + "  ".join(parts)
-            + f"  (n = {stats[0]['n']}, {ceiling})"
         )
 
     def headline_metric_labels(self) -> dict[str, str]:
-        if self.library in TWO_REPLICATE_LIBS:
-            return {
-                "pearson_rep1":  "Pearson r (rep1)",
-                "pearson_rep2":  "Pearson r (rep2)",
-                "spearman_rep1": "Spearman ρ (rep1)",
-                "spearman_rep2": "Spearman ρ (rep2)",
-            }
-        return {
-            "pearson":  "Pearson r",
-            "spearman": "Spearman ρ",
-        }
+        labels: dict[str, str] = {}
+        for lib in self._libs:
+            disp = _DISPLAY.get(lib.library, lib.library)
+            if lib.library in TWO_REPLICATE_LIBS:
+                labels[f"{lib.library}_pearson_rep1"] = f"{disp} r (rep1)"
+                labels[f"{lib.library}_pearson_rep2"] = f"{disp} r (rep2)"
+                labels[f"{lib.library}_spearman_rep1"] = f"{disp} ρ (rep1)"
+                labels[f"{lib.library}_spearman_rep2"] = f"{disp} ρ (rep2)"
+            else:
+                labels[f"{lib.library}_pearson"] = f"{disp} r"
+                labels[f"{lib.library}_spearman"] = f"{disp} ρ"
+        labels["pearson_mean"] = "mean Pearson r"
+        labels["spearman_mean"] = "mean Spearman ρ"
+        return labels
 
     def compare_plot_title(self) -> str:
-        return f"Chen synonymous MPRA — {self.library}"
+        return "Chen synonymous MPRA"

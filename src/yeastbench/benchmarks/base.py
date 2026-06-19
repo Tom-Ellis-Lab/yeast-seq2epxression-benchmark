@@ -95,18 +95,6 @@ class Benchmark(ABC, Generic[AdapterT, ResultT]):
         task name; override for a nicer display string."""
         return self.info.name
 
-    @property
-    def compare_task_name(self) -> str:
-        """Canonical task name used to group result directories when
-        the cross-model comparison runner discovers them. Multiple
-        ``TASKS`` registry entries that point at the same benchmark
-        class (e.g. ``brooks_scramble`` for Yorzoi-window and
-        ``brooks_scramble_shorkie`` for Shorkie-window) override this
-        property to return a single shared name so the runner pairs
-        their results when computing cross-model metrics. Defaults to
-        ``self.info.name``."""
-        return self.info.name
-
 
 # ── Default compare plot ─────────────────────────────────────────────────
 #

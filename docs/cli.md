@@ -43,9 +43,6 @@ uv run ybench run --config configs/default.yaml
 # Filter to a single model or task
 uv run ybench run --config configs/default.yaml --model shorkie
 uv run ybench run --config configs/default.yaml --task  caudal_eqtl
-
-# Regenerate plots for an existing run without re-scoring
-uv run ybench replot results/default/shorkie__caudal_eqtl
 ```
 
 `run` flags:

@@ -45,24 +45,23 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
   `summary_dict` / `headline`)
 - [x] Registry (`SHORKIE_ADAPTERS` / `YORZOI_ADAPTERS` keyed by protocol;
   tasks in `TASKS`)
-- [x] YAML run-spec CLI (`ybench run|compare|replot|list` + `ybench data`
-  sub-app; `configs/default.yaml`)
+- [x] YAML run-spec CLI (`ybench run|list` + `ybench data` sub-app;
+  `configs/default.yaml`)
 - [x] Run UX (PR #23): hardware banner (`describe_device`), `--gpu` / `--device`
   selection, per-pair ETA (`hardware.py`, `cli.py`, `tests/test_run_progress.py`)
 - [x] 282-test pytest suite
-- [x] Cross-model comparison runner `ybench compare` (`compare.py`): per-task
+- [x] Cross-model comparison runner (`compare.py`): per-task
   `compare/per_task/<task>/` plots via each benchmark's `compare_plot` hook,
   plus cross-task `summary.csv` / `summary.md`; auto-runs after every
-  `ybench run`
-- [ ] CLI simplification: remove the `compare` and `replot` commands. `ybench run`
-  alone produces per-model results, plots, and the cross-model comparison, reusing
-  persisted scores so a re-run regenerates outputs without re-scoring (see
-  Reproducibility).
-- [ ] Fix the auto-comparison scope: it currently walks the whole `out_dir` and
-  compares models *not* named in the run (ignoring `--model` / `--task`), silently
-  pulling in stale on-disk results — confusing and error-prone. A run should
-  compare exactly the (model, task) pairs it was given.
-- [x] Unify window-split tasks: one logical benchmark = one registry task. The
+  `ybench run` (no standalone command)
+- [x] CLI simplification: removed the `compare` and `replot` commands —
+  `ybench run` alone produces per-model results, plots, and the cross-model
+  comparison. (Reusing persisted scores so a re-run regenerates outputs without
+  re-scoring is deferred to the result-caching follow-up; see Reproducibility.)
+- [x] Fix the auto-comparison scope: `compare()` is restricted to the config's
+  `(model, task)` pairs, so stale on-disk results from other runs are ignored
+  (was: walked the whole `out_dir` and pulled in models not named in the config).
+- [x] Unify split tasks: one logical benchmark = one registry task. The
   benchmark re-cuts each construct to the adapter's receptive field at run time
   from a single window-agnostic artifact; `<task>_shorkie` twins and the
   `compare_task_name` overrides are gone.
@@ -71,8 +70,11 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
   - [x] Brooks: `brooks_scramble` only; window-agnostic `brooks_index.tsv` +
     `brooks_constructs.fasta` + `brooks_cov.npz`, `window_slice` + membership/
     dedup replay at eval time (bit-identical 698/1055; `benchmarks/brooks.py`)
-  - Note: `compare_task_name` / `_group_by_compare_task` in `compare.py` are now
-    dead (no task overrides them) — delete in the issue-#2 comparison PR
+  - [x] Chen: `chen_synonymous` only (library-split, not window) — one task
+    scores all three libraries, results stratified per library + aggregate
+    (`benchmarks/chen.py`)
+  - [x] `compare_task_name` / `_group_by_compare_task` deleted; `compare.py`
+    indexes directly on the registry task name
 
 ### eQTL
 

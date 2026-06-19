@@ -1,22 +1,23 @@
 """Cross-model comparison runner.
 
-Walks ``config.out_dir`` for ``<model>__<task>/summary.json`` files,
-groups them by task, and for each task with **≥ 2 models** produces a
-per-task comparison plot + a per-task summary directory under
-``config.out_dir/compare/per_task/<task>/``. Then aggregates the
-per-task summaries into a cross-task `summary.csv` (long format) and
-`summary.md` (wide tables).
+Scoped to the run config: for every ``(model, task)`` pair the config
+declares, walks ``config.out_dir/<model>__<task>/summary.json``, and for
+each task with **≥ 2 models** produces a per-task comparison plot under
+``config.out_dir/compare/per_task/<task>/``. Then aggregates into a
+cross-task `summary.csv` (long format) and `summary.md` (wide tables).
+
+Discovery is restricted to the config's pairs, so stale results from
+earlier runs of other models/tasks left on disk are ignored — a run
+compares exactly the models the config names.
 
 Each benchmark's plot shape is controlled by its `compare_plot` method
 (see `yeastbench.benchmarks.base.Benchmark.compare_plot`). The default
-implementation is a grouped bar chart of every numeric scalar in the
-per-model summary; benchmarks like Brooks override it for shared-cohort
-intersection + custom plots.
+implementation is a grouped bar chart of the benchmark's headline metrics;
+benchmarks like Brooks override it for shared-cohort intersection + custom
+plots.
 
-Used by:
-- `ybench compare --config ...` — standalone invocation.
-- `ybench run` — auto-trigger at end of every run; silent no-op if no
-  task has ≥ 2 models.
+Used by `ybench run` — auto-triggered at the end of every run; a silent
+no-op when no task has ≥ 2 models with results.
 """
 from __future__ import annotations
 
@@ -26,15 +27,9 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-from typing import Any, Mapping
 
 from yeastbench.config import Config
 from yeastbench.registry import TASKS
-
-if TYPE_CHECKING:
-    pass
 
 log = logging.getLogger(__name__)
 
@@ -63,14 +58,19 @@ class CompareSummary:
 
 def _discover_results(
     out_dir: Path,
+    restrict_to_pairs: set[tuple[str, str]] | None = None,
 ) -> dict[str, dict[str, Path]]:
     """Walk ``out_dir/<model>__<task>/`` and group by registry task name.
 
     Returns ``{task_name: {model_name: result_dir}}`` where ``task_name``
-    is the *registry* name (the directory's ``<task>`` suffix). The
-    caller is responsible for any cross-task aliasing (e.g. via
-    ``Benchmark.compare_task_name``). Skips directories whose name
-    starts with ``compare`` to avoid eating our own output."""
+    is the directory's ``<task>`` suffix. Skips directories whose name
+    starts with ``compare`` to avoid eating our own output.
+
+    When ``restrict_to_pairs`` is given, only ``(model, task)`` result
+    directories in that set are included; ``None`` (the default) includes
+    every result directory found. ``ybench run`` passes the config's pairs
+    so the auto-comparison covers exactly those — never stale peer results
+    left on disk by an earlier run of a different config."""
     by_task: dict[str, dict[str, Path]] = {}
     if not out_dir.exists():
         return by_task
@@ -80,43 +80,15 @@ def _discover_results(
         m = _DIR_RE.match(entry.name)
         if not m:
             continue
+        if (
+            restrict_to_pairs is not None
+            and (m["model"], m["task"]) not in restrict_to_pairs
+        ):
+            continue
         if not (entry / "summary.json").exists():
             continue
         by_task.setdefault(m["task"], {})[m["model"]] = entry
     return by_task
-
-
-def _group_by_compare_task(
-    by_task: dict[str, dict[str, Path]],
-    tasks_config: Mapping[str, Mapping[str, Any]],
-) -> dict[str, dict[str, dict[str, Path]]]:
-    """Re-group by ``Benchmark.compare_task_name`` so registry entries
-    that point at the same logical benchmark (e.g. ``brooks_scramble``
-    + ``brooks_scramble_shorkie``) merge into one comparison group.
-
-    Returns ``{group_name: {registry_task_name: {model_name: dir}}}``.
-    The inner registry-task-name mapping is preserved so the runner
-    can pick any one of them to construct a benchmark instance and
-    can route plot output by the group name (not per registry key).
-
-    Tasks the registry doesn't know about (older runs, etc.) fall
-    through to a group named by the registry task name itself."""
-    groups: dict[str, dict[str, dict[str, Path]]] = {}
-    for task_name, model_dirs in by_task.items():
-        group_name = task_name
-        if task_name in TASKS:
-            task_cfg = dict(tasks_config.get(task_name, {}))
-            try:
-                bench = TASKS[task_name](**task_cfg)
-                group_name = bench.compare_task_name
-            except Exception as exc:  # noqa: BLE001
-                log.debug(
-                    "compare: couldn't instantiate '%s' to read "
-                    "compare_task_name (%s) — grouping under registry "
-                    "name instead", task_name, exc,
-                )
-        groups.setdefault(group_name, {})[task_name] = model_dirs
-    return groups
 
 
 def _flat_scalar_metrics(summary: dict) -> dict[str, float]:
@@ -205,12 +177,12 @@ def _build_md(
 
 
 def compare(config: Config) -> CompareSummary:
-    """Run the cross-model comparison for *config*. Always safe to call
-    — silent no-op when no compare-task group has ≥ 2 models with
-    results on disk."""
+    """Run the cross-model comparison for *config*. Always safe to call —
+    silent no-op when no task in the config has ≥ 2 models with results on
+    disk. Discovery is scoped to the config's ``(model, task)`` pairs."""
     out_dir = Path(config.out_dir)
-    by_task = _discover_results(out_dir)
-    groups = _group_by_compare_task(by_task, config.tasks_config)
+    pairs = {(r.model, t) for r in config.runs for t in r.tasks}
+    by_task = _discover_results(out_dir, restrict_to_pairs=pairs)
 
     compare_root = out_dir / "compare"
     per_task_root = compare_root / "per_task"
@@ -218,75 +190,50 @@ def compare(config: Config) -> CompareSummary:
     tasks_compared: list[str] = []
     tasks_skipped: list[str] = []
     per_task_plots: dict[str, Path] = {}
-    # Flatten the group's per-registry-task model_dirs into one
-    # {model: dir} dict per group — model names should be unique within
-    # a comparison group (one model = one wrapper instance), but a
-    # group may span multiple registry task entries.
-    by_group_flat: dict[str, dict[str, Path]] = {}
-    for group_name in sorted(groups):
-        flat: dict[str, Path] = {}
-        for reg_task_name, model_dirs in groups[group_name].items():
-            for model, mdir in model_dirs.items():
-                if model in flat:
-                    log.warning(
-                        "compare: group '%s' has model '%s' appearing in "
-                        "multiple registry tasks (%s + %s); keeping the "
-                        "first.", group_name, model, flat[model], mdir,
-                    )
-                    continue
-                flat[model] = mdir
-        by_group_flat[group_name] = flat
 
-    for group_name in sorted(by_group_flat):
-        model_dirs = by_group_flat[group_name]
+    for task_name in sorted(by_task):
+        model_dirs = by_task[task_name]
         if len(model_dirs) < 2:
-            tasks_skipped.append(group_name)
+            tasks_skipped.append(task_name)
             continue
-        # Pick the first registry task name in the group for benchmark
-        # instantiation; compare_plot lives on the class so any one of
-        # them is interchangeable.
-        reg_task_name = sorted(groups[group_name].keys())[0]
         plot_path: Path | None
-        if reg_task_name not in TASKS:
+        if task_name not in TASKS:
             from yeastbench.benchmarks.base import _default_compare_plot
             log.info(
                 "compare: unknown task '%s' in results — using default plot",
-                reg_task_name,
+                task_name,
             )
             plot_path = _default_compare_plot(
-                model_dirs, per_task_root / group_name,
+                model_dirs, per_task_root / task_name,
             )
         else:
-            task_cfg = dict(config.tasks_config.get(reg_task_name, {}))
+            task_cfg = dict(config.tasks_config.get(task_name, {}))
             try:
-                bench = TASKS[reg_task_name](**task_cfg)
+                bench = TASKS[task_name](**task_cfg)
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "compare: failed to instantiate task '%s' (%s) — "
                     "falling back to default plot",
-                    reg_task_name, exc,
+                    task_name, exc,
                 )
                 from yeastbench.benchmarks.base import _default_compare_plot
                 plot_path = _default_compare_plot(
-                    model_dirs, per_task_root / group_name,
+                    model_dirs, per_task_root / task_name,
                 )
             else:
                 plot_path = bench.compare_plot(
-                    model_dirs, per_task_root / group_name,
+                    model_dirs, per_task_root / task_name,
                 )
         if plot_path is not None:
-            per_task_plots[group_name] = plot_path
-        tasks_compared.append(group_name)
+            per_task_plots[task_name] = plot_path
+        tasks_compared.append(task_name)
 
-    # Aggregate CSV / MD use the *group* view (one row per (group, model))
-    # so callers get one table even when Brooks ships under two registry
-    # keys. Pass `by_group_flat` instead of `by_task`.
     summary_csv: Path | None = None
     summary_md: Path | None = None
     if tasks_compared:
         compare_root.mkdir(parents=True, exist_ok=True)
-        summary_csv = _build_csv(by_group_flat, compare_root / "summary.csv")
-        summary_md = _build_md(by_group_flat, compare_root / "summary.md")
+        summary_csv = _build_csv(by_task, compare_root / "summary.csv")
+        summary_md = _build_md(by_task, compare_root / "summary.md")
 
     return CompareSummary(
         out_dir=compare_root,

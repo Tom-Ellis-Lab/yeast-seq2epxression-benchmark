@@ -8,6 +8,7 @@
 
 - [Benchmark Tasks](#benchmark-tasks)
 - [Models](#models)
+- [Results](#results)
 - [Quickstart](#quickstart)
 - [Architecture](#architecture)
 - [Roadmap](#roadmap)
@@ -37,6 +38,25 @@ Please find a more comprehensive overview in [docs/benchmarks/](docs/benchmarks)
 | Shorkie | Language model based S2F model | [Predicting dynamic expression patterns in budding yeast with a fungal DNA language model](https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1) | done |
 | Yorzoi | Borzoi-based S2F model | [Yorzoi: Predicting RNA-seq coverage from DNA sequence in yeast](https://www.biorxiv.org/content/10.1101/2025.09.20.677345v1) | done |
 | ExoShorkie | Shorkie finetuned on exo. genomes | [ExoShorkie: Predicting RNA-seq coverage of exogenous genomes in yeast by transfer learning](https://www.biorxiv.org/content/10.64898/2026.01.25.701486v1) | in progress |
+
+## Results
+
+Winner on each benchmark's primary metric (full per-metric tables in
+[docs/results.md](docs/results.md)). These are from the latest local run; a full
+rerun is pending and will refresh the numbers.
+
+| Benchmark | Winner | Headline (winner vs. runner-up) |
+| --- | --- | --- |
+| [Caudal eQTL](docs/benchmarks/caudal_eqtl.md) | **Shorkie** | \|score\| AUROC 0.567 vs 0.530 |
+| [Kita eQTL](docs/benchmarks/kita_eqtl.md) | _pending_ | only Yorzoi has run so far |
+| [Rafi / deBoer MPRA (promoter)](docs/benchmarks/rafi_mpra_promoter.md) | **Shorkie** | Pearson r 0.76 vs 0.61 (DREAM-RNN baseline pending) |
+| [Shalem MPRA (terminator)](docs/benchmarks/shalem_mpra_terminator.md) | **Yorzoi** | Pearson r 0.71 vs 0.64 |
+| [Chen synonymous MPRA](docs/benchmarks/chen_synonymous.md) | **Mixed** | Shorkie on GFP, CAI on TDH3 |
+| [Wu RFP insertions](docs/benchmarks/wu_rfpins.md) | **Neither** | both ≈ 0 — position effect not captured |
+| [Hong IGR insertions](docs/benchmarks/hong_igr.md) | **Neither** | both ≈ 0 |
+| [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | **Yorzoi** | shape r 0.83 vs 0.42; LFC dir-acc 0.63 vs 0.52 |
+| [Cuperus 5′-UTR](docs/benchmarks/cuperus_mpra_5utr.md) | **Shorkie** | random Spearman ρ 0.25 vs 0.12 |
+| [Meneu foreign DNA](docs/benchmarks/meneu_foreign_dna.md) | **Yorzoi** | shape r 0.38 vs 0.26 (_M. mycoides_) |
 
 ## Quickstart
 

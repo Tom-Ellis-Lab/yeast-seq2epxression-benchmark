@@ -20,6 +20,7 @@ from yeastbench.adapters.protocols import (
     FivePrimeUtrReporterExpressionPredictor,
     IGRInsertionExpressionPredictor,
     LocalCodingVariantPredictor,
+    PromoterIntegrationExpressionPredictor,
     SequenceExpressionScorer,
     TerminatorMarginalizedExpressionPredictor,
     TiledCoverageTrackPredictor,
@@ -188,6 +189,26 @@ def _yorzoi_hong_adapter(device, fasta_path, **cfg):
     )
 
 
+def _shorkie_mytk_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.shorkie_mytk import ShorkieMytkPredictor
+
+    return ShorkieMytkPredictor.from_checkpoints(
+        fasta_path=fasta_path,
+        device=device,
+        **cfg,
+    )
+
+
+def _yorzoi_mytk_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.yorzoi_mytk import YorzoiMytkPredictor
+
+    return YorzoiMytkPredictor.from_pretrained(
+        fasta_path=fasta_path,
+        device=device,
+        **cfg,
+    )
+
+
 def _yorzoi_brooks_adapter(device, **cfg):
     from yeastbench.adapters.yorzoi_brooks import YorzoiBrooksPredictor
 
@@ -243,6 +264,7 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_shorkie_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_shorkie_hong_adapter, FASTA_ONLY),
+    PromoterIntegrationExpressionPredictor: (_shorkie_mytk_adapter, FASTA_ONLY),
     FivePrimeUtrReporterExpressionPredictor: (_shorkie_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_shorkie_brooks_adapter, ()),
     TiledCoverageTrackPredictor: (_shorkie_meneu_adapter, ()),
@@ -255,6 +277,7 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_yorzoi_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_yorzoi_hong_adapter, FASTA_ONLY),
+    PromoterIntegrationExpressionPredictor: (_yorzoi_mytk_adapter, FASTA_ONLY),
     FivePrimeUtrReporterExpressionPredictor: (_yorzoi_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_yorzoi_brooks_adapter, ()),
     TiledCoverageTrackPredictor: (_yorzoi_meneu_adapter, ()),

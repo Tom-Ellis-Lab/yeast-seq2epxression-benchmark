@@ -1,0 +1,48 @@
+# MYTK promoter × integration-site position-effect benchmark — Shorkie + Yorzoi.
+#
+# Predict mScarlet reporter expression (mean fluorescence, fold-over-background)
+# of a [promoter]-mScarlet-tTDH1 payload integrated at 11 genomic sites × 3
+# promoters. Primary metric: per-promoter Spearman across sites (the position
+# effect); secondary: pooled Spearman. See benchmarks/mytk_ints_promoter.md.
+#
+#   uv run ybench run --config configs/mytk.yaml
+#   uv run ybench run --config configs/mytk.yaml --model shorkie
+#
+# Note: the processed data artifact (mytk_ints_promoter.tsv + mytk_payloads.fasta)
+# is declared in the manifest but not yet in the checksum lock / on a mirror, so
+# until it is published, run with --no-data-check (the files are already local).
+# The adapter resolves the payload FASTA from its default location
+# (data/tasks/mytk_ints_promoter/mytk_payloads.fasta); pass `payloads_fasta` in
+# model_config to override.
+
+out_dir: results/mytk
+device: cuda
+
+tasks_config:
+  mytk_ints_promoter:
+    data_path: data/tasks/mytk_ints_promoter/mytk_ints_promoter.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+
+runs:
+  - model: shorkie
+    tasks: [mytk_ints_promoter]
+    model_config:
+      params_path: data/models/shorkie/params.json
+      checkpoint_paths:
+        - data/models/shorkie/checkpoints/f0.h5
+        - data/models/shorkie/checkpoints/f1.h5
+        - data/models/shorkie/checkpoints/f2.h5
+        - data/models/shorkie/checkpoints/f3.h5
+        - data/models/shorkie/checkpoints/f4.h5
+        - data/models/shorkie/checkpoints/f5.h5
+        - data/models/shorkie/checkpoints/f6.h5
+        - data/models/shorkie/checkpoints/f7.h5
+      batch_size: 16
+      use_rc: true
+
+  - model: yorzoi
+    tasks: [mytk_ints_promoter]
+    model_config:
+      hf_repo: tom-ellis-lab/yorzoi
+      batch_size: 32
+      use_rc: true

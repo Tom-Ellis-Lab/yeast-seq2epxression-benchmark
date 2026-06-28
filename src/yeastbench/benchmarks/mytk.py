@@ -8,7 +8,7 @@ integrated at a genomic point (native flanks intact) across 11 sites
 
 Source: a Multiplex MoClo (MYTK) toolkit for S. cerevisiae,
 ACS Synth. Biol. 2024 (doi:10.1021/acssynbio.3c00423). See
-``benchmarks/mytk_ints_promoter.md``.
+``docs/benchmarks/mytk_ints_promoter.md``.
 
 Two metrics:
 

@@ -9,7 +9,7 @@ so we always use the ``+``-strand track subset (tracks 0–80).
 The only difference from ``yorzoi_hong`` is that the payload varies per
 promoter (resolved from the 4-record payload FASTA) and the mScarlet
 readout span is located by substring rather than a fixed offset. See
-``benchmarks/mytk_ints_promoter.md``.
+``docs/benchmarks/mytk_ints_promoter.md``.
 """
 from __future__ import annotations
 

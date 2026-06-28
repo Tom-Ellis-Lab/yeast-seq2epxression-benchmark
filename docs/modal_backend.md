@@ -74,20 +74,19 @@ gpu_image = (
     modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu24.04", add_python="3.12")
     .entrypoint([])                      # clear the base image entrypoint
     .apt_install("git")
+    .run_commands("git config --global --add safe.directory /repo")  # for git_commit
     # force the cu13 torch build first so the wheel's ABI matches (PyPI default torch is cu12)
     .uv_pip_install("torch==2.11.*", index_url="https://download.pytorch.org/whl/cu130")
-    .uv_pip_install("uv")                # for the project install below
+    .uv_pip_install(FLASH_ATTN_WHEEL)    # prebuilt cu13/torch2.11/cp312 wheel
     # bake the repo so the build step can install the package and so .git is present
     .add_local_dir(".", "/repo", copy=True,
                    ignore=["data/**", "results/**", "**/__pycache__", ".venv/**"])
-    # install the project's [all] extra -> uv reads [tool.uv.sources] and resolves the pinned
-    # flash-attn wheel + yorzoi==0.2.1; transformers/CodonTransformer are codon_transformer's
-    # undeclared deps and must be added explicitly.
-    .run_commands(
-        "cd /repo && uv pip install --system '.[all]' transformers && "
-        f"uv pip install --system '{FLASH_ATTN_WHEEL}' "
-        "git+https://github.com/Adibvafa/CodonTransformer"
-    )
+    # install the [all]-equivalent extras + yorzoi explicitly (skipping the yorzoi
+    # extra's bare flash-attn, already satisfied by the wheel). codon_transformer
+    # is NOT installed: CodonTransformer pins pandas<3 vs the benchmark's pandas>=3,
+    # so they can't share one image — mirroring the local [all] env, where
+    # codon_transformer is likewise absent.
+    .uv_pip_install("/repo[shorkie,dream_rnn,data]", "yorzoi==0.2.1", "hf_transfer")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/repo/data/.hf"})
 )
 
@@ -388,11 +387,18 @@ Phased; each phase has a verifiable milestone. The walking skeleton is
    because a full run's tree is tens of MB and Modal doesn't guarantee large
    return values pass through — and the Volume path is durable against a client
    disconnect anyway.
-5. **codon_transformer deps in the image only, or declared in `pyproject.toml`?**
-   `transformers` and `CodonTransformer` are currently undeclared deps of that
-   adapter and the image adds them manually. This is a pre-existing gap the
-   Modal image papers over — do you also want to fix it upstream in the extras
-   so a local install of `codon_transformer` works too?
+5. **codon_transformer is unsupported on Modal (open: how to handle it).**
+   CodonTransformer pins `pandas<3` while the benchmark pins `pandas>=3.0.2`, so
+   they can't coexist in one image — the same reason it's absent from the local
+   `[all]` env. The backend therefore omits it from the image and `build_plan`
+   rejects it with guidance. Consequence: `ybench modal run -c configs/default.yaml`
+   (no filter) errors, since default.yaml includes it. Options: **(a)** keep the
+   fail-fast guard, run supported models via `--model` (parity-preserving, but no
+   one-shot full run); **(b)** auto-skip unsupported models and loop the rest as
+   separate `--model` runs in one container (one command, config_hash preserved,
+   more code); **(c)** ship a `configs/modal.yaml` = default minus codon (trivial,
+   new config_hash); **(d)** relax the project `pandas` pin so CodonTransformer
+   fits everywhere (global, reproducibility impact). Currently (a). Decide.
 6. **Also offer Docker/RunPod?** A `ComputeBackend` Protocol mirroring the data
    `Backend` Protocol would let additional compute backends slot in later.
    Worth the small upfront abstraction now, or YAGNI until a second backend is

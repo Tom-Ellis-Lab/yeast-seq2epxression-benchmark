@@ -82,16 +82,19 @@ gpu_image = (
     .uv_pip_install("torch==2.11.*", index_url=TORCH_CU130_INDEX)
     .uv_pip_install(_flash_attn_wheel())
     .add_local_dir(str(_REPO_ROOT), "/repo", copy=True, ignore=_IMAGE_IGNORE)
-    # Install the package + model deps WITHOUT the yorzoi extra's bare
-    # `flash-attn` requirement (already satisfied by the wheel above) and pull
-    # yorzoi explicitly. transformers + CodonTransformer are codon_transformer's
-    # currently-undeclared runtime deps; the image papers over that gap.
+    # Install the package + model deps. We install the `[all]`-equivalent extras
+    # (shorkie/dream_rnn/data) plus yorzoi explicitly, skipping the yorzoi extra's
+    # bare `flash-attn` requirement (already satisfied by the wheel above).
+    #
+    # NOTE: `codon_transformer` is deliberately NOT installed. CodonTransformer
+    # pins pandas<3 while the benchmark pins pandas>=3.0.2, so the two cannot
+    # coexist in one environment — the same reason `codon_transformer` is absent
+    # from the local `[all]` env. So this image mirrors local `[all]`, and
+    # `codon_transformer` is unsupported on the Modal backend (see build_plan).
     .uv_pip_install(
         "/repo[shorkie,dream_rnn,data]",
         "yorzoi==0.2.1",
         "hf_transfer",
-        "transformers",
-        "git+https://github.com/Adibvafa/CodonTransformer",
     )
     .env(HF_ENV)
 )

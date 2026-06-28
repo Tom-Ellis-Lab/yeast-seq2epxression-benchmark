@@ -11,6 +11,12 @@ from pathlib import Path
 
 from yeastbench.config import load_config
 
+# Models the Modal image can't host. CodonTransformer pins pandas<3 while the
+# benchmark pins pandas>=3, so they can't share one environment — which is also
+# why `codon_transformer` is absent from the local `[all]` env. Run it in its
+# own (pandas<3) environment, not on Modal.
+UNSUPPORTED_ON_MODAL = frozenset({"codon_transformer"})
+
 
 @dataclass(frozen=True)
 class RemotePlan:
@@ -41,6 +47,16 @@ def build_plan(
     if not pairs:
         raise ValueError(
             f"No runs match filters (model={model!r}, task={task!r}) in {path}"
+        )
+    bad = sorted({m for m, _ in pairs if m in UNSUPPORTED_ON_MODAL})
+    if bad:
+        raise ValueError(
+            f"Model(s) {bad} can't run on the Modal backend: CodonTransformer "
+            "requires pandas<3 but the benchmark requires pandas>=3, so they "
+            "can't share one image (the same reason it's not in the local `all` "
+            "env). Exclude it — e.g. `--model shorkie` (or `--model yorzoi` / "
+            "`cai` / `dream_rnn`), or point at a config without it — and run "
+            "codon_transformer in its own pandas<3 environment."
         )
     out_dir = str(cfg.out_dir)
     if Path(out_dir).parts[:1] != ("results",):

@@ -10,6 +10,7 @@ for the numbers we report.
 - [Progress, hardware, and GPU selection](#progress-hardware-and-gpu-selection)
 - [Output layout](#output-layout)
 - [Getting the data](#getting-the-data)
+- [Running without a local NVIDIA GPU (`ybench modal`)](#running-without-a-local-nvidia-gpu-ybench-modal)
 
 ## Install
 
@@ -151,3 +152,37 @@ Run `ybench data status` for an exact present-vs-total byte count, or
 > copy, and `ybench data publish --to hf|gcs` uploads the redistributable
 > artifacts to a mirror (dry-run unless `--yes`). Publishing to GCS needs a
 > billing project (`--billing-project` / `YBENCH_GCS_BILLING_PROJECT`).
+
+## Running without a local NVIDIA GPU (`ybench modal`)
+
+No local NVIDIA GPU? Run the benchmark on a [Modal](https://modal.com) GPU
+instead. The remote container runs the *unmodified* `ybench` CLI, so results
+match a local run — only the transport differs. Full design and cost notes in
+[modal_backend.md](modal_backend.md).
+
+One-time setup (the `modal` client installs anywhere; no local GPU needed):
+
+```bash
+uv sync --extra modal      # installs the modal client
+uv run modal setup         # browser login; writes ~/.modal.toml
+```
+
+Then seed the data once and run:
+
+```bash
+uv run ybench modal data get --config configs/default.yaml   # one-time CPU seed of the data volume
+uv run ybench modal run      --config configs/default.yaml   # full run on a GPU; results land in ./results/default
+```
+
+`run` takes the same `--model`/`--task` filters as `ybench run`, plus `--gpu`
+(default `A10`), `--out` (where to extract results, default `.`), and `--detach`.
+`ybench modal pull` re-downloads the results volume and `ybench modal status`
+lists what's on the data/results volumes. The default data path is public and
+free (HuggingFace mirror), so no extra secrets are required. A full run is
+~$1–4 of GPU time (≈1–2 GPU-hours on an A10), covered by Modal's free monthly
+credit.
+
+> Before the first real run, validate the GPU image once with the Phase 0 spike:
+> `uv run modal run scripts/modal/spike.py` — it confirms torch / flash-attn /
+> yorzoi import on a Modal A10. If that fails, see the fallback in
+> [modal_backend.md](modal_backend.md).

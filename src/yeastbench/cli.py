@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import time
@@ -27,6 +28,14 @@ from yeastbench.registry import MODELS, TASKS
 
 app = typer.Typer(add_completion=False, help="yeast-seq2expression benchmark runner")
 app.add_typer(data_app, name="data")
+
+# Optional Modal GPU backend — `ybench modal …` (run the benchmark without a
+# local NVIDIA GPU). Registered only when the `modal` extra is installed; `modal`
+# itself is imported lazily per-command, so this adds no startup cost elsewhere.
+if importlib.util.find_spec("modal") is not None:
+    from yeastbench.modal.cli import app as modal_app
+
+    app.add_typer(modal_app, name="modal")
 
 
 def _echo(msg: str) -> None:

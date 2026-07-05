@@ -86,9 +86,9 @@ gpu_image = (
     # wrong (e.g. hong's cassette → /data/tasks/... and 404). `include_source=False`
     # on the functions keeps this the only copy of the package on the path.
     .uv_pip_install("/repo[shorkie,dream_rnn,data,codon_transformer]", extra_options="-e")
-    .uv_pip_install("yorzoi==0.2.1", "hf_transfer")
+    .uv_pip_install("yorzoi==0.2.1")
     .uv_pip_install("codontransformer", extra_options="--no-deps")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/repo/data/.hf"})
+    .env({"HF_HOME": "/repo/data/.hf"})
 )
 
 # CPU image for the seed (torch-free): just the data backend.
@@ -97,7 +97,7 @@ cpu_image = (
     .apt_install("git")
     .add_local_dir(".", "/repo", copy=True, ignore=["data/**", "results/**"])
     .uv_pip_install("/repo[data]", extra_options="-e")   # editable, like local `uv sync`
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/repo/data/.hf"})
+    .env({"HF_HOME": "/repo/data/.hf"})
 )
 
 data_vol    = modal.Volume.from_name("ybench-data",    create_if_missing=True)

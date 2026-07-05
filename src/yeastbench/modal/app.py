@@ -34,7 +34,9 @@ app = modal.App(APP_NAME)
 data_vol = modal.Volume.from_name("ybench-data", create_if_missing=True)
 results_vol = modal.Volume.from_name("ybench-results", create_if_missing=True)
 VOLUMES = {"/repo/data": data_vol, "/repo/results": results_vol}
-HF_ENV = {"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/repo/data/.hf"}
+# HF cache lives inside the data volume; no HF_HUB_ENABLE_HF_TRANSFER — newer
+# huggingface_hub deprecated it (hf_transfer is unused) and warns on every run.
+HF_ENV = {"HF_HOME": "/repo/data/.hf"}
 
 # ── Images ──────────────────────────────────────────────────────────────────
 # Seed runs on a torch-free CPU container: just the data backend.
@@ -43,7 +45,6 @@ cpu_image = (
     .apt_install("git")
     .add_local_dir(str(_REPO_ROOT), "/repo", copy=True, ignore=_IMAGE_IGNORE)
     .uv_pip_install("/repo[data]", extra_options="-e")  # editable, mirrors local `uv sync`
-    .uv_pip_install("hf_transfer")
     .env(HF_ENV)
 )
 
@@ -74,7 +75,7 @@ gpu_image = (
     # pytorch-lightning, none of which the chen adapter uses — those caps are
     # conservative and it runs fine on numpy 2 / pandas 3 (verified).
     .uv_pip_install("/repo[shorkie,dream_rnn,data,codon_transformer]", extra_options="-e")
-    .uv_pip_install("yorzoi==0.2.1", "hf_transfer")
+    .uv_pip_install("yorzoi==0.2.1")
     .uv_pip_install("codontransformer", extra_options="--no-deps")
     .env(HF_ENV)
 )

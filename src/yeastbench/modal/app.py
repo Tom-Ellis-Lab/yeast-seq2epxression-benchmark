@@ -58,7 +58,7 @@ gpu_image = (
     # to record git_commit in run_metadata.json) despite root/dubious-ownership.
     .run_commands("git config --global --add safe.directory /repo")
     .add_local_dir(str(_REPO_ROOT), "/repo", copy=True, ignore=_IMAGE_IGNORE)
-    # Install the `[all]`-equivalent extras (shorkie/dream_rnn/data) plus yorzoi.
+    # Install the model extras + yorzoi + CodonTransformer.
     # EDITABLE (like the local `uv sync`), so the package lives at /repo/src and
     # `import yeastbench` resolves there: several adapters locate their frozen
     # default data files via `Path(__file__).resolve().parents[3]`, which only
@@ -68,13 +68,14 @@ gpu_image = (
     # keeps this editable install the only copy of the package on the container's
     # path (no auto-mounted /root/yeastbench to shadow it).
     #
-    # NOTE: `codon_transformer` is deliberately NOT installed. CodonTransformer
-    # pins pandas<3 while the benchmark pins pandas>=3.0.2, so the two cannot
-    # coexist in one environment — the same reason `codon_transformer` is absent
-    # from the local `[all]` env. So this image mirrors local `[all]`, and
-    # `codon_transformer` is unsupported on the Modal backend (see build_plan).
-    .uv_pip_install("/repo[shorkie,dream_rnn,data]", extra_options="-e")
+    # `codon_transformer` extra carries CodonTransformer's *light* deps
+    # (python_codon_tables/biopython/CAI); CodonTransformer itself is installed
+    # --no-deps because it pins numpy<2 / pandas<3 and drags in onnxruntime /
+    # pytorch-lightning, none of which the chen adapter uses — those caps are
+    # conservative and it runs fine on numpy 2 / pandas 3 (verified).
+    .uv_pip_install("/repo[shorkie,dream_rnn,data,codon_transformer]", extra_options="-e")
     .uv_pip_install("yorzoi==0.2.1", "hf_transfer")
+    .uv_pip_install("codontransformer", extra_options="--no-deps")
     .env(HF_ENV)
 )
 

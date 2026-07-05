@@ -75,18 +75,19 @@ gpu_image = (
     # bake the repo so the build step can install the package and so .git is present
     .add_local_dir(".", "/repo", copy=True,
                    ignore=["data/**", "results/**", "**/__pycache__", ".venv/**"])
-    # install the [all]-equivalent extras + yorzoi explicitly. codon_transformer
-    # is NOT installed: CodonTransformer pins pandas<3 vs the benchmark's pandas>=3,
-    # so they can't share one image — mirroring the local [all] env, where
-    # codon_transformer is likewise absent.
+    # install the model extras + the codon_transformer light deps, then yorzoi
+    # and CodonTransformer (the latter --no-deps: it pins numpy<2 / pandas<3 and
+    # drags in onnxruntime / pytorch-lightning that the chen adapter never uses;
+    # those caps are conservative and it runs fine on numpy 2 / pandas 3).
     #
     # EDITABLE (-e), like the local `uv sync`: several adapters locate their frozen
     # default data via `Path(__file__).resolve().parents[3]`, which only equals the
     # repo root in the src/ checkout layout. A non-editable install would make that
     # wrong (e.g. hong's cassette → /data/tasks/... and 404). `include_source=False`
     # on the functions keeps this the only copy of the package on the path.
-    .uv_pip_install("/repo[shorkie,dream_rnn,data]", extra_options="-e")
+    .uv_pip_install("/repo[shorkie,dream_rnn,data,codon_transformer]", extra_options="-e")
     .uv_pip_install("yorzoi==0.2.1", "hf_transfer")
+    .uv_pip_install("codontransformer", extra_options="--no-deps")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/repo/data/.hf"})
 )
 
@@ -394,18 +395,16 @@ Phased; each phase has a verifiable milestone. The walking skeleton is
    because a full run's tree is tens of MB and Modal doesn't guarantee large
    return values pass through — and the Volume path is durable against a client
    disconnect anyway.
-5. **codon_transformer is unsupported on Modal (open: how to handle it).**
-   CodonTransformer pins `pandas<3` while the benchmark pins `pandas>=3.0.2`, so
-   they can't coexist in one image — the same reason it's absent from the local
-   `[all]` env. The backend therefore omits it from the image and `build_plan`
-   rejects it with guidance. Consequence: `ybench modal run -c configs/default.yaml`
-   (no filter) errors, since default.yaml includes it. Options: **(a)** keep the
-   fail-fast guard, run supported models via `--model` (parity-preserving, but no
-   one-shot full run); **(b)** auto-skip unsupported models and loop the rest as
-   separate `--model` runs in one container (one command, config_hash preserved,
-   more code); **(c)** ship a `configs/modal.yaml` = default minus codon (trivial,
-   new config_hash); **(d)** relax the project `pandas` pin so CodonTransformer
-   fits everywhere (global, reproducibility impact). Currently (a). Decide.
+5. **codon_transformer — resolved, now supported.** CodonTransformer pins
+   `numpy<2` / `pandas<3`, but those caps are conservative: the chen adapter only
+   uses two light helpers (`TOKEN2INDEX`, `get_merged_seq`) + the HF model, which
+   run fine on numpy 2 / pandas 3 (verified — chen mean Pearson r ≈ 0.37). So the
+   image installs CodonTransformer `--no-deps` (skipping its numpy/pandas caps and
+   its unused onnxruntime / pytorch-lightning), with its light deps
+   (python_codon_tables / biopython / CAI) from a `codon_transformer` extra. The
+   `build_plan` guard is gone and `ybench modal run -c configs/default.yaml` runs
+   the full config. Local install: `uv sync --extra codon_transformer` then
+   `uv pip install --no-deps codontransformer`.
 6. **Also offer Docker/RunPod?** A `ComputeBackend` Protocol mirroring the data
    `Backend` Protocol would let additional compute backends slot in later.
    Worth the small upfront abstraction now, or YAGNI until a second backend is

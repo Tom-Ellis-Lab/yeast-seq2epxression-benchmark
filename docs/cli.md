@@ -27,6 +27,12 @@ uv sync --extra yorzoi    # yorzoi, for the Yorzoi adapter
 uv sync --extra dream_rnn # PyTorch, for the DREAM-RNN supervised baseline
 uv sync --extra data      # huggingface_hub, for the `ybench data` backend
 uv sync --extra all       # all models + data backend (everything default.yaml needs)
+
+# CodonTransformer baseline needs one extra step: its package pins numpy<2 /
+# pandas<3 (conservative — it runs fine on this project's numpy 2 / pandas 3), so
+# install it --no-deps after syncing its light deps:
+uv sync --extra codon_transformer
+uv pip install --no-deps codontransformer
 ```
 
 ## Running benchmarks

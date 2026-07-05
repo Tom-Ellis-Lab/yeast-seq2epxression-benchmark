@@ -48,6 +48,21 @@ dev = [
 modal = [
     "modal>=1.5.1",
 ]
+# CodonTransformer baseline for chen_synonymous. This extra carries only the
+# *light* deps the adapter actually imports (it uses two helpers — TOKEN2INDEX,
+# get_merged_seq — plus the HF model). CodonTransformer itself pins numpy<2 /
+# pandas<3 and drags in onnxruntime / pytorch-lightning / jupyter, none of which
+# the adapter touches; those caps are conservative and it runs fine on numpy 2 /
+# pandas 3 (verified). So install the package separately with --no-deps:
+#     uv sync --extra codon_transformer
+#     uv pip install --no-deps codontransformer
+codon_transformer = [
+    "python_codon_tables",
+    "biopython",
+    "CAI-pypi",
+    "transformers<5",  # CodonTransformer + yorzoi both need <5 (BigBird lives there)
+    "torch>=2.11.0",
+]
 
 [build-system]
 requires = ["hatchling"]

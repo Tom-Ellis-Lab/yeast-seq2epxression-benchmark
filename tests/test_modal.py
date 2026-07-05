@@ -21,13 +21,12 @@ DEFAULT_CFG = REPO / "configs" / "default.yaml"
 
 
 def test_build_plan_default_config():
-    # filtered to a supported model (unfiltered default.yaml includes the
-    # unsupported codon_transformer — see test_build_plan_rejects_codon_transformer)
-    plan = build_plan(DEFAULT_CFG, model="shorkie")
+    plan = build_plan(DEFAULT_CFG)
     assert plan.config_name == "default.yaml"
     assert plan.config_bytes == DEFAULT_CFG.read_bytes()  # exact bytes → hash parity
     assert plan.out_dir == "results/default"
     assert plan.pairs  # non-empty
+    assert ("codon_transformer", "chen_synonymous") in plan.pairs  # now supported
     assert all("__" in d for d in plan.pair_dirs())
 
 
@@ -42,12 +41,10 @@ def test_build_plan_no_match_raises():
         build_plan(DEFAULT_CFG, model="does-not-exist")
 
 
-def test_build_plan_rejects_codon_transformer():
-    # default.yaml includes codon_transformer on chen_synonymous → must fail fast
-    with pytest.raises(ValueError, match="can't run on the Modal backend"):
-        build_plan(DEFAULT_CFG, model="codon_transformer")
-    # and the supported models still plan fine
-    assert build_plan(DEFAULT_CFG, model="shorkie").pairs
+def test_build_plan_allows_codon_transformer():
+    # codon_transformer is supported on Modal (installed --no-deps in the image)
+    plan = build_plan(DEFAULT_CFG, model="codon_transformer")
+    assert plan.pairs == [("codon_transformer", "chen_synonymous")]
 
 
 def test_build_plan_rejects_out_dir_outside_results(tmp_path):

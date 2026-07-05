@@ -111,22 +111,30 @@ def _write_config(config_bytes, config_name):  # under the original name → con
     return rel
 
 @app.function(image=cpu_image, volumes=VOLUMES, timeout=2 * 3600)
-def seed(config_bytes: bytes, config_name: str):
+def seed(config_bytes, config_name, model=None, task=None):
     rel = _write_config(config_bytes, config_name)
-    subprocess.run(["ybench", "data", "get", "--config", rel], cwd="/repo", check=True)
+    cmd = ["ybench", "data", "get", "--config", rel]
+    if model: cmd += ["--model", model]     # seed only what a filtered run needs
+    if task:  cmd += ["--task", task]
+    subprocess.run(cmd, cwd="/repo", check=True)   # check=True → raises, never silent
     data_vol.commit()   # persists locked data/ AND the /repo/data/.hf cache
 
-@app.function(image=gpu_image, gpu="A10", volumes=VOLUMES, timeout=4 * 3600)
-def run_benchmark(config_bytes, config_name, out_dir="results/default", device="cuda") -> list[str]:
-    data_vol.reload()   # pick up the seed's committed data + HF cache
+@app.function(image=gpu_image, gpu="A10", volumes=VOLUMES, timeout=8 * 3600)
+def run_benchmark(config_bytes, config_name, out_dir="results/default",
+                  model=None, task=None) -> list[str]:
+    data_vol.reload()   # REQUIRED: see what the (separate) seed container committed
     rel = _write_config(config_bytes, config_name)
-    subprocess.run(["ybench", "data", "get", "--config", rel],
-                   cwd="/repo", check=True)                            # no-op if seeded
-    subprocess.run(["ybench", "run", "--config", rel, "--device", device],
-                   cwd="/repo", check=True)                            # includes auto-compare
+    # torch device is always "cuda" (a Modal GPU container = one GPU); the GPU
+    # *type* is the function's gpu=. This single `ybench run` loops over EVERY
+    # (model,task) pair in the (filtered) config, incl. the auto-compare.
+    cmd = ["ybench", "run", "--config", rel, "--device", "cuda"]
+    if model: cmd += ["--model", model]
+    if task:  cmd += ["--task", task]
+    subprocess.run(cmd, cwd="/repo", check=True)
     results_vol.commit()
     produced = pathlib.Path("/repo", out_dir)
-    return sorted(p.name for p in produced.iterdir() if p.is_dir())    # small manifest, not the tree
+    # real pair dirs are "<model>__<task>"; skip the auto-compare/ dir
+    return sorted(p.name for p in produced.iterdir() if p.is_dir() and "__" in p.name)
 ```
 
 ### Local CLI surface (`src/yeastbench/modal/cli.py`)
@@ -149,9 +157,9 @@ import modal, subprocess
 from yeastbench.modal.app import app, run_benchmark, seed
 
 with modal.enable_output(), app.run():            # streams remote stdout to the terminal
-    seed.remote(cfg, name)                         # CPU seed (idempotent)
-    fn = run_benchmark.with_options(gpu=gpu)       # runtime GPU-tier override
-    produced = fn.remote(cfg, name, out_dir=out_dir, device="cuda")
+    seed.remote(cfg, name, model=model, task=task)  # CPU seed (idempotent)
+    fn = run_benchmark.with_options(gpu=gpu)        # pick the GPU type at call time
+    produced = fn.remote(cfg, name, out_dir=out_dir, model=model, task=task)
 subprocess.run(["modal", "volume", "get", "--force", "ybench-results", "/", out])  # download tree
 ```
 

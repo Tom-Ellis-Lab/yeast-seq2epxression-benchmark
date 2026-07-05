@@ -70,10 +70,9 @@ def run(
     config: Annotated[Path, _CONFIG_OPT],
     model: Annotated[Optional[str], _MODEL_OPT] = None,
     task: Annotated[Optional[str], _TASK_OPT] = None,
-    gpu: Annotated[str, typer.Option("--gpu", help="Modal GPU tier")] = "A10",
-    device: Annotated[
-        str, typer.Option("--device", help="torch device inside the container")
-    ] = "cuda",
+    gpu: Annotated[
+        str, typer.Option("--gpu", help="Modal GPU type, e.g. A10, L4, T4, A100, H100")
+    ] = "A10",
     out: Annotated[
         Path, typer.Option("--out", help="local dir to download results into")
     ] = Path("results"),
@@ -81,7 +80,12 @@ def run(
         bool, typer.Option("--detach", help="keep running if the client disconnects")
     ] = False,
 ) -> None:
-    """Seed (CPU), then run the benchmark on a Modal GPU and pull results back."""
+    """Seed (CPU), then run the benchmark on a Modal GPU and pull results back.
+
+    The GPU *type* is chosen with ``--gpu`` (A10/L4/T4/…). The container's torch
+    device is always ``cuda`` (its single GPU), independent of the config's
+    ``device:`` field — so a config written for a local multi-GPU box still runs.
+    """
     import modal
 
     from yeastbench.modal.app import app as modal_app, run_benchmark, seed
@@ -89,7 +93,7 @@ def run(
 
     plan = build_plan(config, model, task)
     _echo(f"config:   {config}  [hash {plan.source_hash}]")
-    _echo(f"gpu:      {gpu}   device: {device}")
+    _echo(f"gpu:      {gpu}")
     _echo(f"runs:     {len(plan.pairs)} pair(s) → {', '.join(plan.pair_dirs())}")
 
     with modal.enable_output(), modal_app.run(detach=detach):
@@ -101,7 +105,6 @@ def run(
             out_dir=plan.out_dir,
             model=model,
             task=task,
-            device=device,
         )
 
     _echo(f"\nremote run produced {len(produced)} pair dir(s): {', '.join(produced)}")

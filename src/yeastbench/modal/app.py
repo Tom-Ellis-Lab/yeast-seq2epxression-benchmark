@@ -107,23 +107,26 @@ def seed(
     data_vol.commit()  # persists locked data/ AND the /repo/data/.hf cache
 
 
-@app.function(image=gpu_image, gpu=GPU_DEFAULT, volumes=VOLUMES, timeout=4 * 3600)
+@app.function(image=gpu_image, gpu=GPU_DEFAULT, volumes=VOLUMES, timeout=8 * 3600)
 def run_benchmark(
     config_bytes: bytes,
     config_name: str,
     out_dir: str = "results/default",
     model: str | None = None,
     task: str | None = None,
-    device: str = "cuda",
 ) -> list[str]:
-    """Run the unmodified ``ybench`` CLI on a GPU against the seeded volume,
+    """Run the unmodified ``ybench`` CLI on the GPU against the seeded volume,
     commit the results to the results volume, and return the list of pair dirs
     produced (a small manifest — the bulk results are downloaded by the caller
     via ``modal volume get``, which has no return-value size limit). ``model``/
     ``task`` are passed through so a filtered run runs only the selected pairs."""
     data_vol.reload()  # see what seed committed
     rel = _write_config(config_bytes, config_name)
-    cmd = ["ybench", "run", "--config", rel, "--device", device]
+    # Force torch device "cuda": a Modal GPU container exposes exactly one GPU as
+    # cuda:0. We intentionally override the config's `device:` field (meant for
+    # local multi-GPU boxes, e.g. "cuda:1", which would crash here). The Modal GPU
+    # *type* (A10/L4/…) is a separate choice, set via the function's `gpu=`.
+    cmd = ["ybench", "run", "--config", rel, "--device", "cuda"]
     if model:
         cmd += ["--model", model]
     if task:

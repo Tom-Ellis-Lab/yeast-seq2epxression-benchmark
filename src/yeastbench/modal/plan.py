@@ -6,6 +6,7 @@ out of ``app.py`` (which defines the remote App, images and functions).
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,8 +25,14 @@ class RemotePlan:
     config_name: str  # basename, e.g. "default.yaml"
     config_bytes: bytes  # exact bytes → preserves config_hash remotely
     out_dir: str  # raw out_dir from the config, e.g. "results/default"
-    source_hash: str
     pairs: list[tuple[str, str]]  # (model, task), honoring --model/--task filters
+
+    @property
+    def source_hash(self) -> str:
+        """The 12-char config hash `ybench run` prints — derived from the bytes
+        (same algorithm as config.load_config), so config_bytes stays the single
+        source of truth rather than storing the hash alongside it."""
+        return hashlib.sha256(self.config_bytes).hexdigest()[:12]
 
     def pair_dirs(self) -> list[str]:
         return [f"{m}__{t}" for m, t in self.pairs]
@@ -70,6 +77,5 @@ def build_plan(
         config_name=path.name,
         config_bytes=path.read_bytes(),
         out_dir=out_dir,
-        source_hash=cfg.source_hash,
         pairs=pairs,
     )

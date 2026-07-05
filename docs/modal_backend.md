@@ -62,27 +62,20 @@ API-correct against the SDK research; illustrative, not final.
 ```python
 import modal
 
-FLASH_ATTN_WHEEL = (
-    "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/"
-    "flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
-)  # the exact wheel already pinned in pyproject [tool.uv.sources]
-
 app = modal.App("ybench")
 
-# GPU image: CUDA 13 base (so the cu13 flash-attn wheel can load) + cp312 + cu130 torch.
+# GPU image: a plain slim image + the model extras. yorzoi 0.2.1 dropped its
+# flash-attn requirement, so torch arrives as an ordinary dependency of the
+# extras (a standard CUDA-bundled wheel that runs on Modal's GPUs) — no CUDA base
+# image, cu130 pin, or prebuilt flash-attn wheel needed.
 gpu_image = (
-    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu24.04", add_python="3.12")
-    .entrypoint([])                      # clear the base image entrypoint
+    modal.Image.debian_slim(python_version="3.12")
     .apt_install("git")
     .run_commands("git config --global --add safe.directory /repo")  # for git_commit
-    # force the cu13 torch build first so the wheel's ABI matches (PyPI default torch is cu12)
-    .uv_pip_install("torch==2.11.*", index_url="https://download.pytorch.org/whl/cu130")
-    .uv_pip_install(FLASH_ATTN_WHEEL)    # prebuilt cu13/torch2.11/cp312 wheel
     # bake the repo so the build step can install the package and so .git is present
     .add_local_dir(".", "/repo", copy=True,
                    ignore=["data/**", "results/**", "**/__pycache__", ".venv/**"])
-    # install the [all]-equivalent extras + yorzoi explicitly (skipping the yorzoi
-    # extra's bare flash-attn, already satisfied by the wheel). codon_transformer
+    # install the [all]-equivalent extras + yorzoi explicitly. codon_transformer
     # is NOT installed: CodonTransformer pins pandas<3 vs the benchmark's pandas>=3,
     # so they can't share one image — mirroring the local [all] env, where
     # codon_transformer is likewise absent.
@@ -217,8 +210,7 @@ rate limits on the cold seed; it is not required.
 ## Faithfulness
 
 The container runs the literal `ybench run -c <cfg> --device cuda` against
-checksum-verified artifacts, on the exact pinned flash-attn `cu13/torch2.11/cp312`
-ABI. The eval loop, `save_results()`, `plot()`, and the auto-`compare()` are the
+checksum-verified artifacts. The eval loop, `save_results()`, `plot()`, and the auto-`compare()` are the
 unmodified repo code, so the output tree is identical: per-pair `summary.json` /
 `run_metadata.json` (with a real `git_commit` and the same `config_hash`,
 because the user's YAML bytes are written verbatim), the
@@ -287,14 +279,13 @@ architecture/quickstart.
 Phased; each phase has a verifiable milestone. The walking skeleton is
 **Phase 3**.
 
-- **Phase 0 — Image/driver spike (de-risk first).** No repo changes. A throwaway
-  `modal run` script with `gpu_image` and `gpu="A10"` that prints
-  `torch.__version__`, `torch.version.cuda`, `torch.cuda.is_available()`, and
-  does `import flash_attn` + `from yorzoi.model.borzoi import Borzoi`.
-  *Milestone:* on an A10, CUDA is available, torch is `2.11.* / cu130`, and both
-  `flash_attn` and `yorzoi` import without ABI errors. **If this fails, stop** —
-  the whole "run yorzoi remotely" promise depends on it; fall back to a GPU image
-  that drops the `yorzoi` extra and document yorzoi as unsupported.
+- **Phase 0 — Image/driver spike (sanity check).** `scripts/modal/spike.py`
+  builds `gpu_image` on an A10 and prints `torch.__version__`,
+  `torch.version.cuda`, `torch.cuda.is_available()`, then `import yorzoi`.
+  *Milestone:* CUDA is available and torch + yorzoi import. This used to be the
+  project's top risk (a pinned flash-attn cu13/torch2.11 wheel needing a CUDA-13
+  base + cu130 torch); yorzoi 0.2.1 dropped flash-attn, so the image is now a
+  plain slim image + standard torch and this step is routine.
 
 - **Phase 1 — Additive packaging skeleton.** Add the `modal` extra; create
   `src/yeastbench/modal/{__init__,cli,app,plan}.py`; add the guarded `add_typer`
@@ -347,8 +338,8 @@ Phased; each phase has a verifiable milestone. The walking skeleton is
 - **Seed cost:** the ~1 GB download runs on a **CPU** function, so it's
   near-zero (~$0.05) and never billed at GPU rates — this is the main graft from
   B.
-- **Image build:** one-time, several minutes (CUDA 13 + cu130 torch + flash-attn
-  + transformers/CodonTransformer); cached after, free compute.
+- **Image build:** one-time, a couple of minutes (slim image + torch + the model
+  extras + yorzoi); cached after, free compute.
 - **Volume/idle:** Volume storage is the only standing cost and is negligible at
   ~1 GB. The GPU container is billed only while alive; the lift-and-shift design
   holds it for the whole run, so don't leave it idle between phases — use
@@ -410,22 +401,17 @@ Phased; each phase has a verifiable milestone. The walking skeleton is
 
 ## Risks & gotchas
 
-- **flash-attn wheel / CUDA-driver match on Modal's GPUs (the top risk).** The
-  pinned wheel is `cu13 / torch2.11 / cxx11abiTRUE / cp312 / linux_x86_64`, so
-  the image must be CUDA 13 base + `add_python="3.12"` + torch from
-  `download.pytorch.org/whl/cu130`, and Modal's GPU host driver must be
-  CUDA-13-capable (toolkit ≤ host driver). Two sub-risks: (a) `whl/cu130` may
-  not yet publish a torch `2.11.*` build — verify in Phase 0; (b) if any layer
-  drifts off that ABI, yorzoi's import fails at load. Mitigation: Phase 0 is a
-  hard gate; if it fails, ship a GPU image without the `yorzoi` extra and
-  document yorzoi as the one unsupported model. Note the wheel is a real GitHub
-  release asset (not a local-only file), so passing the URL to `uv_pip_install`
-  is sound.
-- **Image build time and size.** CUDA 13 devel base + cu130 torch + flash-attn +
-  transformers/CodonTransformer is a multi-GB, multi-minute first build. Use the
-  CUDA `devel` (not `runtime`) tag so the wheel's CUDA deps resolve; cache
-  aggressively; keep `data/`/`results/` out of the image (`ignore=`) so the
-  local `data/` never inflates a layer.
+- **flash-attn / CUDA ABI (was the top risk, now retired).** Earlier the image
+  needed a CUDA-13 base + cu130 torch to match a pinned flash-attn
+  `cu13/torch2.11/cp312` wheel. yorzoi 0.2.1 no longer requires flash-attn, so
+  the image is a plain slim image with a standard torch wheel (its own bundled
+  CUDA) — the ABI-match risk is gone. A leftover check: yorzoi needs `torch>=2.5`
+  and shorkie/dream_rnn need `torch>=2.11`, so the resolved torch is `>=2.11`;
+  the Phase 0 spike confirms it runs on the A10.
+- **Image build time and size.** A slim image + torch + the model extras is a
+  multi-hundred-MB, ~2-minute first build (torch's CUDA libs dominate); cached
+  after. Keep `data/`/`results/` out of the image (`ignore=`) so the local
+  `data/` never inflates a layer.
 - **Cold starts.** First call per cold container reloads weights (Shorkie's 8
   folds, Borzoi) from the Volume — seconds, not the bottleneck for a sequential
   run, but it's paid again if the container scales to zero between phases. Use

@@ -28,7 +28,6 @@ shorkie = [
     "torch>=2.11.0",
 ]
 yorzoi = [
-    "flash-attn",
     "yorzoi==0.2.1",
 ]
 dream_rnn = [
@@ -64,6 +63,3 @@ markers = [
     "integration: end-to-end, needs the published mirror (opt-in)",
     "gpu: needs a GPU + model extras (shorkie/yorzoi)",
 ]
-
-[tool.uv.sources]
-flash-attn = { url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }

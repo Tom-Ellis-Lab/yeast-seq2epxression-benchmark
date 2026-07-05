@@ -91,13 +91,3 @@ def test_modal_app_spec_is_two_volumes():
     assert modal_app.APP_NAME == "ybench"
     assert set(modal_app.VOLUMES) == {"/repo/data", "/repo/results"}
     assert modal_app.HF_ENV["HF_HOME"] == "/repo/data/.hf"
-    # flash-attn wheel resolves from pyproject (single source of truth)
-    assert "flash_attn" in modal_app._flash_attn_wheel()
-
-
-def test_flash_attn_wheel_falls_back_without_pyproject(tmp_path, monkeypatch):
-    pytest.importorskip("modal")
-    from yeastbench.modal import app as modal_app
-
-    monkeypatch.setattr(modal_app, "_REPO_ROOT", tmp_path)  # no pyproject.toml here
-    assert modal_app._flash_attn_wheel() == modal_app.FLASH_ATTN_WHEEL_FALLBACK

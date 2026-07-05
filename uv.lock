@@ -619,24 +619,6 @@ wheels = [
 ]
 
 [[package]]
-name = "flash-attn"
-version = "2.8.3"
-source = { url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }
-dependencies = [
-    { name = "einops" },
-    { name = "torch" },
-]
-wheels = [
-    { url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl", hash = "sha256:eea423825f3e12818b98b2078e2cb5ce6fe6b73d22612316d2a55fad4701938f" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "einops" },
-    { name = "torch" },
-]
-
-[[package]]
 name = "fonttools"
 version = "4.62.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3171,7 +3153,6 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
-    { name = "flash-attn" },
     { name = "h5py" },
     { name = "huggingface-hub" },
     { name = "torch" },
@@ -3197,13 +3178,11 @@ shorkie = [
     { name = "torch" },
 ]
 yorzoi = [
-    { name = "flash-attn" },
     { name = "yorzoi" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "flash-attn", marker = "extra == 'yorzoi'", url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" },
     { name = "h5py", marker = "extra == 'shorkie'" },
     { name = "huggingface-hub", marker = "extra == 'data'", specifier = ">=0.25" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.2.0" },

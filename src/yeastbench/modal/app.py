@@ -7,16 +7,10 @@ reimplemented — the same bytes run remotely. See ``docs/modal_backend.md``.
 
 Importing this module is cheap and offline: Modal Image/Volume/Function objects
 are lazy specs; nothing builds or connects until the CLI enters ``app.run()``.
-
-NOTE: the GPU image recipe (CUDA 13 + cu130 torch + the pinned flash-attn wheel)
-is the one piece that can only be validated on a real Modal GPU — that's Phase 0
-of docs/modal_backend.md (``scripts/modal/spike.py``). If it drifts, the
-documented fallback is a GPU image without the ``yorzoi`` extra.
 """
 from __future__ import annotations
 
 import subprocess
-import tomllib
 from pathlib import Path
 
 import modal
@@ -25,28 +19,11 @@ from yeastbench.data.fetch import default_data_root
 
 APP_NAME = "ybench"
 GPU_DEFAULT = "A10"
-CUDA_BASE = "nvidia/cuda:13.0.1-devel-ubuntu24.04"
-TORCH_CU130_INDEX = "https://download.pytorch.org/whl/cu130"
-# Mirrors pyproject [tool.uv.sources].flash-attn; the constant is only a fallback
-# for when pyproject.toml isn't on disk (e.g. an installed-wheel layout).
-FLASH_ATTN_WHEEL_FALLBACK = (
-    "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/"
-    "flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
-)
 
 _REPO_ROOT = default_data_root()
 _IMAGE_IGNORE = ["data/**", "results/**", "**/__pycache__", ".venv/**"]
 # .git is intentionally NOT ignored: `ybench run` records git_commit in
 # run_metadata.json, so the checkout needs to be baked into the image.
-
-
-def _flash_attn_wheel() -> str:
-    pyproject = _REPO_ROOT / "pyproject.toml"
-    try:
-        data = tomllib.loads(pyproject.read_text())
-        return data["tool"]["uv"]["sources"]["flash-attn"]["url"]
-    except (OSError, KeyError, tomllib.TOMLDecodeError):
-        return FLASH_ATTN_WHEEL_FALLBACK
 
 
 app = modal.App(APP_NAME)
@@ -69,22 +46,18 @@ cpu_image = (
     .env(HF_ENV)
 )
 
-# GPU run: CUDA 13 base so the cu13 flash-attn wheel can load, cp312, cu130 torch.
+# GPU run: a plain image + the model extras. yorzoi 0.2.1 no longer needs
+# flash-attn, so torch comes in as an ordinary dependency of the extras (a
+# standard CUDA-bundled wheel that runs on Modal's GPUs) — no CUDA base image,
+# cu130 pin, or prebuilt wheel required.
 gpu_image = (
-    modal.Image.from_registry(CUDA_BASE, add_python="3.12")
-    .entrypoint([])  # clear the base image's entrypoint
+    modal.Image.debian_slim(python_version="3.12")
     .apt_install("git")
     # So `git rev-parse` works on the baked /repo checkout (run by `ybench run`
     # to record git_commit in run_metadata.json) despite root/dubious-ownership.
     .run_commands("git config --global --add safe.directory /repo")
-    # Pin torch to the cu130 build first so the wheel's ABI matches (the PyPI
-    # default torch is cu12).
-    .uv_pip_install("torch==2.11.*", index_url=TORCH_CU130_INDEX)
-    .uv_pip_install(_flash_attn_wheel())
     .add_local_dir(str(_REPO_ROOT), "/repo", copy=True, ignore=_IMAGE_IGNORE)
-    # Install the package + model deps. We install the `[all]`-equivalent extras
-    # (shorkie/dream_rnn/data) plus yorzoi explicitly, skipping the yorzoi extra's
-    # bare `flash-attn` requirement (already satisfied by the wheel above).
+    # Install the `[all]`-equivalent extras (shorkie/dream_rnn/data) plus yorzoi.
     #
     # NOTE: `codon_transformer` is deliberately NOT installed. CodonTransformer
     # pins pandas<3 while the benchmark pins pandas>=3.0.2, so the two cannot

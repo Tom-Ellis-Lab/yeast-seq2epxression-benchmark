@@ -23,7 +23,7 @@ uv sync
 
 # Add specific model dependencies as needed
 uv sync --extra shorkie   # PyTorch + h5py, for the Shorkie adapter
-uv sync --extra yorzoi    # yorzoi + flash-attn, for the Yorzoi adapter
+uv sync --extra yorzoi    # yorzoi, for the Yorzoi adapter
 uv sync --extra dream_rnn # PyTorch, for the DREAM-RNN supervised baseline
 uv sync --extra data      # huggingface_hub, for the `ybench data` backend
 uv sync --extra all       # all models + data backend (everything default.yaml needs)
@@ -183,6 +183,5 @@ free (HuggingFace mirror), so no extra secrets are required. A full run is
 credit.
 
 > Before the first real run, validate the GPU image once with the Phase 0 spike:
-> `uv run modal run scripts/modal/spike.py` — it confirms torch / flash-attn /
-> yorzoi import on a Modal A10. If that fails, see the fallback in
-> [modal_backend.md](modal_backend.md).
+> `uv run modal run scripts/modal/spike.py` — it confirms torch / yorzoi import
+> and CUDA is visible on a Modal A10.

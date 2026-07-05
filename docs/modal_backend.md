@@ -79,7 +79,14 @@ gpu_image = (
     # is NOT installed: CodonTransformer pins pandas<3 vs the benchmark's pandas>=3,
     # so they can't share one image — mirroring the local [all] env, where
     # codon_transformer is likewise absent.
-    .uv_pip_install("/repo[shorkie,dream_rnn,data]", "yorzoi==0.2.1", "hf_transfer")
+    #
+    # EDITABLE (-e), like the local `uv sync`: several adapters locate their frozen
+    # default data via `Path(__file__).resolve().parents[3]`, which only equals the
+    # repo root in the src/ checkout layout. A non-editable install would make that
+    # wrong (e.g. hong's cassette → /data/tasks/... and 404). `include_source=False`
+    # on the functions keeps this the only copy of the package on the path.
+    .uv_pip_install("/repo[shorkie,dream_rnn,data]", extra_options="-e")
+    .uv_pip_install("yorzoi==0.2.1", "hf_transfer")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/repo/data/.hf"})
 )
 
@@ -88,7 +95,7 @@ cpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git")
     .add_local_dir(".", "/repo", copy=True, ignore=["data/**", "results/**"])
-    .run_commands("cd /repo && pip install '.[data]'")
+    .uv_pip_install("/repo[data]", extra_options="-e")   # editable, like local `uv sync`
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/repo/data/.hf"})
 )
 
@@ -110,7 +117,7 @@ def _write_config(config_bytes, config_name):  # under the original name → con
     pathlib.Path("/repo", rel).write_bytes(config_bytes)
     return rel
 
-@app.function(image=cpu_image, volumes=VOLUMES, timeout=2 * 3600)
+@app.function(image=cpu_image, volumes=VOLUMES, timeout=2 * 3600, include_source=False)
 def seed(config_bytes, config_name, model=None, task=None):
     rel = _write_config(config_bytes, config_name)
     cmd = ["ybench", "data", "get", "--config", rel]
@@ -119,7 +126,8 @@ def seed(config_bytes, config_name, model=None, task=None):
     subprocess.run(cmd, cwd="/repo", check=True)   # check=True → raises, never silent
     data_vol.commit()   # persists locked data/ AND the /repo/data/.hf cache
 
-@app.function(image=gpu_image, gpu="A10", volumes=VOLUMES, timeout=8 * 3600)
+@app.function(image=gpu_image, gpu="A10", volumes=VOLUMES, timeout=8 * 3600,
+              include_source=False)
 def run_benchmark(config_bytes, config_name, out_dir="results/default",
                   model=None, task=None) -> list[str]:
     data_vol.reload()   # REQUIRED: see what the (separate) seed container committed

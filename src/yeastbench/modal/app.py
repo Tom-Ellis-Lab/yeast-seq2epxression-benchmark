@@ -42,7 +42,8 @@ cpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git")
     .add_local_dir(str(_REPO_ROOT), "/repo", copy=True, ignore=_IMAGE_IGNORE)
-    .uv_pip_install("/repo[data]", "hf_transfer")
+    .uv_pip_install("/repo[data]", extra_options="-e")  # editable, mirrors local `uv sync`
+    .uv_pip_install("hf_transfer")
     .env(HF_ENV)
 )
 
@@ -58,17 +59,22 @@ gpu_image = (
     .run_commands("git config --global --add safe.directory /repo")
     .add_local_dir(str(_REPO_ROOT), "/repo", copy=True, ignore=_IMAGE_IGNORE)
     # Install the `[all]`-equivalent extras (shorkie/dream_rnn/data) plus yorzoi.
+    # EDITABLE (like the local `uv sync`), so the package lives at /repo/src and
+    # `import yeastbench` resolves there: several adapters locate their frozen
+    # default data files via `Path(__file__).resolve().parents[3]`, which only
+    # equals the repo root in the src/ checkout layout. A non-editable install
+    # (site-packages) would make parents[3] wrong — e.g. hong's cassette would
+    # resolve to /data/tasks/... and 404. `include_source=False` on the functions
+    # keeps this editable install the only copy of the package on the container's
+    # path (no auto-mounted /root/yeastbench to shadow it).
     #
     # NOTE: `codon_transformer` is deliberately NOT installed. CodonTransformer
     # pins pandas<3 while the benchmark pins pandas>=3.0.2, so the two cannot
     # coexist in one environment — the same reason `codon_transformer` is absent
     # from the local `[all]` env. So this image mirrors local `[all]`, and
     # `codon_transformer` is unsupported on the Modal backend (see build_plan).
-    .uv_pip_install(
-        "/repo[shorkie,dream_rnn,data]",
-        "yorzoi==0.2.1",
-        "hf_transfer",
-    )
+    .uv_pip_install("/repo[shorkie,dream_rnn,data]", extra_options="-e")
+    .uv_pip_install("yorzoi==0.2.1", "hf_transfer")
     .env(HF_ENV)
 )
 
@@ -85,7 +91,7 @@ def _write_config(config_bytes: bytes, config_name: str) -> str:
     return rel
 
 
-@app.function(image=cpu_image, volumes=VOLUMES, timeout=2 * 3600)
+@app.function(image=cpu_image, volumes=VOLUMES, timeout=2 * 3600, include_source=False)
 def seed(
     config_bytes: bytes,
     config_name: str,
@@ -107,7 +113,10 @@ def seed(
     data_vol.commit()  # persists locked data/ AND the /repo/data/.hf cache
 
 
-@app.function(image=gpu_image, gpu=GPU_DEFAULT, volumes=VOLUMES, timeout=8 * 3600)
+@app.function(
+    image=gpu_image, gpu=GPU_DEFAULT, volumes=VOLUMES, timeout=8 * 3600,
+    include_source=False,
+)
 def run_benchmark(
     config_bytes: bytes,
     config_name: str,

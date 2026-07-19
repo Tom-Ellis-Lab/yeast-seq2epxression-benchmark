@@ -163,8 +163,7 @@ Run `ybench data status` for an exact present-vs-total byte count, or
 
 No local NVIDIA GPU? Run the benchmark on a [Modal](https://modal.com) GPU
 instead. The remote container runs the *unmodified* `ybench` CLI, so results
-match a local run — only the transport differs. Full design and cost notes in
-[modal_backend.md](modal_backend.md).
+match a local run — only the transport differs.
 
 One-time setup (the `modal` client installs anywhere; no local GPU needed):
 
@@ -187,7 +186,3 @@ lists what's on the data/results volumes. The default data path is public and
 free (HuggingFace mirror), so no extra secrets are required. A full run is
 ~$1–4 of GPU time (≈1–2 GPU-hours on an A10), covered by Modal's free monthly
 credit.
-
-> Before the first real run, validate the GPU image once with the Phase 0 spike:
-> `uv run modal run scripts/modal/spike.py` — it confirms torch / yorzoi import
-> and CUDA is visible on a Modal A10.

@@ -219,3 +219,7 @@ papers/*
 # package directory.
 /shorkie-paper/
 /yorzoi/
+
+# Local-only Modal backend design doc + spike script (kept locally, not released).
+docs/modal_backend.md
+scripts/modal/spike.py

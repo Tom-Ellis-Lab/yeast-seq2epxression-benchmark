@@ -10,6 +10,7 @@ for the numbers we report.
 - [Progress, hardware, and GPU selection](#progress-hardware-and-gpu-selection)
 - [Output layout](#output-layout)
 - [Getting the data](#getting-the-data)
+- [Running without a local NVIDIA GPU (`ybench modal`)](#running-without-a-local-nvidia-gpu-ybench-modal)
 
 ## Install
 
@@ -22,10 +23,16 @@ uv sync
 
 # Add specific model dependencies as needed
 uv sync --extra shorkie   # PyTorch + h5py, for the Shorkie adapter
-uv sync --extra yorzoi    # yorzoi + flash-attn, for the Yorzoi adapter
+uv sync --extra yorzoi    # yorzoi, for the Yorzoi adapter
 uv sync --extra dream_rnn # PyTorch, for the DREAM-RNN supervised baseline
 uv sync --extra data      # huggingface_hub, for the `ybench data` backend
 uv sync --extra all       # all models + data backend (everything default.yaml needs)
+
+# CodonTransformer baseline needs one extra step: its package pins numpy<2 /
+# pandas<3 (conservative — it runs fine on this project's numpy 2 / pandas 3), so
+# install it --no-deps after syncing its light deps:
+uv sync --extra codon_transformer
+uv pip install --no-deps codontransformer
 ```
 
 ## Running benchmarks
@@ -151,3 +158,37 @@ Run `ybench data status` for an exact present-vs-total byte count, or
 > copy, and `ybench data publish --to hf|gcs` uploads the redistributable
 > artifacts to a mirror (dry-run unless `--yes`). Publishing to GCS needs a
 > billing project (`--billing-project` / `YBENCH_GCS_BILLING_PROJECT`).
+
+## Running without a local NVIDIA GPU (`ybench modal`)
+
+No local NVIDIA GPU? Run the benchmark on a [Modal](https://modal.com) GPU
+instead. The remote container runs the *unmodified* `ybench` CLI, so results
+match a local run — only the transport differs.
+
+One-time setup (the `modal` client installs anywhere; no local GPU needed):
+
+```bash
+uv sync --extra modal      # installs the modal client
+uv run modal setup         # browser login; writes ~/.modal.toml
+```
+
+Then seed the data once and run:
+
+```bash
+uv run ybench modal data get --config configs/default.yaml   # one-time CPU seed of the data volume
+uv run ybench modal run      --config configs/default.yaml   # full run on a GPU; results land in ./results/default
+```
+
+`run` takes the same `--model`/`--task` filters as `ybench run`, plus `--gpu`
+(a Modal GPU *type* — `A10`, `L4`, `T4`, … — not a device index; see
+[Modal's GPU docs](https://modal.com/docs/guide/gpu)), `--out` (where results are
+downloaded, default `results`), and `--detach`.
+
+Results are namespaced per config hash on the volume, so two config versions
+never mix (and the auto-compare never tables results from different configs
+together). `ybench modal pull -c <config>` re-downloads just that config's
+results; without `-c` it pulls every config's namespace. `ybench modal status`
+lists what's on the data/results volumes. The default data path is public and
+free (HuggingFace mirror), so no extra secrets are required. A full run is
+~$1–4 of GPU time (≈1–2 GPU-hours on an A10), covered by Modal's free monthly
+credit.

@@ -1,7 +1,7 @@
 """Optional Modal GPU compute backend for ybench.
 
 Lets a user with no local NVIDIA GPU run the benchmark by lifting the unmodified
-``ybench`` CLI into a Modal GPU container. See ``docs/modal_backend.md``.
+``ybench`` CLI into a Modal GPU container.
 
 Layout:
 - ``plan``  — pure helpers (no ``modal`` import), unit-testable in the base install.

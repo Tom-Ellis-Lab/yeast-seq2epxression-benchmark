@@ -2,8 +2,7 @@
 
 A thin transport over ``yeastbench.modal.app``: read the config locally, ship its
 bytes to a remote container that runs the *unmodified* ``ybench`` CLI, and bring
-the results tree back. The run/scoring logic is never duplicated. See
-``docs/modal_backend.md``.
+the results tree back. The run/scoring logic is never duplicated.
 
 ``modal`` is imported lazily inside each command, so ``ybench modal --help`` and
 the rest of the CLI work even when the ``modal`` extra isn't fully importable.

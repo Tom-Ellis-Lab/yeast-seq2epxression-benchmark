@@ -3,7 +3,7 @@
 Lift-and-shift: a CPU ``seed`` function fetches data/weights into a Volume, then
 a GPU ``run_benchmark`` function runs the *unmodified* ``ybench`` CLI against
 that Volume and returns the results tree. The eval/scoring code is never
-reimplemented — the same bytes run remotely. See ``docs/modal_backend.md``.
+reimplemented — the same bytes run remotely.
 
 Importing this module is cheap and offline: Modal Image/Volume/Function objects
 are lazy specs; nothing builds or connects until the CLI enters ``app.run()``.
@@ -28,7 +28,7 @@ _IMAGE_IGNORE = ["data/**", "results/**", "**/__pycache__", ".venv/**"]
 
 app = modal.App(APP_NAME)
 
-# ── Volumes (two, per docs/modal_backend.md) ────────────────────────────────
+# ── Volumes (two) ───────────────────────────────────────────────────────────
 # The HF cache rides inside the data volume (HF_HOME=/repo/data/.hf), so there's
 # no separate cache volume: one "inputs" volume, one "results" volume.
 data_vol = modal.Volume.from_name("ybench-data", create_if_missing=True)

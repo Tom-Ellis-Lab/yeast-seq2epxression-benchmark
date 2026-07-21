@@ -3,7 +3,7 @@
 The pure helpers (``yeastbench.modal.plan``) need no ``modal`` install and run in
 CI. Anything that imports the Modal client is guarded with ``importorskip`` and
 makes no remote calls — the actual remote dispatch is exercised manually behind
-``modal setup`` (see docs/modal_backend.md), not here.
+``modal setup``, not here.
 """
 from __future__ import annotations
 

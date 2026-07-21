@@ -32,15 +32,29 @@ def _echo(msg: str) -> None:
     typer.echo(msg)
 
 
-def _download_results(out: Path) -> None:
-    """Download the whole results volume into ``out`` (recreating
-    ``out/<out_dir>/…``). ``out`` MUST be an existing directory first, or
-    ``modal volume get`` collapses every file onto the single ``out`` path
-    (modal/cli/_download.py: ``output_path = dest / rel`` only when ``dest`` is a
-    dir), so we mkdir before the call."""
+def _validate_gpu(gpu: str) -> str:
+    """Reject a bare device index. On `ybench run` `--gpu` is an integer GPU
+    index; here it's a Modal GPU *type*, so `--gpu 0` would otherwise be shipped
+    verbatim and only rejected remotely, after the seed already ran.
+    Valid GPU types: https://modal.com/docs/guide/gpu"""
+    if gpu.strip().isdigit():
+        raise typer.BadParameter(
+            f"--gpu takes a Modal GPU type (A10, L4, T4, A100, H100, …), not a "
+            f"device index like {gpu!r}. For a local GPU index use "
+            f"`ybench run --gpu {gpu}`. Valid types: "
+            "https://modal.com/docs/guide/gpu"
+        )
+    return gpu
+
+
+def _download_results(out: Path, remote: str = "/") -> None:
+    """Download ``remote`` from the results volume into ``out``. ``out`` MUST be
+    an existing directory first, or ``modal volume get`` collapses every file
+    onto the single ``out`` path (modal/cli/_download.py: ``output_path = dest /
+    rel`` only when ``dest`` is a dir), so we mkdir before the call."""
     out.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["modal", "volume", "get", "--force", "ybench-results", "/", str(out)],
+        ["modal", "volume", "get", "--force", "ybench-results", remote, str(out)],
         check=True,
     )
 
@@ -90,6 +104,7 @@ def run(
     from yeastbench.modal.app import app as modal_app, run_benchmark, seed
     from yeastbench.modal.plan import build_plan
 
+    gpu = _validate_gpu(gpu)
     plan = build_plan(config, model, task)
     _echo(f"config:   {config}  [hash {plan.source_hash}]")
     _echo(f"gpu:      {gpu}")
@@ -101,26 +116,46 @@ def run(
         produced = fn.remote(
             plan.config_bytes,
             plan.config_name,
+            plan.source_hash,
             out_dir=plan.out_dir,
+            expected_pairs=plan.pair_dirs(),
             model=model,
             task=task,
         )
 
     _echo(f"\nremote run produced {len(produced)} pair dir(s): {', '.join(produced)}")
     _echo(f"downloading results → {out}/ …")
-    _download_results(out)
+    # Results live under this config's hash namespace on the volume; pulling that
+    # subtree recreates the local `<out>/<out_dir>/…` layout.
+    _download_results(out, f"/{plan.source_hash}")
     _echo(f"done — results under {out}/")
 
 
 @app.command("pull")
 def pull(
+    config: Annotated[
+        Optional[Path],
+        typer.Option("--config", "-c", help="pull only this config's results"),
+    ] = None,
     out: Annotated[
         Path, typer.Option("--out", help="local dir to download results into")
     ] = Path("results"),
 ) -> None:
-    """Download the results volume via the modal CLI (no run needed)."""
-    _echo("downloading the 'ybench-results' volume …")
-    _download_results(out)
+    """Download results from the volume (no run needed).
+
+    With ``--config``, pulls just that config's hash namespace, recreating the
+    local ``<out>/<out_dir>/…`` layout. Without it, pulls every config's
+    namespace, so you get ``<out>/<config_hash>/…``.
+    """
+    from yeastbench.modal.plan import build_plan
+
+    if config is not None:
+        plan = build_plan(config)
+        _echo(f"downloading results for {config} [hash {plan.source_hash}] …")
+        _download_results(out, f"/{plan.source_hash}")
+    else:
+        _echo("downloading every config's results from 'ybench-results' …")
+        _download_results(out)
     _echo(f"results written under {out}/")
 
 

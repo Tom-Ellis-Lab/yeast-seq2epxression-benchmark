@@ -180,8 +180,14 @@ uv run ybench modal run      --config configs/default.yaml   # full run on a GPU
 ```
 
 `run` takes the same `--model`/`--task` filters as `ybench run`, plus `--gpu`
-(default `A10`), `--out` (where to extract results, default `.`), and `--detach`.
-`ybench modal pull` re-downloads the results volume and `ybench modal status`
+(a Modal GPU *type* — `A10`, `L4`, `T4`, … — not a device index; see
+[Modal's GPU docs](https://modal.com/docs/guide/gpu)), `--out` (where results are
+downloaded, default `results`), and `--detach`.
+
+Results are namespaced per config hash on the volume, so two config versions
+never mix (and the auto-compare never tables results from different configs
+together). `ybench modal pull -c <config>` re-downloads just that config's
+results; without `-c` it pulls every config's namespace. `ybench modal status`
 lists what's on the data/results volumes. The default data path is public and
 free (HuggingFace mirror), so no extra secrets are required. A full run is
 ~$1–4 of GPU time (≈1–2 GPU-hours on an A10), covered by Modal's free monthly

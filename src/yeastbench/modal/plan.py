@@ -7,10 +7,17 @@ out of ``app.py`` (which defines the remote App, images and functions).
 from __future__ import annotations
 
 import hashlib
+import posixpath
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from yeastbench.config import load_config
+
+# First path segment every ``out_dir`` must live under. The Modal results volume
+# mounts at ``/repo/<RESULTS_ROOT>``, so anything written outside it is lost when
+# the container exits. Single source of truth — ``app.py`` builds the mount from
+# this rather than repeating the literal.
+RESULTS_ROOT = "results"
 
 
 @dataclass(frozen=True)
@@ -49,12 +56,19 @@ def build_plan(
         raise ValueError(
             f"No runs match filters (model={model!r}, task={task!r}) in {path}"
         )
-    out_dir = str(cfg.out_dir)
-    if Path(out_dir).parts[:1] != ("results",):
+    # Normalize to a POSIX-relative path BEFORE checking the first segment: a raw
+    # `parts[:1]` test lets `results/../scratch` through, which would resolve
+    # outside the mount on the container and be silently discarded on exit.
+    # Normalizing also keeps the path POSIX for the Linux container regardless of
+    # the client OS.
+    raw = str(cfg.out_dir).replace("\\", "/")
+    out_dir = posixpath.normpath(raw)
+    if out_dir.startswith("/") or PurePosixPath(out_dir).parts[:1] != (RESULTS_ROOT,):
         raise ValueError(
-            f"Modal backend requires out_dir under 'results/' (got {out_dir!r}); "
-            "the results volume mounts at /repo/results, so output written "
-            "elsewhere would be lost when the container exits."
+            f"Modal backend requires out_dir under '{RESULTS_ROOT}/' "
+            f"(got {str(cfg.out_dir)!r}, normalizes to {out_dir!r}); the results "
+            f"volume mounts at /repo/{RESULTS_ROOT}, so output written elsewhere "
+            "would be lost when the container exits."
         )
     return RemotePlan(
         config_path=path.resolve(),

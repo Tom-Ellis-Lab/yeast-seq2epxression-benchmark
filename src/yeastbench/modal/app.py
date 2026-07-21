@@ -10,17 +10,28 @@ are lazy specs; nothing builds or connects until the CLI enters ``app.run()``.
 """
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
 import modal
 
-from yeastbench.data.fetch import default_data_root
+from yeastbench.modal.plan import RESULTS_ROOT
 
 APP_NAME = "ybench"
 GPU_DEFAULT = "A10"
 
-_REPO_ROOT = default_data_root()
+# Anchor the tree we ship to the PACKAGE, not the process cwd: this file lives at
+# <repo>/src/yeastbench/modal/app.py, so parents[3] is the checkout root. Deriving
+# it from cwd (e.g. default_data_root()) would ship whatever directory `ybench`
+# happened to be invoked from — $HOME for a global install — and fail obscurely.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if not (_REPO_ROOT / "pyproject.toml").exists():  # pragma: no cover - misconfiguration
+    raise RuntimeError(
+        f"expected a source checkout at {_REPO_ROOT} (no pyproject.toml there). "
+        "The Modal backend ships this tree to the container, so it must run from "
+        "a git checkout, not an installed wheel."
+    )
 _IMAGE_IGNORE = ["data/**", "results/**", "**/__pycache__", ".venv/**"]
 # .git is intentionally NOT ignored: `ybench run` records git_commit in
 # run_metadata.json, so the checkout needs to be baked into the image.
@@ -33,7 +44,8 @@ app = modal.App(APP_NAME)
 # no separate cache volume: one "inputs" volume, one "results" volume.
 data_vol = modal.Volume.from_name("ybench-data", create_if_missing=True)
 results_vol = modal.Volume.from_name("ybench-results", create_if_missing=True)
-VOLUMES = {"/repo/data": data_vol, "/repo/results": results_vol}
+RESULTS_MOUNT = Path("/repo") / RESULTS_ROOT
+VOLUMES = {"/repo/data": data_vol, str(RESULTS_MOUNT): results_vol}
 # HF cache lives inside the data volume; no HF_HUB_ENABLE_HF_TRANSFER — newer
 # huggingface_hub deprecated it (hf_transfer is unused) and warns on every run.
 HF_ENV = {"HF_HOME": "/repo/data/.hf"}
@@ -122,33 +134,60 @@ def seed(
 def run_benchmark(
     config_bytes: bytes,
     config_name: str,
+    config_hash: str,
     out_dir: str = "results/default",
+    expected_pairs: list[str] | None = None,
     model: str | None = None,
     task: str | None = None,
 ) -> list[str]:
     """Run the unmodified ``ybench`` CLI on the GPU against the seeded volume,
-    commit the results to the results volume, and return the list of pair dirs
-    produced (a small manifest — the bulk results are downloaded by the caller
-    via ``modal volume get``, which has no return-value size limit). ``model``/
-    ``task`` are passed through so a filtered run runs only the selected pairs."""
+    commit the results, and return the pair dirs THIS run produced (a small
+    manifest — the bulk results are downloaded by the caller via
+    ``modal volume get``, which has no return-value size limit).
+
+    Results are namespaced per ``config_hash`` on the volume, so two different
+    config versions never share an out_dir — otherwise ``ybench run``'s
+    auto-compare would silently table results from different configs (and
+    different git commits) against each other."""
     data_vol.reload()  # see what seed committed
+    results_vol.reload()
     rel = _write_config(config_bytes, config_name)
+
+    live = Path("/repo") / out_dir  # where the config tells `ybench run` to write
+    bucket = RESULTS_MOUNT / config_hash / live.name  # this config's own subtree
+
+    # Restore this config's history into the live path so the auto-compare can
+    # still pair models across separate invocations of the SAME config. Anything
+    # already at the shared live path belongs to another config (or a crashed
+    # run), so it goes first. Copy rather than move: the bucket stays intact if
+    # this run dies partway.
+    if live.exists():
+        shutil.rmtree(live)
+    if bucket.exists():
+        shutil.copytree(bucket, live)
+
     # Force torch device "cuda": a Modal GPU container exposes exactly one GPU as
     # cuda:0. We intentionally override the config's `device:` field (meant for
     # local multi-GPU boxes, e.g. "cuda:1", which would crash here). The Modal GPU
     # *type* (A10/L4/…) is a separate choice, set via the function's `gpu=`.
-    cmd = ["ybench", "run", "--config", rel, "--device", "cuda"]
+    # `--no-data-check` because the CPU seed already verified every checksum —
+    # re-hashing the whole dataset here would do it at GPU billing rates.
+    cmd = ["ybench", "run", "--config", rel, "--device", "cuda", "--no-data-check"]
     if model:
         cmd += ["--model", model]
     if task:
         cmd += ["--task", task]
-    # The real run, including the auto-triggered cross-model compare. Data is
-    # already on the volume (seed runs first); `ybench run`'s own preflight
-    # reports clearly if something is missing.
+    # The real run, including the auto-triggered cross-model compare.
     subprocess.run(cmd, cwd="/repo", check=True)
+
+    # Stash back under the hash namespace and leave the shared path clean for the
+    # next (possibly different) config.
+    bucket.parent.mkdir(parents=True, exist_ok=True)
+    if bucket.exists():
+        shutil.rmtree(bucket)
+    shutil.move(str(live), str(bucket))
     results_vol.commit()
-    produced = Path("/repo") / out_dir
-    if not produced.exists():
-        return []
-    # Real pair dirs are "<model>__<task>"; skip the auto-compare/ output dir.
-    return sorted(p.name for p in produced.iterdir() if p.is_dir() and "__" in p.name)
+
+    # Report only what THIS run was asked to produce — the bucket also holds the
+    # restored history, so listing it wholesale would over-report.
+    return sorted(d for d in (expected_pairs or []) if (bucket / d).exists())

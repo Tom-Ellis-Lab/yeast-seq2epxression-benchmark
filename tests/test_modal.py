@@ -47,14 +47,32 @@ def test_build_plan_allows_codon_transformer():
     assert plan.pairs == [("codon_transformer", "chen_synonymous")]
 
 
-def test_build_plan_rejects_out_dir_outside_results(tmp_path):
+@pytest.mark.parametrize(
+    "out_dir",
+    [
+        "elsewhere/run",          # plainly outside results/
+        "results/../scratch/run",  # traversal that escapes the mount
+        "/results/absolute",       # absolute path is never under the mount
+        "results/..",              # normalizes to "."
+    ],
+)
+def test_build_plan_rejects_out_dir_outside_results(tmp_path, out_dir):
     cfg = tmp_path / "bad.yaml"
     cfg.write_text(
-        "out_dir: elsewhere/run\ndevice: cpu\n"
+        f"out_dir: {out_dir}\ndevice: cpu\n"
         "runs:\n  - model: cai\n    tasks: [chen_synonymous]\n"
     )
     with pytest.raises(ValueError, match="out_dir under 'results/'"):
         build_plan(cfg)
+
+
+def test_build_plan_normalizes_out_dir(tmp_path):
+    cfg = tmp_path / "ok.yaml"
+    cfg.write_text(
+        "out_dir: results/./nested/../custom\ndevice: cpu\n"
+        "runs:\n  - model: cai\n    tasks: [chen_synonymous]\n"
+    )
+    assert build_plan(cfg).out_dir == "results/custom"
 
 
 def test_build_plan_accepts_results_subdir(tmp_path):
@@ -79,6 +97,18 @@ def test_modal_subapp_registered_on_main_cli():
     assert result.exit_code == 0
     for cmd in ("run", "pull", "status", "data"):
         assert cmd in result.stdout
+
+
+def test_validate_gpu_rejects_a_device_index():
+    pytest.importorskip("modal")
+    import typer
+
+    from yeastbench.modal.cli import _validate_gpu
+
+    assert _validate_gpu("A10") == "A10"
+    assert _validate_gpu("A100-80GB") == "A100-80GB"
+    with pytest.raises(typer.BadParameter, match="not a device index"):
+        _validate_gpu("0")
 
 
 def test_modal_app_spec_is_two_volumes():

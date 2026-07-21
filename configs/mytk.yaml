@@ -5,12 +5,10 @@
 # promoters. Primary metric: per-promoter Spearman across sites (the position
 # effect); secondary: pooled Spearman. See benchmarks/mytk_ints_promoter.md.
 #
+#   uv run ybench data get --config configs/mytk.yaml
 #   uv run ybench run --config configs/mytk.yaml
 #   uv run ybench run --config configs/mytk.yaml --model shorkie
 #
-# Note: the processed data artifact (mytk_ints_promoter.tsv + mytk_payloads.fasta)
-# is declared in the manifest but not yet in the checksum lock / on a mirror, so
-# until it is published, run with --no-data-check (the files are already local).
 # The adapter resolves the payload FASTA from its default location
 # (data/tasks/mytk_ints_promoter/mytk_payloads.fasta); pass `payloads_fasta` in
 # model_config to override.

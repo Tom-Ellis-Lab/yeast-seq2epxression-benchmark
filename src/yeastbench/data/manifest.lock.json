@@ -124,6 +124,18 @@
         }
       }
     },
+    "mytk_ints_promoter": {
+      "files": {
+        "mytk_ints_promoter.tsv": {
+          "sha256": "a3da6101bab3a8c9ae1bd34d941da38b664c79cc6d7f40ed9bf625a24a64df22",
+          "size": 3223
+        },
+        "mytk_payloads.fasta": {
+          "sha256": "431e1aff482aae5aa1e7c41907576a6a003304839e05477c1148ac2092ee4eb6",
+          "size": 6811
+        }
+      }
+    },
     "rafi_mpra": {
       "files": {
         "filtered_test_data_with_MAUDE_expression.txt": {

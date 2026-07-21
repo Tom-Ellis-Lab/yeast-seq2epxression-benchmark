@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import modal
 
@@ -154,7 +154,10 @@ def run_benchmark(
     rel = _write_config(config_bytes, config_name)
 
     live = Path("/repo") / out_dir  # where the config tells `ybench run` to write
-    bucket = RESULTS_MOUNT / config_hash / live.name  # this config's own subtree
+    # This config's own subtree, preserving out_dir's shape under the results
+    # root (results/default → <hash>/default, results/a/b → <hash>/a/b).
+    rel_out = PurePosixPath(out_dir).relative_to(RESULTS_ROOT)
+    bucket = RESULTS_MOUNT / config_hash / rel_out
 
     # Restore this config's history into the live path so the auto-compare can
     # still pair models across separate invocations of the SAME config. Anything

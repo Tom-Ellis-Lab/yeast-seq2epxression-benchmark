@@ -48,15 +48,28 @@ def _validate_gpu(gpu: str) -> str:
 
 
 def _download_results(out: Path, remote: str = "/") -> None:
-    """Download ``remote`` from the results volume into ``out``. ``out`` MUST be
-    an existing directory first, or ``modal volume get`` collapses every file
-    onto the single ``out`` path (modal/cli/_download.py: ``output_path = dest /
-    rel`` only when ``dest`` is a dir), so we mkdir before the call."""
+    """Download ``remote`` from the results volume into ``out``.
+
+    Two ``modal volume get`` behaviours to keep in mind: it APPENDS the remote
+    path's basename to the destination (so pull ``/<hash>/default`` into
+    ``results/`` to land ``results/default/…``), and the destination must already
+    be a directory or every file collapses onto the single ``out`` path
+    (modal/cli/_download.py: ``output_path = dest / rel`` only when ``dest`` is a
+    dir) — hence the mkdir.
+    """
     out.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["modal", "volume", "get", "--force", "ybench-results", remote, str(out)],
         check=True,
     )
+
+
+def _download_config_results(plan, out: Path) -> None:
+    """Pull one config's namespace so it lands at ``out/<out_dir-relative>``,
+    matching the layout a local run produces."""
+    rel = plan.out_dir_rel
+    dest = out if str(rel.parent) == "." else out / rel.parent
+    _download_results(dest, f"/{plan.source_hash}/{rel}")
 
 
 @data_app.command("get")
@@ -127,7 +140,7 @@ def run(
     _echo(f"downloading results → {out}/ …")
     # Results live under this config's hash namespace on the volume; pulling that
     # subtree recreates the local `<out>/<out_dir>/…` layout.
-    _download_results(out, f"/{plan.source_hash}")
+    _download_config_results(plan, out)
     _echo(f"done — results under {out}/")
 
 
@@ -152,7 +165,7 @@ def pull(
     if config is not None:
         plan = build_plan(config)
         _echo(f"downloading results for {config} [hash {plan.source_hash}] …")
-        _download_results(out, f"/{plan.source_hash}")
+        _download_config_results(plan, out)
     else:
         _echo("downloading every config's results from 'ybench-results' …")
         _download_results(out)

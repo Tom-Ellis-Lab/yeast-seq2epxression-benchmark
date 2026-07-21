@@ -29,6 +29,13 @@ class RemotePlan:
     pairs: list[tuple[str, str]]  # (model, task), honoring --model/--task filters
 
     @property
+    def out_dir_rel(self) -> PurePosixPath:
+        """``out_dir`` relative to the results root, e.g. ``results/default`` →
+        ``default``. This is the path a config's results occupy inside its
+        per-config-hash namespace on the volume."""
+        return PurePosixPath(self.out_dir).relative_to(RESULTS_ROOT)
+
+    @property
     def source_hash(self) -> str:
         """The 12-char config hash `ybench run` prints — derived from the bytes
         (same algorithm as config.load_config), so config_bytes stays the single

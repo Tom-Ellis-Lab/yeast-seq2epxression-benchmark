@@ -269,7 +269,7 @@ ARTIFACTS: tuple[Artifact, ...] = (
         mirrors=(
             Mirror(
                 BackendKind.HTTP,
-                base="https://storage.googleapis.com/seqnn-share/shorkie/",
+                base="https://storage.googleapis.com/seqnn-share/shorkie_models/shorkie/",
                 member_remote={
                     "checkpoints/f0.h5": "f0/model_best.h5",
                     "checkpoints/f1.h5": "f1/model_best.h5",

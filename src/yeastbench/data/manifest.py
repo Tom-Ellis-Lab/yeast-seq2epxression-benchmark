@@ -279,9 +279,6 @@ ARTIFACTS: tuple[Artifact, ...] = (
         mirrors=(
             Mirror(
                 BackendKind.HTTP,
-                # Upstream reorganized the bucket (2026-07): the weights moved
-                # from seqnn-share/shorkie/ to seqnn-share/shorkie_models/shorkie/.
-                # Same bytes — the locked checksums still match.
                 base="https://storage.googleapis.com/seqnn-share/shorkie_models/shorkie/",
                 member_remote={
                     "checkpoints/f0.h5": "f0/model_best.h5",

@@ -1,16 +1,15 @@
 # Rafi / deBoer — random-promoter MPRA expression
 
-![image](/img/mpra_banner.svg)
+![image](../../img/mpra_banner.svg)
 
-> **Status:** zero-shot marginalized eval **implemented** (Shorkie, Yorzoi).
-> DREAM-RNN supervised baseline — **implemented + verified** (`dream_rnn` model;
-> `tests/test_dream_rnn.py`). The published `0_1_1_0` checkpoint loads
-> `strict=True` into the port, and a full end-to-end run reproduces a strong
-> in-distribution reference (overall Pearson *r* ≈ 0.97; per-stratum *r*: broad
-> strata 0.96–0.98, range-restricted high/low 0.72–0.74, native 0.89; SNV
-> pair-difference Δ*r* ≈ 0.86). **Data-op follow-up:** publish
-> `model_best.pth` + `plasmid.json` to the HF/GCS mirrors so `ybench data get
-> dream_rnn` works on a fresh checkout (lock entry already committed).
+> **Status:** zero-shot marginalized eval **implemented + run** (Shorkie, Yorzoi).
+> DREAM-RNN supervised baseline — **implemented + unit-tested, not yet run on the
+> 71k benchmark** (`dream_rnn` model; `tests/test_dream_rnn.py`). The published
+> `0_1_1_0` checkpoint loads `strict=True` into the port. The overall Pearson
+> *r* ≈ 0.97 quoted for it is its in-distribution reference *from the paper*, not
+> a ybench number. **Data-op follow-up:** publish `model_best.pth` + `plasmid.json`
+> to the HF/GCS mirrors so `ybench data get dream_rnn` works on a fresh checkout
+> (lock entry already committed).
 
 ## At a glance
 
@@ -21,9 +20,33 @@
 | **Assay** | GPRA. 80 bp random inserts cloned upstream of YFP in the `yeast_DualReporter` vector (AddGene 127546); FACS-sorted into 18 bins on `log2(RFP/YFP)`; per-sequence expression = MAUDE-fit bin mean. |
 | **Expression label** | Scalar per sequence (`el` column, MAUDE expression). Stored at `data/tasks/rafi_mpra/filtered_test_data_with_MAUDE_expression.txt` (71,103 rows, tab-separated `seq`, `el`). |
 | **Sequence format** | All 71,103 rows are exactly **110 bp** = 17 bp constant left adapter (`TGCATTTTTTTCACATC`) + 80 bp variable insert + 13 bp constant tail (`GGTTACGGCTGTT`). Verified: 100 % of rows match this layout. |
-| **Strata** | 8 subsets via `data/tasks/rafi_mpra/test_subset_ids/*.csv`: `high_exp`, `low_exp`, `yeast_exp`, `random_exp`, `challenging` (singleton) + `SNVs`, `motif_perturbation`, `motif_tiling` (pairs). |
+| **Eval set** | 71,103 sequences, split into 8 strata via `data/tasks/rafi_mpra/test_subset_ids/*.csv`: `high_exp`, `low_exp`, `yeast_exp`, `random_exp`, `challenging` (singleton) + `SNVs`, `motif_perturbation`, `motif_tiling` (pairs). |
 | **Primary metric** | Per-stratum Pearson *r* + Spearman ρ on `(pred, el)`; for the three pair strata, also pair-difference Pearson/Spearman on `(pred_alt − pred_ref, el_alt − el_ref)`. |
-| **Adapter protocol** | `SequenceExpressionScorer.predict_expression_scores(seqs) -> np.ndarray` (renamed from `MarginalizedSequenceExpressionPredictor` — see *Protocol rename*). |
+| **Adapter protocol** | `SequenceExpressionScorer.predict_expression_scores(seqs) -> np.ndarray`. |
+
+## Contents
+
+- [Results](#results)
+- [Two evaluation modes on one benchmark](#two-evaluation-modes-on-one-benchmark)
+- [The supervised baseline: DREAM-RNN](#the-supervised-baseline-dream-rnn)
+- [Caveats](#caveats)
+- [Open questions / future work](#open-questions--future-work)
+
+## Results
+
+*Zero-shot, 2026-04-18 run (v1). Pearson r / Spearman ρ between predicted and measured expression over all 71,103 sequences.*
+
+| Pearson r / Spearman ρ (n = 71,103) | Shorkie | Yorzoi | DREAM-RNN |
+| --- | ---: | ---: | ---: |
+| marginalized (`rafi_mpra_marginalized`) | 0.760 / 0.775 | 0.606 / 0.625 | — |
+| direct reporter (`rafi_mpra_promoter`) | 0.739 / 0.747 | 0.458 / 0.407 | not run |
+
+![Shorkie measured-vs-predicted scatter per sequence stratum, marginalized eval (overall r ≈ 0.76).](../../img/results/rafi_mpra_promoter/scatter_per_stratum.png)
+
+- Shorkie leads on both modes. Marginalizing the insert effect across native host contexts helps both models and helps Yorzoi most (Pearson 0.46 → 0.61).
+- DREAM-RNN, the supervised baseline, is implemented and unit-tested but **has not been run on the 71k benchmark yet** (no results directory). The r ≈ 0.97 quoted for it is its in-distribution reference from the paper, not a ybench number.
+
+Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/default/{shorkie,yorzoi}__rafi_mpra_marginalized/summary.json` (and `__rafi_mpra_promoter/` for the direct mode).
 
 ## Two evaluation modes on one benchmark
 
@@ -53,65 +76,18 @@ Assembled as `PrixFixeNet(first, core, final)`, following the de-Boer-Lab `DREAM
 | core | `BHICoreBlock` | **bidirectional LSTM** (hidden 320/dir → 640) + multi-kernel conv (out 320; dropout1 0.2, dropout2 0.5) |
 | final | `AutosomeFinalLayersBlock` | 1×1 conv → 18 bins → global avg-pool → softmax → expected-value scalar |
 
-> The upstream class names record which *team* designed each block; they are not separate models. When porting, rename to neutral single-model names (`DreamRnn`, block classes without the team prefixes) so nothing implies more than one model. The paper's Methods prose calls DREAM-RNN's first block "same as DREAM-CNN" (Autosome's two-kernel conv); the reference code uses `BHIFirstLayersBlock` — both are the same kernel-9/15 design, and we follow the code since that matches the distributed weights.
+The upstream class names record which *team* designed each block; they are not separate models — the port renames them to neutral single-model names (`DreamRnn`, blocks without team prefixes). Weights are Zenodo record **10633252** (DOI [10.5281/zenodo.10633252](https://doi.org/10.5281/zenodo.10633252)), dir **`0_1_1_0/model_best.pth`** — a plain torch `state_dict`, no retraining. The dir name is `<dataprocessor>_<first>_<core>_<final>` with team codes `0`=Autosome, `1`=BHI, `2`=UnlockDNA, so `0_1_1_0` = Autosome data-processor + BHI first + **BHI (Bi-LSTM) core** + Autosome final = DREAM-RNN. This was confirmed by a strict `load_state_dict` (the dir has `core.lstm.*` and `final.mapper.0` in_channels 320); the de-Boer notebook comments mislabel `0_1_0_0` as RNN — the vendored eval script's mapping is right.
 
-### Input / output
+Input is 150 bp × 6 channels: the 80 bp insert is reflanked back into the plasmid context the model trained on (strip the 17 bp left adapter, prepend 150 bp upstream plasmid from `plasmid.json`, keep the last 150 bp), then encoded as 4 one-hot base channels (`N → 0.25`) + a reverse-flag channel + a zero singleton. Output is one scalar per sequence (softmax over 18 bins → expected value), forward and reverse-complement run through the same net and averaged (test-time augmentation, not an ensemble). Cost is ~142 k forward passes of a ~4 M-param net (71,103 × 2), seconds-to-minutes on GPU, vs. the foundation models' 22-loci marginalization.
 
-- **Input length 150 bp, 6 channels.** The 80 bp insert is placed back in the plasmid context the model was trained on and 5′-padded to 150 bp; encoded as 4 one-hot base channels (`N → 0.25`) + a reverse-flag channel (0 forward / 1 RC) + a zero singleton channel.
-- **Reflanking (= "crop to the variable sequence").** The wrapper strips the 17 bp left adapter, prepends 150 bp of upstream plasmid from `plasmid.json` (the `N×80` slot at index 3648; the 17 bp adapter sits immediately upstream at 3631), and keeps the last 150 bp → `[57 bp plasmid incl. adapter] + [80 bp insert] + [13 bp tail]`. This discards all genomic/host context — the supervised model never sees it.
-- **Output: one scalar** per sequence (softmax over 18 bins → expected bin value). Forward + reverse-complement are run through the same single network and averaged (test-time augmentation, not an ensemble).
+### Implementation note (done)
 
-### Weights
+All of this is implemented in code:
 
-Zenodo record **10633252** (DOI [10.5281/zenodo.10633252](https://doi.org/10.5281/zenodo.10633252)), `prixfixe_model_weights.tar.gz` (2.3 GB). DREAM-RNN is **`0_1_1_0/model_best.pth`** — a plain torch `state_dict`. No retraining needed.
-
-> **Combo-index scheme (verified, not from notebook comments).** The dir name is `<dataprocessor>_<first>_<core>_<final>` with team codes `0`=Autosome, `1`=BHI, `2`=UnlockDNA. So `0_1_1_0` = Autosome data-processor + BHI first + **BHI (Bi-LSTM) core** + Autosome final = DREAM-RNN; `0_1_0_0` = BHI first + Autosome (CNN) core = DREAM-CNN; `0_0_2_0` = Autosome first + UnlockDNA (attention) core = DREAM-Attn. This was **confirmed by a strict `load_state_dict`**: `0_1_1_0` has `core.lstm.*` and `final.mapper.0` in_channels 320; `0_1_0_0` has an Autosome `core.seqextractor.*` and final in_channels 64. The de-Boer notebook comments label `0_1_0_0` as RNN — that is wrong; the vendored eval script's mapping is right.
-
-If we ever retrain instead: PyTorch, ~80 epochs, batch 1024, single 16 GB GPU, training data on the same Zenodo record (6,739,258 sequences).
-
-### Adapter
-
-A new `dream_rnn` model whose adapter implements the protocol by running the network directly — no host-gene loop:
-
-```python
-class DreamRnnRafiPredictor(SequenceExpressionScorer):
-    def predict_expression_scores(self, seqs):
-        return np.array([self._predictor.predict(s) for s in seqs])
-```
-
-`self._predictor` wraps the one DREAM-RNN net and does the reflank → encode → forward+RC → scalar pipeline above. Cheap: ~142 k forward passes of a ~4 M-param net (71,103 × 2), seconds-to-minutes on GPU, vs. the foundation models' 22-loci marginalization.
-
-## Protocol rename
-
-`MarginalizedSequenceExpressionPredictor.predict_marginalized_expressions` is a misnomer for a model that does no marginalizing. Rename to a neutral name that is honest for both modes (a per-sequence scalar that should track expression, however computed):
-
-- protocol `MarginalizedSequenceExpressionPredictor` → **`SequenceExpressionScorer`**
-- method `predict_marginalized_expressions` → **`predict_expression_scores`**
-
-Pure rename, behavior-preserving. Touches `adapters/protocols.py`, the marginalized base (`adapters/_marginalized_mpra.py`), the Rafi and Shalem adapters + benchmarks (both use this protocol), and `registry.py`. Avoid the name `SequenceExpressionPredictor` — that protocol was deleted on 2026-05-21 and reusing it would confuse.
-
-## Reporting: fed its native substrate
-
-There is no model-class/tier concept in the repo (`registry.py` keys are flat strings; `compare.py` groups by task only). To keep the supervised baseline visually distinct from the zero-shot models on the shared per-stratum plots:
-
-1. **Style `dream_rnn` distinctly** in `benchmarks/mpra.py:compare_plot` (e.g. a hatched / outlined bar or a pinned reference color), so it doesn't read as one more zero-shot model.
-2. **Caption requirement (mandatory):** every figure that places DREAM-RNN beside Shorkie/Yorzoi must state that *each model is fed its native substrate* — foundation models scored by marginalized logSED at native loci, DREAM-RNN scored on the reporter insert in its own plasmid context. Without this, the figure implies identical inputs, which is false.
-
-## Files
-
-### To add
-- `data/tasks/rafi_mpra/plasmid.json` — 8,294 bp dual-reporter plasmid string, `N×80` insert slot at index 3648. Source: de-Boer-Lab/random-promoter-dream-challenge-2022 `data/plasmid.json` (`main`). Wire through the data manifest (`manifest.lock.json`), not a relative-cwd `open()` like the upstream code.
-- DREAM-RNN weights `0_1_1_0/model_best.pth` from Zenodo 10633252 — stage like other model weights (not under `data/tasks/`).
-- `src/yeastbench/models/dream_rnn/` — ported net (`PrixFixeNet` + the three blocks, neutrally renamed) + the predictor/preprocessing (`n2id`, `revcomp`, reflank, 6-channel encode, fwd+RC average).
-- `src/yeastbench/adapters/dream_rnn_rafi.py` — `DreamRnnRafiPredictor`.
-
-### To change
-- `adapters/protocols.py`, `_marginalized_mpra.py`, Rafi + Shalem adapters/benchmarks, `registry.py` — protocol rename.
-- `registry.py` — register `dream_rnn`; `configs/default.yaml` — enable `dream_rnn` on `rafi_mpra_marginalized`.
-- `benchmarks/mpra.py:compare_plot` — distinct style + caption note.
-
-### Already present
-- `data/tasks/rafi_mpra/filtered_test_data_with_MAUDE_expression.txt` (71,103 rows), `test_subset_ids/*.csv`, `public_leaderboard_ids/`.
+- **Model + adapter.** Ported net in `src/yeastbench/models/dream_rnn/` (`PrixFixeNet` + the three blocks, neutrally renamed; preprocessing `n2id`, `revcomp`, reflank, 6-channel encode, fwd+RC average). Adapter `DreamRnnRafiPredictor` in `src/yeastbench/adapters/dream_rnn_rafi.py` runs the net directly via `predict_expression_scores` — no host-gene loop. Registered as `dream_rnn` and enabled on `rafi_mpra_marginalized` in `configs/default.yaml`.
+- **Protocol rename (behaviour-preserving).** The old `MarginalizedSequenceExpressionPredictor.predict_marginalized_expressions` was a misnomer for a model that does no marginalizing, so it is now `SequenceExpressionScorer.predict_expression_scores` across `adapters/protocols.py`, `_marginalized_mpra.py`, the Rafi + Shalem adapters/benchmarks, and `registry.py`.
+- **Distinct styling + caption.** `benchmarks/mpra.py:compare_plot` draws `dream_rnn` as a hatched-grey bar labelled "supervised, in-distribution" and stamps a caption flag that each model is fed its native substrate (zero-shot models scored by marginalized logSED at native loci; DREAM-RNN scored on the reporter insert in its own plasmid context — not identical inputs).
+- **Data still to stage.** `data/tasks/rafi_mpra/plasmid.json` (8,294 bp dual-reporter plasmid, `N×80` insert slot at index 3648, from de-Boer-Lab/random-promoter-dream-challenge-2022 `data/plasmid.json`) and the `0_1_1_0/model_best.pth` weights need publishing to the HF/GCS mirrors. The test data (`filtered_test_data_with_MAUDE_expression.txt`, 71,103 rows; `test_subset_ids/*.csv`; `public_leaderboard_ids/`) is already present.
 
 ## Caveats
 
@@ -119,3 +95,8 @@ There is no model-class/tier concept in the repo (`registry.py` keys are flat st
 - **Native / yeast_exp stratum.** DREAM-RNN was trained on random promoters; native-derived test sequences are themselves harder for it, so its reference value on `yeast_exp` is not a hard ceiling.
 - **License.** Confirm the de-Boer-Lab repo license permits vendoring the blocks + `plasmid.json` into this repo before committing.
 - **Adapter prefix assert.** All 71,103 sequences start with the 17 bp adapter (verified), but keep an assert in the reflank step so a malformed input can't be silently corrupted.
+
+## Open questions / future work
+
+- Run DREAM-RNN on the full 71k benchmark once `model_best.pth` + `plasmid.json` are on the HF/GCS mirrors, and add its per-stratum row to Results.
+- Reconcile the de-Boer test-data path: confirm the vendored `filtered_test_data_with_MAUDE_expression.txt` is bit-identical to the upstream DREAM release before publishing leaderboard numbers.

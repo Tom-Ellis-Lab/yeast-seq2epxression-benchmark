@@ -1,8 +1,11 @@
 # Chen et al. — Synonymous-mutation MPRA (mRNA level, codon-resolution)
 
-![image](/img/chen_codon_banner.png)
+![image](../../img/chen_codon_banner.png)
 
 Image from Chen et al. (2017)
+
+> **Status:** **implemented**; 4 models × 3 libraries, GPU runs done.
+
 ## At a glance
 
 | | |
@@ -10,11 +13,25 @@ Image from Chen et al. (2017)
 | **Task** | Regression: predict scalar mRNA level (log2 read-count ratio `log2(R/D)`) for ~4,079 *S. cerevisiae* synonymous variants of three genes inserted at a shared chromosome II integration construct. Each variant changes only a 36 nt block (12 synonymous codons); the surrounding ~1.7 kb of construct sequence is identical across the variants of one library. |
 | **Source** | Chen S, Li K, Cao W, *et al.* 2017. *Codon-Resolution Analysis Reveals a Direct and Context-Dependent Impact of Individual Synonymous Mutations on mRNA Level*. **Molecular Biology and Evolution** 34(11):2944–2958. DOI: [10.1093/molbev/msx229](https://doi.org/10.1093/molbev/msx229). Open Access. |
 | **Assay** | Pooled barcode-free MPRA in BY4742-derived haploid yeast. The strain's chrII has GAL7's CDS replaced with `dTomato` and GAL1's CDS replaced with the variant cassette `PGAL1-{GFP\|TDH3}-TADH1-LEU2-TGAL1`. Galactose (2 %) co-induces the variant gene from `PGAL1` and the normalizer `dTomato` from `PGAL7`. Total RNA → cDNA → variable-region amplicon → Illumina HiSeq 2500 (R count); genomic DNA → variable-region amplicon → Illumina (D count). Per-variant mRNA level = `R/D`. |
-| **Libraries** | Three, sharing the same integration construct. **GFP r1**: 1,124 variants in GFP codons 41–52 (`TTRACNTTRAARTTYATYTGYACNACNGGNAARTTR`). **GFP r2**: 2,432 variants in GFP codons 156–167 (`CARAARAAYGGNATYAARGTNAAYTTYAARATYAGR`). **TDH3**: 523 variants in TDH3 codons 57–68 (`GARGTNTCNCAYGAYGAYAARCAYATHATHGTNGAY`). |
+| **Eval set** | n = 4,079 total (GFP r1 1,124; GFP r2 2,432; TDH3 523; 0 drops), across three libraries sharing the same integration construct. **GFP r1**: 1,124 variants in GFP codons 41–52 (`TTRACNTTRAARTTYATYTGYACNACNGGNAARTTR`). **GFP r2**: 2,432 variants in GFP codons 156–167 (`CARAARAAYGGNATYAARGTNAAYTTYAARATYAGR`). **TDH3**: 523 variants in TDH3 codons 57–68 (`GARGTNTCNCAYGAYGAYAARCAYATHATHGTNGAY`). |
+| **Reference assembly** | *S. cerevisiae* R64-1-1. |
 | **Expression labels** | Per-library z-centred `log2(R/D)`, **shipped per replicate** (not merged): `log2mRNA_rep1` and `log2mRNA_rep2` (GFP r1, GFP r2) and a single `log2mRNA` column for TDH3 (which Chen supplies pre-averaged in supp Table S9). Replicate-replicate ceilings: GFP r1 — Pearson 0.83 / Spearman 0.71; GFP r2 — Pearson 0.73 / Spearman 0.71; TDH3 — Pearson 0.72 / Spearman *unknown* (S9 ships only the merged column, so we can't recompute, and Chen 2017 only reports a Pearson). |
 | **Bonus labels** | **Protein level** (GFP r1, GFP r2): FACS-seq across 7 bins of `GFP/dTomato` ratio, per-variant weighted mean of bin medians. **mRNA degradation rate** (GFP r1 only): slope of −ln(mRNA_t / mRNA_0) vs *t* over 7 timepoints (0, 5, 10, 20, 40, 80, 160 min) after thiolutin addition; 1,076 of the 1,124 variants. |
-| **Primary metric** | **Both** Pearson *r* and Spearman ρ of `(pred, log2mRNA)`, reported side-by-side — neither alone is the headline. Computed separately against each replicate column (`rep1`, `rep2`) on the two-replicate libraries (GFP r1 / GFP r2) and against the single column on TDH3. We deliberately do **not** merge replicates into one label. **TDH3-specific caveat:** CAI on TDH3 is heavy-tailed (the top ~10 % of CAI values pulls Pearson r from 0.39 → 0.67 by leverage), so Pearson and Spearman diverge dramatically only on that library. Chen 2017 itself reports Spearman; we report both so the comparison is unambiguous either way. |
-| **Adapter protocol** | New: `LocalCodingVariantPredictor` — see below. Reuses the marginalized-MPRA logSED machinery internally; the protocol surface is "given a list of (library, 36 nt variable block) pairs, return scalars". |
+| **Primary metric** | **Both** Pearson *r* and Spearman ρ of `(pred, log2mRNA)`, reported side-by-side — neither alone is the headline. Computed separately against each replicate column (`rep1`, `rep2`) on the two-replicate libraries (GFP r1 / GFP r2) and against the single column on TDH3. We deliberately do **not** merge replicates into one label. Pearson and Spearman diverge on TDH3 by measurement leverage — see Results. |
+| **Adapter protocol** | `LocalCodingVariantPredictor.predict_local_variants` (`src/yeastbench/adapters/protocols.py`) — see below. Reuses the marginalized-MPRA logSED machinery internally; the protocol surface is "given a list of (library, 36 nt variable block) pairs, return scalars". |
+
+## Contents
+
+- [At a glance](#at-a-glance)
+- [Why this benchmark exists](#why-this-benchmark-exists)
+- [Results](#results)
+- [The construct, in the original experiment vs in v1 scoring](#the-construct-in-the-original-experiment-vs-in-v1-scoring)
+- [Adapter protocol](#adapter-protocol)
+- [Baseline models](#baseline-models)
+- [Evaluation protocol](#evaluation-protocol)
+- [Files](#files)
+- [Registry surface](#registry-surface)
+- [Open questions / future work](#open-questions--future-work)
 
 ## Why this benchmark exists
 
@@ -27,6 +44,24 @@ Chen 2017 gives us a controlled probe of that signal:
 3. **Reproducibility ceiling published.** Replicate-replicate Pearson is reported per library, so we have a hard upper bound for what any predictor can achieve.
 4. **Hard for our models.** The two regions of GFP cover 36 nt out of a ~720 nt CDS, embedded inside an entirely synthetic locus. Shorkie/Yorzoi may resolve nothing here — that's an informative negative result that the benchmark can publish.
 
+## Results
+
+*Zero-shot, 2026-05-29 run (v1). Spearman ρ on `log2(R/D)`; the GFP libraries are scored per replicate (rep1 shown, rep2 similar). Four models — two genomic (Shorkie, Yorzoi) and two coding-sequence baselines (CAI, CodonTransformer).*
+
+| Spearman ρ | CAI | CodonTransformer | Shorkie | Yorzoi | replicate ceiling |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| GFP r1 (n = 1,124) | 0.328 | 0.297 | **0.475** | 0.376 | 0.71 |
+| GFP r2 (n = 2,432) | 0.316 | 0.574 | **0.622** | 0.589 | 0.71 |
+| TDH3 (n = 523) | **0.389** | 0.188 | 0.302 | 0.231 | — |
+
+![Four-model comparison, GFP r2 (left) and TDH3 (right).](../../img/results/chen_synonymous/chen_gfp_r2_compare.svg)
+![](../../img/results/chen_synonymous/chen_tdh3_compare.svg)
+
+- On the deep GFP r2 library both genomic models clear the CAI floor (Shorkie ρ 0.62, Yorzoi 0.59 vs CAI 0.32) and edge out CodonTransformer.
+- TDH3 is the exception and a measurement-leverage story: CAI's **Pearson** r on TDH3 is 0.675 while its **Spearman** is only 0.389 — the top ~10% of CAI values pull Pearson up. Report both; they only diverge on this library.
+
+Why the numbers look the way they do — including why Yorzoi produces non-trivial r on a glucose-repressed PGAL1 construct it cannot actually model: [`model_failures.md`](model_failures.md). Artifacts: `results/default/{cai,codon_transformer,shorkie,yorzoi}__chen_synonymous/summary.json` (one task, library-stratified). The numbers above are from the pre-unification three-task run and are bit-identical under the merged task.
+
 ## The construct, in the original experiment vs in v1 scoring
 
 Chen 2017's strain integrates the variant gene cassette at the chrII GAL1 locus:
@@ -38,7 +73,7 @@ Chen 2017's strain integrates the variant gene cassette at the chrII GAL1 locus:
 
 Galactose is required to induce the variant gene from PGAL1; in glucose conditions PGAL1 is Mig1-repressed to near-zero transcription.
 
-**Why v1 does *not* score at this locus.** Both Shorkie and Yorzoi were trained exclusively on glucose / standard-condition RNA-seq tracks (verified: zero galactose RNA-seq tracks in either model's target sheet). Scoring at the construct's actual chrII locus asks the model to predict variant effects at a promoter it knows is silent, which adds locus-specific calibration noise: see the investigation notebooks (`notebooks/chen_{shorkie,yorzoi}_investigation.ipynb`) — both models correctly predict native unmodified GAL1 in glucose as near-zero coverage but predict the same locus with the GFP CDS spliced in as 11-29× higher. The variant-effect signal that *does* survive the model's confusion at this locus is **CDS-intrinsic codon usage**: changing the 36 nt variable block modulates predicted coverage similarly across nearly all of the model's tracks, regardless of whether the host promoter is firing.
+**Why v1 does *not* score at this locus.** Both Shorkie and Yorzoi were trained exclusively on glucose / standard-condition RNA-seq tracks (verified: zero galactose RNA-seq tracks in either model's target sheet). Scoring at the construct's actual chrII locus asks the model to predict variant effects at a promoter it knows is silent, which adds locus-specific calibration noise (the GAL1-confusion detail is in [`model_failures.md`](model_failures.md)). The variant-effect signal that *does* survive at this locus is **CDS-intrinsic codon usage**: changing the 36 nt variable block modulates predicted coverage similarly across nearly all of the model's tracks, regardless of whether the host promoter is firing.
 
 **What v1 scores instead — marginalisation over 20 active YPD hosts.** For each variant, splice the variant gene's CDS + TADH1 into 20 native R64-1-1 host gene loci (replacing each host's CDS, keeping the host's promoter and downstream context), score each (variant, host) pair, and average. The codon-effect signal is locus-independent, so it transfers cleanly; the locus-specific calibration noise averages out. The marginalised prediction does **not** correspond to "what Chen would have measured if the experiment were done in this gene's locus"; it corresponds to "the model's codon-effect signal averaged across active-in-YPD chromatin contexts" — which is the quantity the model can actually compute.
 
@@ -124,25 +159,7 @@ Fallahpour *et al.* 2025 (*Nat Commun* 16:3205, doi [10.1038/s41467-025-58588-7]
 
 **Tokenizer recap.** Vocab is ~90 tokens: specials, per-aa "unknown codon" tokens (`k_unk`, …), and one token per (amino acid, codon) pair (`k_aaa`, `n_aac`, …). Output at position *i* is a distribution over (aa, codon) pairs; conditioning on the protein collapses this to a choice among the synonymous codons of that position's amino acid.
 
-**Scoring (v1, fully-marginal approximation).** Per library, one forward pass; per variant, twelve tensor lookups:
-
-```python
-# at adapter init, per library_id: translate the variant gene's CDS from the
-# construct → protein string of length L (239 aa for GFP, 332 aa for TDH3);
-# cache the masked-LM forward pass over the all-unk merged sequence
-merged = get_merged_seq(protein=protein, dna="")               # codons → *_unk
-inputs = tokenizer(merged, return_tensors="pt", ...)
-with torch.no_grad():
-    log_p = model(**inputs).logits[0, 1:-1, :].log_softmax(-1)  # [L, vocab]
-
-# at predict_local_variants: per variant, sum log_p over the 12 variable codons
-def score(variant_codons, var_pos, protein):
-    tok = [TOKEN2INDEX[f"{protein[var_pos[j]].lower()}_{variant_codons[j].lower()}"]
-           for j in range(12)]
-    return sum(log_p[var_pos[j], tok[j]].item() for j in range(12))
-```
-
-Three forward passes total at benchmark time (one per library, since each library's protein is fixed). Codons outside the variable block are identical across variants of one library, so they cancel — summing over only the 12 variable positions is sufficient for ranking and matches what the benchmark scores.
+**Scoring (v1, fully-marginal approximation).** Per library, one cached masked-LM forward pass over the all-`*_unk` merged sequence; per variant, sum the per-position log-probabilities over the 12 variable codons. Three forward passes total at benchmark time (one per library, since each library's protein is fixed). Codons outside the variable block are identical across variants of one library, so they cancel — summing over only the 12 variable positions is sufficient for ranking and matches what the benchmark scores. (Implementation: `src/yeastbench/adapters/baselines/codon_transformer.py`.)
 
 **Position-independence caveat — documented, not hidden.** A single masked-LM forward pass over the all-`*_unk` input gives per-position **marginals**, not the joint `log P(DNA | protein)`. Summing marginals across the 12 positions implicitly treats codon choices as independent given the protein. The bidirectional BigBird attention still lets each position's marginal condition on the full protein, so this is fine for ranking — but it isn't a formal sequence likelihood. The more faithful pseudo-likelihood (12 forward passes per library with flanking codons set to wild-type and only one variable position masked at a time) is a drop-in v2 swap if the v1 number looks suspiciously like CAI's; v1 keeps the cheap marginal version.
 
@@ -251,9 +268,9 @@ tasks_config:
 
 `evaluate` scores each library with its own `predict_local_variants` call. A single Shorkie adapter and a single Yorzoi adapter cover all three libraries via the `library_ids` argument (no per-library adapter classes): each builds its per-library host contexts + REF caches on demand and caches them, so a library's scores match a standalone single-library run.
 
-## Open questions for implementation phase
+## Open questions / future work
 
-1. **GFP source sequence — resolved (issue #8).** The GFP is **wild-type *A. victoria* GFP**, not the S65T variant and not a codon-optimised synthesis. Evidence: Chen's construction primers (supp Table S1) encode the wild-type residues at the positions that distinguish variants (E172, Q157), and the protein matches PDB 1EMA everywhere except the engineered chromophore (S65T/Q80R). The coding DNA is `GFP_CDS_WT` in `src/yeastbench/adapters/_chen_gfp_reference.py`: GenBank **L29345.1** corrected to the canonical avGFP protein, with residue 172 set to `GAA` to match Chen's primer. Chen never published the full construct DNA, so codons outside the Table S1 flanks are L29345-native (the flanks we *do* have match this sequence base-for-base). The variable regions are still overwritten per-variant from the TSVs. **Do not** revert to a preferred-codon back-translation — that scored models on the wrong DNA.
+1. **GFP source sequence — resolved (issue #8).** The GFP is wild-type *A. victoria* GFP (GenBank L29345.1, residue 172 set to `GAA` per Chen's primer), not S65T and not a codon-optimised synthesis. The coding DNA is `GFP_CDS_WT` in `src/yeastbench/adapters/_chen_gfp_reference.py`; the variable regions are overwritten per-variant from the TSVs. **Do not** revert to a preferred-codon back-translation — that scored models on the wrong DNA.
 2. **Logits / logSED window inside the construct.** Shorkie has a 16,384 bp receptive field; Yorzoi has 4,992 bp. The construct integration site sits in a region of chrII with no known native expression there in BY4742 (GAL1/GAL7 are silent without galactose), but the *flanking* native chrII genes are real — the receptive window will spill onto them. That's expected, and the logSED is computed over the construct gene's CDS bins only.
 3. **Score sign for degradation rate.** A higher *predicted* mRNA level should imply *lower* measured degradation rate, so the Pearson sign on `(pred, degradation_rate)` is negative. Mirror the Wu RFP-pins benchmark's sign-aware AUC computation: report the absolute correlation and document the expected sign.
 4. **What if the supp tables are gated or hard to parse?** GSA accession PRJCA000227 has the raw reads, but rebuilding R/D counts from raw is a separate (~few-days) project. The supp tables S7–S9 are the canonical resource; if they're inaccessible we revisit.

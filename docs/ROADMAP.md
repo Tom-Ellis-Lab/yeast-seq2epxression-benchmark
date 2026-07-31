@@ -16,18 +16,41 @@
 
 **[v2 release](#v2-release)**
 
-- [ExoShorkie integration](#exoshorkie-integration)
-- [Species LM](#species-lm)
-- [Condition coherence](#condition-coherence)
-- [Caudal eQTL effect-size calibration](#caudal-eqtl-effect-size-calibration)
-- [Caudal eQTL positive-set cleanup](#caudal-eqtl-positive-set-cleanup)
-- [Per-stratum reporting and bootstrap CIs](#per-stratum-reporting-and-bootstrap-cis)
-- [Hong et al. extensions](#hong-et-al-extensions)
-- [Brooks et al. extensions](#brooks-et-al-extensions)
-- [Meneu et al. extensions](#meneu-et-al-extensions)
-- [Bin-boundary sensitivity](#bin-boundary-sensitivity)
-- [Baselines as first-class models](#baselines-as-first-class-models)
-- [CI smoke-test](#ci-smoke-test)
+- [Roadmap](#roadmap)
+  - [Contents](#contents)
+  - [v1 release](#v1-release)
+    - [Infrastructure](#infrastructure)
+    - [eQTL](#eqtl)
+      - [Caudal et al. cis-eQTL classification](#caudal-et-al-cis-eqtl-classification)
+      - [Kita et al. eQTL](#kita-et-al-eqtl)
+    - [MPRA](#mpra)
+      - [Rafi / de Boer (promoter, DREAM)](#rafi--de-boer-promoter-dream)
+      - [Shalem / Segal (terminator)](#shalem--segal-terminator)
+      - [Chen et al. (synonymous CDS)](#chen-et-al-synonymous-cds)
+      - [Wu et al. (RFP insertions)](#wu-et-al-rfp-insertions)
+      - [Hong et al. (mCherry IGR insertions)](#hong-et-al-mcherry-igr-insertions)
+      - [Cuperus et al. (5′ UTR)](#cuperus-et-al-5-utr)
+    - [Structural rearrangements](#structural-rearrangements)
+    - [Foreign-DNA integration](#foreign-dna-integration)
+    - [Code-structure refactor](#code-structure-refactor)
+      - [Correctness sweep](#correctness-sweep)
+    - [Documentation](#documentation)
+    - [Reproducibility](#reproducibility)
+    - [Pre-release cleanup](#pre-release-cleanup)
+    - [Timon Cleaup Notes](#timon-cleaup-notes)
+  - [v2 release](#v2-release)
+    - [ExoShorkie integration](#exoshorkie-integration)
+    - [Species LM](#species-lm)
+    - [Condition coherence](#condition-coherence)
+    - [Caudal eQTL effect-size calibration](#caudal-eqtl-effect-size-calibration)
+    - [Caudal eQTL positive-set cleanup](#caudal-eqtl-positive-set-cleanup)
+    - [Per-stratum reporting and bootstrap CIs](#per-stratum-reporting-and-bootstrap-cis)
+    - [Hong et al. extensions](#hong-et-al-extensions)
+    - [Brooks et al. extensions](#brooks-et-al-extensions)
+    - [Meneu et al. extensions](#meneu-et-al-extensions)
+    - [Bin-boundary sensitivity](#bin-boundary-sensitivity)
+    - [Baselines as first-class models](#baselines-as-first-class-models)
+    - [CI smoke-test](#ci-smoke-test)
 
 Per-benchmark detail (scoring design, sources, results) lives in the spec
 files under `docs/benchmarks/`. This roadmap tracks status only.
@@ -348,12 +371,13 @@ gitignored; remove from local checkouts too.
 - [ ] Verify `git ls-files | xargs grep -l "investigation" -- scripts/ src/` is
   empty and `tests/` imports none of the deleted files
 - [ ] Confirm the specs reference the notebooks only as historical context
-- [ ] Standardize the benchmark tables so they all share the same row names
-  (consistent metric / row labels across every task's results table)
+- [ ] Standardize the benchmark tables so they all share the same row names (consistent metric / row labels across every task's results table)
+
+### Timon Cleaup Notes
+- [x] Why does benchmarks/README say DREAM-RNN supervised baseline spec'd in the table
+- [ ] Everything is zero-shot except for the IntProp thing, right? I think it would be better to have everything consistent
 
 ## v2 release
-
-Deferred past the v1 cut. Items move back into a v1 section when promoted.
 
 ### ExoShorkie integration
 

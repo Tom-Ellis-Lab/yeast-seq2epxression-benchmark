@@ -1,6 +1,6 @@
 # Hong et al. — Chromosomal-position effects on IGR-integrated mCherry
 
-![image](/img/hong_igr.drawio.svg)
+![image](../../img/hong_igr.drawio.svg)
 
 ## At a glance
 
@@ -19,41 +19,61 @@
 
 ## Headline ceiling
 
-Hong reports **SPCC = 0.847** between RT-qPCR mCherry mRNA and
-mCherry fluorescence across 30 (promoter × IGR) combinations
-(Fig. 2H/I). The benchmark records this in `summary.json` as
-`mrna_fluo_ceiling_spcc_published`. Caveats about
-selection-biased / model-specific noise ceilings live in
-[`docs/benchmarks/model_failures.md`](model_failures.md), not here.
+Hong reports **SPCC = 0.847** between RT-qPCR mCherry mRNA and mCherry fluorescence across 30 (promoter × IGR) combinations (Fig. 2H/I), recorded in `summary.json` as `mrna_fluo_ceiling_spcc_published`. Caveats about selection-biased / model-specific noise ceilings live in [`model_failures.md`](model_failures.md), not here.
+
+## Contents
+
+- [At a glance](#at-a-glance)
+- [Headline ceiling](#headline-ceiling)
+- [Results](#results)
+- [Dataset construction](#dataset-construction)
+- [The construct](#the-construct)
+- [Model contract](#model-contract)
+- [Evaluation protocol](#evaluation-protocol)
+- [Files](#files)
+- [Open questions / future work](#open-questions--future-work)
 
 ## Results
 
+*2026-05-29 run.*
+
 | Model | Primary IntProp ρ | Primary IntTrain ρ | IntTrain-fitted readout | IntTrain-fitted IntProp ρ | IntTrain selection ρ | Candidates considered |
 | --- | ---: | ---: | --- | ---: | ---: | ---: |
-| **Shorkie** | −0.148 | −0.269 | **H3 (nucleosome density) × flank both 1 kb** | **+0.185** | +0.345 | 36 |
-| **Yorzoi**  | +0.057 | −0.070 | SCRaMBLE strains × flank L 1 kb | −0.030 | +0.107 | 24 |
-| *Reference: YeIP (supervised, published)* | — | — | tabular features on 10 hand-engineered features | **+0.556** | — | — |
+| **Shorkie** | −0.148 | −0.269 | **H3 (nucleosome density) × flank both 1 kb** | **+0.183** | +0.345 | 36 |
+| **Yorzoi**  | +0.063 | −0.073 | All + tracks (baseline) × flank L 1 kb | −0.016 | +0.113 | 24 |
+| *Reference: YeIP (supervised, published-external)* | — | — | tabular features on 10 hand-engineered features | **+0.556** | — | — |
 
-(See `results/default/{shorkie,yorzoi}__hong_igr/summary.json` for
-the full per-tier breakdown.)
+The YeIP row is published-external (Hong et al.'s supervised model on
+hand-engineered features), not a run we reproduce — see "not doing in v1"
+below.
+
+![Primary readout: RNA-seq T0 × cassette CDS, IntProp/IntTrain/pooled (Shorkie).](../../img/results/hong_igr/scatter_primary.png)
+
+![IntTrain-fitted readout (H3 nucleosome density × flank), IntProp/IntTrain/pooled (Shorkie).](../../img/results/hong_igr/scatter_inttrain_fitted.png)
 
 ### What the numbers say
 
 - **Shorkie's IntTrain-fitted IntProp ρ is a clean, biologically
   interpretable positive result.** The picked combo — predicted H3
   nucleosome density at the immediate native flank, sign-flipped —
-  gives IntProp ρ = +0.185, a ~0.33 absolute improvement over its
+  gives IntProp ρ = +0.183, a ~0.33 absolute improvement over its
   Primary. Direction agrees with YeIP's "nucleosome density lower
   in high-expression IGRs."
 - **Yorzoi's IntTrain-fitted IntProp ρ is *worse* than its Primary**
-  (−0.030 vs +0.057). Selection on IntTrain picks a combo that
-  doesn't generalize, because Yorzoi's RNA-seq-only track inventory
-  has no chromatin-density tracks. The asymmetry is itself the
-  finding: models with richer track inventories pick up more of the
+  (−0.016 vs +0.063). Selection on IntTrain lands on the baseline
+  all-plus-tracks group at the left flank, and that combo doesn't
+  generalize to IntProp — because Yorzoi's track inventory is
+  RNA-seq only, with no chromatin-density tracks to pick the signal
+  Shorkie's H3 combo finds. The asymmetry is itself the finding:
+  models with richer track inventories pick up more of the
   position-effect signal.
-- **Apples-to-apples (Primary), Yorzoi > Shorkie** (+0.057 vs
+- **Apples-to-apples (Primary), Yorzoi > Shorkie** (+0.063 vs
   −0.148). On the same readout strategy, Yorzoi is mildly better.
   Both are far below the YeIP supervised baseline.
+
+Why the numbers look the way they do:
+[`model_failures.md`](model_failures.md). Full per-tier breakdown +
+artifacts: `results/default/{shorkie,yorzoi}__hong_igr/`.
 
 ## Dataset construction
 
@@ -110,16 +130,13 @@ layout:
 
 ### Cassette orientation: always `+`
 
-Hong's donor DNA is PCR-amplified from the cassette template with
-primers carrying 40 bp tails matching the chromosome. The forward
-primer's tail is upstream-of-cut + strand; the reverse primer's
-tail is downstream-of-cut + strand (RC'd on the reverse primer).
-After HDR, the chromosome's + strand reads
-`[upstream + strand] [cassette + strand] [downstream + strand]`.
-Cassette is therefore always integrated with its written 5'→3'
-direction matching the chromosome's + strand. mCherry transcription
-is always on +. For Yorzoi this means we always use the +-strand
-track subset (tracks 0–80) — no per-locus strand routing.
+Hong's donor DNA carries 40 bp homology tails matching the chromosome
+up- and downstream of the cut. After HDR the chromosome's + strand
+reads `[upstream] [cassette] [downstream]`, all + strand, so the
+cassette's written 5'→3' direction always matches the chromosome's +
+strand and mCherry transcription is always on +. For Yorzoi we always
+use the +-strand track subset (tracks 0–80) — no per-locus strand
+routing.
 
 ## Model contract
 

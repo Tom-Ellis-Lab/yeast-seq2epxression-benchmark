@@ -8,12 +8,12 @@
 | --- | --- |
 | **Task** | Binary classification: is this `(variant, gene)` pair a cis-eQTL, or a distance-matched non-eQTL control? Identical task definition to [Caudal](caudal_eqtl.md). |
 | **Assay** | cis-eQTL mapping (Kita et al. panel). |
-| **Eval set** | 619 paired (positive, negative) rows per negative set × 4 sets. |
+| **Eval set** | 605 paired (positive, negative) rows per negative set × 4 sets. |
 | **Adapter protocol** | `VariantEffectScorer.score_variants` (shared with Caudal). |
 | **Source** | Kita, R., Venkataram, S., Zhou, Y. & Fraser, H. B. *High-resolution mapping of cis-regulatory variation in budding yeast.* PNAS 114 (2017), DOI: [10.1073/pnas.1717421114](https://doi.org/10.1073/pnas.1717421114). Summary statistics in supplementary file [`pnas.1717421114.sd01.txt`](https://www.pnas.org/doi/suppl/10.1073/pnas.1717421114/suppl_file/pnas.1717421114.sd01.txt). 1,640 raw eQTLs called from 85 *S. cerevisiae* isolates. |
 | **Reference assembly** | *S. cerevisiae* R64-1-1, Ensembl release 115 (shared with Caudal). |
 | **Background population for negatives** | 1011 yeast isolates panel (`1011Matrix.gvcf`, shared with Caudal). The Kita eQTLs themselves are called from a separate 85-isolate panel; the 1011 panel is used only as the source of distance-matched non-eQTL controls. |
-| **Positives** | 683 cis-eQTLs selected from the raw 1,640, restricted to four genomic contexts — **Promoter, UTR5, UTR3, ORF**. The cis threshold is then applied as `|ChrPos − TSS| ≤ 8000`. The selection of 683 follows the Shorkie paper's reproduction; the upstream Kita release contains more variants but only these four context categories are used in the canonical evaluation. **Note: this is a different cis criterion from Caudal's 25 kb-of-gene-body rule** — see [Open questions](#open-questions--future-work). The shipped distribution has 619 pairs per negative set (4 sets). |
+| **Positives** | 683 cis-eQTLs selected from the raw 1,640, restricted to four genomic contexts — **Promoter, UTR5, UTR3, ORF**. The cis threshold is then applied as `|ChrPos − TSS| ≤ 8000`. The selection of 683 follows the Shorkie paper's reproduction; the upstream Kita release contains more variants but only these four context categories are used in the canonical evaluation. **Note: this is a different cis criterion from Caudal's 25 kb-of-gene-body rule** — see [Open questions](#open-questions--future-work). The shipped distribution has 605 pairs per negative set (4 sets) — single-nucleotide variants only; 14 indel/MNV positives the earlier build included have been dropped (the variant scorer handles 1-bp REF/ALT only). |
 | **Negatives** | Identical procedure to Caudal: REF/ALT-matched non-coding variants from the 1011 panel with AF ≥ 0.05, distance-to-TSS-matched to ±100 bp (fallback ±200 bp), four independent iterations, with the same v1 same-chromosome post-filter. |
 | **Primary metric** | AUROC and AUPRC, no class balancing, mean ± SEM across the four negative-set iterations, **with random and perfect baselines on the plots** (same form as Caudal). |
 
@@ -31,15 +31,18 @@
 
 ## Results
 
-*No model run yet (TBD).* The processed distribution is built and manifest-locked (4 negative sets), but neither model has been scored on Kita: `results/default/yorzoi__kita_eqtl/` is an empty placeholder and there is no Shorkie run, so Kita has no entry in `results/default/compare/`. Numbers below are filled in once the runs land — do **not** borrow Caudal's.
+*Zero-shot, 2026-07-31 Modal run (v1, A10 GPU). The classification score is `|logSED|` (absolute marginalized effect); AUROC/AUPRC without class balancing, mean ± SEM over the 4 negative sets. Distribution is single-nucleotide only (605 pairs/set).*
 
 | `|score|` metric (mean ± SEM, 4 negative sets) | Shorkie | Yorzoi |
 | --- | ---: | ---: |
-| AUROC, full set | TBD | TBD |
-| AUPRC, full set | TBD | TBD |
-| AUROC, close-only (≤ 2 kb) | TBD | TBD |
+| AUROC, full set | 0.667 ± 0.009 | 0.601 ± 0.003 |
+| AUPRC, full set (base rate 0.5) | 0.640 ± 0.010 | 0.574 ± 0.005 |
 
-Once both runs complete, report alongside Caudal (same scoring contract) so the cross-dataset comparison is visible. Why the numbers look the way they do, when present: [`model_failures.md`](model_failures.md).
+- Both models clear the 0.5 paired baseline, Shorkie ahead of Yorzoi — the same ordering as Caudal (shared scoring contract).
+- The absolute AUROCs run higher than Caudal's (Shorkie 0.667 vs 0.567; Yorzoi 0.601 vs 0.530), consistent with Kita's positives sitting closer to the TSS (Promoter/UTR5/UTR3/ORF within 8 kb) than Caudal's 25 kb-of-gene-body set, so more variants fall inside the models' input windows.
+- Close-only (≤ 2 kb) and distance-stratified breakdowns are not in the v1 run summary (future work).
+
+Artifacts: `results/default/{shorkie,yorzoi}__kita_eqtl/summary.json` and `results/default/compare/`. Why the numbers look the way they do: [`model_failures.md`](model_failures.md).
 
 ## Why this benchmark exists
 

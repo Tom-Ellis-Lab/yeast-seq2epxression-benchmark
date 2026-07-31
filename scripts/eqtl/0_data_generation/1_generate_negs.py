@@ -174,6 +174,9 @@ def parse_gwas(gwas_file, dataset="caudal"):
             ref = str(row["ref"]).strip()
             alt = str(row["alt"]).strip()
             gene = str(row["gene"]).strip()
+            # Single-nucleotide eQTLs only (see note in the caudal/kita branch).
+            if len(ref) != 1 or len(alt) != 1:
+                continue
             eqtls.append(
                 {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt, "gene": gene}
             )
@@ -216,6 +219,13 @@ def parse_gwas(gwas_file, dataset="caudal"):
                 if not pos_str.isdigit():
                     continue
                 pos = int(pos_str)
+
+                # Single-nucleotide eQTLs only: the variant scorer assumes 1-bp
+                # REF/ALT and raises on the REF-base check for indels/MNVs. Skip
+                # them here so the distribution never contains a variant the
+                # scorer cannot handle (Caudal is already SNP-only; Kita was not).
+                if len(ref) != 1 or len(alt) != 1:
+                    continue
 
                 eqtls.append(
                     {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt, "gene": gene}

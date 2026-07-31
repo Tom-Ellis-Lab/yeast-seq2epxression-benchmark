@@ -95,20 +95,20 @@
     "kita_eqtl": {
       "files": {
         "negset_1.tsv": {
-          "sha256": "1208db157c09002e318cf656346f19f237d38a3fa66113e5a62b6e48b4f62854",
-          "size": 36809
+          "sha256": "2518dcb97bbb6a86c0076c69d49ae0d73138de1b9ea187a2537e63657609c35e",
+          "size": 35945
         },
         "negset_2.tsv": {
-          "sha256": "e29bd8111b2b05c42ae054fd1fda9a70176bb3fb27b32e3261c86f3e582155e6",
-          "size": 36794
+          "sha256": "4ae41335f351bd486d7e20a8f928efca58812120ced46426b7a7ad60773bb58c",
+          "size": 35937
         },
         "negset_3.tsv": {
-          "sha256": "ac986a201953b8871a9427c16ee4ce9dfdbd554c74644126ea3fa0f8e8ec3b49",
-          "size": 36833
+          "sha256": "f08a89e6dea7bd0d8fa6993b17ab7bf5b3f44916e2ebb1a85db62844eec21837",
+          "size": 35974
         },
         "negset_4.tsv": {
-          "sha256": "c33fea0cbab0ea02b572c8d6e8ac4df212b4d4d63a7c4f67fb4e57f3d0314afe",
-          "size": 36813
+          "sha256": "0cf8d489769b0f51dc8ef83a381f434517702643ea79633968c185adc6b9e4d3",
+          "size": 35962
         }
       }
     },

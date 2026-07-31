@@ -28,7 +28,6 @@ shorkie = [
     "torch>=2.11.0",
 ]
 yorzoi = [
-    "flash-attn",
     "yorzoi==0.2.1",
 ]
 dream_rnn = [
@@ -46,6 +45,24 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.14.4",
 ]
+modal = [
+    "modal>=1.5.1",
+]
+# CodonTransformer baseline for chen_synonymous. This extra carries only the
+# *light* deps the adapter actually imports (it uses two helpers — TOKEN2INDEX,
+# get_merged_seq — plus the HF model). CodonTransformer itself pins numpy<2 /
+# pandas<3 and drags in onnxruntime / pytorch-lightning / jupyter, none of which
+# the adapter touches; those caps are conservative and it runs fine on numpy 2 /
+# pandas 3 (verified). So install the package separately with --no-deps:
+#     uv sync --extra codon_transformer
+#     uv pip install --no-deps codontransformer
+codon_transformer = [
+    "python_codon_tables",
+    "biopython",
+    "CAI-pypi",
+    "transformers<5",  # CodonTransformer + yorzoi both need <5 (BigBird lives there)
+    "torch>=2.11.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -61,6 +78,3 @@ markers = [
     "integration: end-to-end, needs the published mirror (opt-in)",
     "gpu: needs a GPU + model extras (shorkie/yorzoi)",
 ]
-
-[tool.uv.sources]
-flash-attn = { url = "https://github.com/adithyaxx/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu13torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }

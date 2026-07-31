@@ -49,6 +49,7 @@
     - [Brooks et al. extensions](#brooks-et-al-extensions)
     - [Meneu et al. extensions](#meneu-et-al-extensions)
     - [Bin-boundary sensitivity](#bin-boundary-sensitivity)
+    - [Baselines as first-class models](#baselines-as-first-class-models)
     - [CI smoke-test](#ci-smoke-test)
 
 Per-benchmark detail (scoring design, sources, results) lives in the spec
@@ -530,6 +531,14 @@ under small shifts). Relevant to every binned model in the suite.
 
 - [ ] Quantify input-shift sensitivity per adapter; add a jittered readout if
   material
+
+### Baselines as first-class models
+
+- [ ] Flatten baselines to first-class models — drop `adapters/baselines/`
+  (`cai.py` / `codon_transformer.py` move up) and the `_build_*_baseline` naming;
+  no `category` tag. Cosmetic: all five models already share the `MODELS`
+  registry / dispatch / protocols. Also resolves the `dream_rnn` folder/naming
+  inconsistency and the one hardcoded `dream_rnn` case in `mpra.py:compare_plot`.
 
 ### CI smoke-test
 

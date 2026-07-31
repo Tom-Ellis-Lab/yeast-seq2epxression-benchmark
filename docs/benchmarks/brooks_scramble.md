@@ -6,15 +6,15 @@
 
 | | |
 | --- | --- |
-| **Task** | Predict how a SCRaMBLE structural rearrangement changes a rearranged gene's expression, from sequence. Two equally-weighted metric families: (1) scalar log-fold-change of CDS coverage (rearranged vs unscrambled control); (2, Yorzoi-only) the predicted coverage *profile* over the gene window. |
+| **Task** | Predict how a SCRaMBLE structural rearrangement changes a rearranged gene's expression, from sequence. The v1 metric is the scalar log-fold-change of CDS coverage (rearranged vs unscrambled control). A coverage-*profile* shape metric is **deferred to v2** — see [Open questions](#open-questions--future-work). |
 | **Source** | Brooks *et al.* 2022, *Transcriptional neighborhoods regulate transcript isoform lengths and expression levels*, Science 375(6584). DOI: [10.1126/science.abg0162](https://doi.org/10.1126/science.abg0162). |
 | **Reference assembly** | Per-strain SCRaMBLE assemblies: native `chrI–chrXVI` (byte-identical across strains) plus one synthetic synIXR contig `JS<strain>_1`. Parental control: JS94 (expression) / JS96 (sequence). |
 | **Assay** | Long-read Oxford Nanopore **direct RNA-seq** of multiple strains, each carrying a rearranged synthetic chr IX right arm (synIXR, ~91 kb, 43 loxPsym segments; loxPsym sits 3 bp after the stop codon of every nonessential CDS). Cre induces deletions / duplications / inversions / translocations. A rearranged CDS **keeps its native promoter but is decoupled from its native 3′UTR/downstream**, so the cis-predictable effect is principally the *new downstream context*. |
 | **Control** | **JS94** = parental −SCRaMBLE strain (synIXR, no induced recombination). Same genetic background; the only valid "before" for the rearrangement effect (not BY4741, which has native chr IX). |
 | **Eval set** | One **(gene × strain × copy)** sample — see [Eval-set definition](#eval-set-definition). ~58 SCRaMBLE strains available (not the Yorzoi-paper 5); sample set defined by an objective locked rule, not hand-picked. |
 | **Primary metric** | LFC: **direction balanced accuracy** of sign(LFC), then Spearman ρ, then Pearson r, all on (pred, true) LFC across samples, read against the JS94 reproducibility ceiling. |
-| **Secondary metric** | Coverage-profile shape (Yorzoi only): per-window Pearson + Jensen–Shannon divergence, against the JS94 reproducibility ceiling. |
-| **Adapter protocol** | `CoverageTrackPredictor.predict_coverage_batch` (`src/yeastbench/adapters/protocols.py`) — per-base coverage per construct; the benchmark derives the CDS-sum LFC and the shape profile from it. |
+| **Secondary metric (deferred to v2)** | Coverage-profile shape (Yorzoi only): per-window Pearson + Jensen–Shannon divergence. Deferred to v2 — the shape readout window differs across models, so cross-model shape numbers aren't comparable yet (see [Open questions](#open-questions--future-work)). Not part of the v1 headline. |
+| **Adapter protocol** | `CoverageTrackPredictor.predict_coverage_batch` (`src/yeastbench/adapters/protocols.py`) — per-base coverage per construct; the benchmark derives the CDS-sum LFC from it (v1); the shape profile is a v2 metric. |
 
 ## Contents
 
@@ -52,12 +52,10 @@ expression change. That ceiling is intrinsic and is reported explicitly
 | Pearson r | −0.020 | 0.221 | 0.805 |
 | Spearman ρ | −0.038 | 0.313 | — |
 
-Coverage-shape (per-model full set): Yorzoi Pearson 0.835 / JS divergence 0.067; Shorkie 0.424 / 0.353 (on its T0 RNA-seq proxy track, not Nanopore).
-
 ![Shared-cohort LFC, Shorkie vs Yorzoi, against the leave-one-out reproducibility ceiling.](../../img/results/brooks_scramble/shared_tier1.png)
 ![Per-SCRaMBLE-strain LFC agreement on the shared cohort.](../../img/results/brooks_scramble/shared_per_sample.png)
 
-- Yorzoi recovers a real but modest slice of the cis-predictable LFC (dir-acc 0.635, r 0.221) against an 0.806 / 0.805 reproducibility ceiling, and is strong on coverage shape (Pearson 0.835).
+- Yorzoi recovers a real but modest slice of the cis-predictable LFC (dir-acc 0.635, r 0.221) against an 0.806 / 0.805 reproducibility ceiling.
 - Shorkie sits at ~0 on LFC — a readout limit, not a wrong call. The rearrangement keeps each gene's promoter and CDS intact and only changes its downstream context; Shorkie's score is RNA-seq coverage summed over the (unchanged) CDS, so its predicted rearranged and parental coverage come out nearly equal and the predicted log-fold-change is ~0 (see [Model contract](#model-contract)). Its magnitude is better-calibrated than Yorzoi's (mean |z| 2.0 vs 11.2), but that's calibration, not ranking.
 
 Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/brooks/compare/per_task/brooks_scramble/summary.json` (shared cohort) and `results/brooks/{shorkie,yorzoi}__*/summary.json`.
@@ -215,7 +213,8 @@ class CoverageTrackPredictor(Protocol):
 
 The benchmark builds the gene-centred alt and native window strings and
 the in-window CDS interval, calls `predict_coverage_batch` for each, then
-forms the CDS-sum LFC and the full-window shape.
+forms the CDS-sum LFC (the v1 metric; the full-window shape is a deferred v2
+metric).
 
 **Shorkie scores via a proxy track and sits at ~0 on LFC.** Shorkie has no
 track matching the Nanopore direct-RNA assay, so it runs LFC on a **T0
@@ -243,7 +242,13 @@ replicates — it is **not** the cause of the ~0 score.)
    **JS94×3 reproducibility band** overlaid, r/ρ/acc annotated; plus a
    per-rearrangement-class breakdown.
 
-### Shape — coverage profile (Yorzoi-only)
+### Shape — coverage profile (Yorzoi-only) — deferred to v2
+
+> **Deferred to v2.** The shape metric is not part of the v1 headline; it is
+> specified here for v2. The blocker: Pearson and JS are scored over each model's
+> full output region (Yorzoi 3,000 bp vs Shorkie 14,336 bp), and JS divergence
+> depends on support size, so cross-model shape numbers aren't comparable until a
+> common scored window (≤ 3 kb, CDS-centred) is fixed.
 
 Over the **full gene-centred window** (not CDS-only — the CDS profile is
 usually flat; the signal is at TSS/TES/junction), at Yorzoi bin
@@ -273,7 +278,7 @@ overlaid), as in the Yorzoi Wu dump notebook.
 ### Reference ceiling & baseline
 
 The headline is always read against the **JS94×3 control–control
-reproducibility ceiling** (LFC dir-acc / Pearson; shape Pearson / JS) — a
+reproducibility ceiling** (LFC dir-acc / Pearson) — a
 model cannot beat the assay's own test–retest. The Yorzoi paper's own
 numbers (r = 0.33, ρ = 0.32, balanced accuracy = 0.62) are **orientation
 only, not a direct comparison target**: our sample set is the objective
@@ -341,3 +346,11 @@ one registry entry — see [`extending.md`](../extending.md).
    the bulk of samples (drop / flag those where it doesn't).
 6. **JS94 run handling** — mean of the 3 runs vs per-run pairing for the
    denominator and the ceiling; pin in the build script.
+7. **Coverage-shape metric deferred to v2.** The shape profile (per-window
+   Pearson + JS divergence) is not in the v1 headline. It is scored over each
+   model's full output region (Yorzoi 3,000 bp vs Shorkie 14,336 bp), and JS
+   divergence depends on support size, so the cross-model numbers aren't
+   comparable. v2 scores shape over a fixed common window (≤ 3 kb, CDS-centred —
+   the full receptive field still goes in as input, only the scored region is
+   shared), re-baselines the numbers, and promotes shape to a reported secondary
+   metric.

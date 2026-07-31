@@ -3,13 +3,13 @@
 ![image](../../img/mpra_banner.svg)
 
 > **Status:** zero-shot marginalized eval **implemented + run** (Shorkie, Yorzoi).
-> DREAM-RNN supervised baseline — **implemented + unit-tested, not yet run on the
-> 71k benchmark** (`dream_rnn` model; `tests/test_dream_rnn.py`). The published
-> `0_1_1_0` checkpoint loads `strict=True` into the port. The overall Pearson
-> *r* ≈ 0.97 quoted for it is its in-distribution reference *from the paper*, not
-> a ybench number. **Data-op follow-up:** publish `model_best.pth` + `plasmid.json`
-> to the HF/GCS mirrors so `ybench data get dream_rnn` works on a fresh checkout
-> (lock entry already committed).
+> DREAM-RNN supervised baseline — **implemented + run** on the 71k benchmark
+> (`dream_rnn` model; `tests/test_dream_rnn.py`): ybench overall Pearson *r* = 0.972
+> / Spearman ρ = 0.975 (n = 71,103), matching its in-distribution reference from
+> the paper (~0.97). The published `0_1_1_0` checkpoint loads `strict=True` into
+> the port. **Data-op follow-up:** publish `model_best.pth` + `plasmid.json` to the
+> HF/GCS mirrors so `ybench data get dream_rnn` works on a fresh checkout (lock
+> entry already committed).
 
 ## At a glance
 
@@ -38,13 +38,13 @@
 
 | Pearson r / Spearman ρ (n = 71,103) | Shorkie | Yorzoi | DREAM-RNN |
 | --- | ---: | ---: | ---: |
-| marginalized (`rafi_mpra_marginalized`) | 0.760 / 0.775 | 0.606 / 0.625 | — |
+| marginalized (`rafi_mpra_marginalized`) | 0.760 / 0.775 | 0.606 / 0.625 | 0.972 / 0.975 |
 | direct reporter (`rafi_mpra_promoter`) | 0.739 / 0.747 | 0.458 / 0.407 | not run |
 
 ![Shorkie measured-vs-predicted scatter per sequence stratum, marginalized eval (overall r ≈ 0.76).](../../img/results/rafi_mpra_promoter/scatter_per_stratum.png)
 
 - Shorkie leads on both modes. Marginalizing the insert effect across native host contexts helps both models and helps Yorzoi most (Pearson 0.46 → 0.61).
-- DREAM-RNN, the supervised baseline, is implemented and unit-tested but **has not been run on the 71k benchmark yet** (no results directory). The r ≈ 0.97 quoted for it is its in-distribution reference from the paper, not a ybench number.
+- DREAM-RNN, the supervised baseline, has now been run on the full 71k benchmark: ybench Pearson 0.972 / Spearman 0.975, matching its in-distribution reference from the paper (~0.97). It scores the reporter sequence directly (no marginalization), so its number sets the in-distribution ceiling the zero-shot models are reaching for.
 
 Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/default/{shorkie,yorzoi}__rafi_mpra_marginalized/summary.json` (and `__rafi_mpra_promoter/` for the direct mode).
 

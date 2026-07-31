@@ -2,16 +2,16 @@
 
 | Benchmark | Probes | Task | Primary metric |
 | --- | --- | --- | --- |
-| [Caudal eQTL](caudal_eqtl.md) | *cis*-regulatory variants | binary classification | AUROC / AUPRC (mean over 4 negative sets) |
+| [Caudal eQTL](caudal_eqtl.md) | *cis*-regulatory variants | binary classification | area under the receiver operating characteristic curve (AUROC) / area under the precision–recall curve (AUPRC), mean over 4 negative sets |
 | [Kita eQTL](kita_eqtl.md) | *cis*-regulatory variants (independent panel) | binary classification | AUROC / AUPRC (mean over 4 negative sets) |
-| [Rafi / deBoer MPRA (promoter)](rafi_mpra_promoter.md) | promoter grammar | regression (marginalized logSED) | Pearson / Spearman |
+| [Rafi / deBoer MPRA (promoter)](rafi_mpra_promoter.md) | promoter grammar | regression (marginalized logSED — log-scaled expression difference) | Pearson / Spearman |
 | [Shalem MPRA (terminator)](shalem_mpra_terminator.md) | 3′-end / termination grammar | regression (marginalized logSED) | Pearson *r* (Spearman alongside) |
-| [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` |
-| [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect (ORF-deletion locus) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) |
-| [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on IntProp |
-| [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track LFC | direction balanced accuracy, then Spearman / Pearson |
-| [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′-UTR / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial-corr over Kozak features |
-| [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / OOD sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + JS divergence (+ fold-change error) |
+| [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` (R = RNA, D = DNA read counts) |
+| [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect at an open reading frame (ORF) deletion locus | regression | Pearson *r* + Spearman ρ (+ tail AUROC) |
+| [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on the held-out test loci (n = 52) |
+| [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track log-fold-change (LFC) | direction balanced accuracy, then Spearman / Pearson |
+| [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′ untranslated region (5′-UTR) / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial correlation over Kozak features |
+| [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / out-of-distribution (OOD) sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + Jensen–Shannon (JS) divergence (+ fold-change error) |
 
 ## Probing six model capabilities across 10 benchmark tasks
 

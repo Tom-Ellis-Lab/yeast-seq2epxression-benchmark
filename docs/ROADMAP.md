@@ -267,18 +267,19 @@ Brooks et al. SCRaMBLE chromosome 9 — spec `docs/benchmarks/brooks_scramble.md
   two models' sample sets; `ybench compare` Brooks logic in `benchmarks/brooks.py`
   writes the shared-cohort summary + charts. Reconciles the sample set + LFC
   only — the shape metrics are still scored over each model's own window (not yet
-  cross-model comparable; v1 blocker below)
+  cross-model comparable; shape deferred to v2, see below)
 - [x] Diagnostics recorded: inter-run JS94 reproducibility (noise floor) and
   asymmetric LFC over-prediction (details in spec / notebooks)
-- [ ] **Blocker — fix before release: common shape readout window.** The shape
-  metrics (Pearson + JS) are scored over each model's full output region (Yorzoi
-  3,000 bp vs Shorkie 14,336 bp), so the cross-model shape numbers are invalid —
-  JS especially is support-size dependent. Score them over a fixed common window
-  (≤ 3 kb, CDS-centred) for every model; the full receptive field still goes in
-  as input, only the scored region is shared. The window-agnostic artifact now
-  makes this cheap: the benchmark already slices each construct at run time
-  (`window_slice`), so add a second fixed scored-region slice for the shape
-  metric. (Re-baselines shape numbers — deliberately — hence a separate step.)
+- [ ] **v2 — common shape readout window (coverage-shape metric deferred to v2).**
+  The shape metrics (Pearson + JS) are **not part of the v1 headline.** They are
+  scored over each model's full output region (Yorzoi 3,000 bp vs Shorkie
+  14,336 bp), so the cross-model shape numbers are invalid — JS especially is
+  support-size dependent. v2 scores them over a fixed common window (≤ 3 kb,
+  CDS-centred) for every model; the full receptive field still goes in as input,
+  only the scored region is shared. The window-agnostic artifact makes this cheap:
+  the benchmark already slices each construct at run time (`window_slice`), so add
+  a second fixed scored-region slice for the shape metric. (Re-baselines shape
+  numbers — deliberately.)
 
 ### Foreign-DNA integration
 

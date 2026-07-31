@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| **Task** | Predict how a SCRaMBLE structural rearrangement changes a synIXR gene's expression, from sequence. Two equally-weighted metric families: (1) scalar log-fold-change of CDS coverage (rearranged vs unscrambled control); (2, Yorzoi-only) the predicted coverage *profile* over the gene window. |
+| **Task** | Predict how a SCRaMBLE structural rearrangement changes a rearranged gene's expression, from sequence. Two equally-weighted metric families: (1) scalar log-fold-change of CDS coverage (rearranged vs unscrambled control); (2, Yorzoi-only) the predicted coverage *profile* over the gene window. |
 | **Source** | Brooks *et al.* 2022, *Transcriptional neighborhoods regulate transcript isoform lengths and expression levels*, Science 375(6584). DOI: [10.1126/science.abg0162](https://doi.org/10.1126/science.abg0162). |
 | **Reference assembly** | Per-strain SCRaMBLE assemblies: native `chrI–chrXVI` (byte-identical across strains) plus one synthetic synIXR contig `JS<strain>_1`. Parental control: JS94 (expression) / JS96 (sequence). |
 | **Assay** | Long-read Oxford Nanopore **direct RNA-seq** of multiple strains, each carrying a rearranged synthetic chr IX right arm (synIXR, ~91 kb, 43 loxPsym segments; loxPsym sits 3 bp after the stop codon of every nonessential CDS). Cre induces deletions / duplications / inversions / translocations. A rearranged CDS **keeps its native promoter but is decoupled from its native 3′UTR/downstream**, so the cis-predictable effect is principally the *new downstream context*. |

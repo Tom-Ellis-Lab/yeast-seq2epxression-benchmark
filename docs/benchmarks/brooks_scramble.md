@@ -44,7 +44,7 @@ expression change. That ceiling is intrinsic and is reported explicitly
 
 ## Results
 
-*2026-05-28 run. **These numbers predate the refactor:** they were produced from the pre-unification single-TSV inputs with `tier1_*`/`tier2_*` keys and two separate task registrations, before the `lfc_*`/`shape_*` rename and the 3-file artifact. The shared-cohort intersection (n = 327 scored) is the apples-to-apples comparison and should survive a re-run.*
+*2026-07-31 Modal run (v1, unified `brooks_scramble` task, 3-file artifact). The headline is the shared-cohort intersection (n = 327 scored) — the apples-to-apples comparison. (The pre-unification 2026-05-28 build reproduces these numbers to the printed precision, so the refactor was metric-preserving.)*
 
 | LFC, shared cohort (n = 327 scored) | Shorkie | Yorzoi | reproducibility ceiling |
 | --- | ---: | ---: | ---: |

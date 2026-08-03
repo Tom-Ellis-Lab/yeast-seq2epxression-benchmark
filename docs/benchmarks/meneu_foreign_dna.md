@@ -214,7 +214,7 @@ not as targets to beat.
 
 ## Results
 
-*2026-06-02 run. **These numbers predate the refactor:** they were produced from per-window TSVs with a separate `meneu_foreign_dna_shorkie` task, before the unified `.npz`-sidecar task. Per-window (5 kb) over each foreign chromosome.*
+*2026-07-31 Modal run (v1, unified `meneu_foreign_dna` task, `.npz`-sidecar artifact). Per-window (5 kb) over each foreign chromosome. (The prior 2026-06-02 build reproduces these same numbers to the printed precision.)*
 
 | metric | contig | Shorkie | Yorzoi |
 | --- | --- | ---: | ---: |
@@ -231,7 +231,7 @@ not as targets to beat.
 - Both models sit well below the ExoShorkie transfer-learning ladder (≈ 0.46–0.76 shape Pearson) — expected for far-OOD bacterial sequence neither model trained on. Yorzoi edges Shorkie on shape for both contigs.
 - *M. mycoides* (higher GC, closer to yeast) is the easier contig for both; *M. pneumoniae* is near the noise floor. Read the fold-change spread (sd) as the magnitude signal — the means are confounded by over-prediction vs dispersion (see the Metrics caveat).
 
-Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/meneu/{shorkie__meneu_foreign_dna_shorkie,yorzoi__meneu_foreign_dna}/summary.json` and `results/meneu/compare/summary.md`.
+Why the numbers look the way they do: [`model_failures.md`](model_failures.md). Artifacts: `results/meneu/{shorkie,yorzoi}__meneu_foreign_dna/summary.json` and `results/meneu/compare/summary.md`.
 
 ## Sign convention (verify empirically)
 Higher predicted coverage ↔ higher measured coverage → positive correlation.

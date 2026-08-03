@@ -125,11 +125,11 @@ effect. ([spec](benchmarks/wu_rfpins.md))
 
 | metric | Shorkie | Yorzoi |
 | --- | --- | --- |
-| Pearson r | -0.0325 | 0.0159 |
-| Spearman ρ | -0.0252 | 0.0212 |
+| Pearson r | -0.0387 | 0.0124 |
+| Spearman ρ | -0.0290 | 0.0164 |
 
 **Winner: Neither** — both models sit at ≈ 0 (informative negative; position
-effect not captured). Yorzoi is marginally less negative.
+effect not captured). Yorzoi is marginally positive, Shorkie marginally negative.
 
 ## Hong IGR insertions
 

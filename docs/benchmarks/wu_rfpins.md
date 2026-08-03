@@ -61,14 +61,14 @@ learned that determinant.
 
 ## Results
 
-*Zero-shot, 2026-05-29 run (v1). Pearson r / Spearman ρ between predicted and measured relative intensity across all loci; two binary tail-detection tasks scored by AUROC.*
+*Zero-shot, 2026-08-03 Modal run (v1). Pearson r / Spearman ρ between predicted and measured relative intensity across all loci; two binary tail-detection tasks scored by AUROC.*
 
 | metric (n = 1,043 scored of 1,044) | Shorkie | Yorzoi |
 | --- | ---: | ---: |
-| Pearson r | −0.033 | 0.016 |
-| Spearman ρ | −0.025 | 0.021 |
-| extreme-low AUROC | 0.510 | 0.490 |
-| extreme-high AUROC | 0.468 | 0.528 |
+| Pearson r | −0.039 | 0.012 |
+| Spearman ρ | −0.029 | 0.016 |
+| extreme-low AUROC | 0.501 | 0.483 |
+| extreme-high AUROC | 0.464 | 0.522 |
 
 ![Measured vs predicted intensity, Shorkie — a flat, uncorrelated cloud.](../../img/results/wu_rfpins/scatter.png)
 ![ROC/PR for extreme-high tail detection (Shorkie): AUROC sits on the random diagonal.](../../img/results/wu_rfpins/roc_pr_extreme_high.png)

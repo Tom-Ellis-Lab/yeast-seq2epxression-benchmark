@@ -290,8 +290,9 @@ strand)` block is stale — this batched API is the live one.)
   `fwd + rev`. One artifact serves every model — there is no per-window TSV any
   more, so this is a single registry task (`meneu_foreign_dna`) regardless of
   receptive field. At run time it depends on these built files alone — no
-  figshare, no GEO. (The committed numbers in *Results* predate this unification —
-  they came from per-window TSVs and a separate `meneu_foreign_dna_shorkie` task.)
+  figshare, no GEO. (The *Results* numbers come from this unified task; an earlier
+  per-window-TSV build with a separate `meneu_foreign_dna_shorkie` task reproduced
+  them exactly.)
 
 ### Track subsets / RC averaging
 - **Shorkie:** the **384-track T0 subset** (`SHORKIE_T0_RNA_SEQ_TRACK_IDS`), for

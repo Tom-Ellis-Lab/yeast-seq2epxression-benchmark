@@ -190,11 +190,11 @@ Both models scored zero-shot over the full library (489,348 random + 11,856 nati
 | random — overall | 0.252 | 0.117 |
 | random — clean bucket (`t0 ≥ 101`) | **0.280** | 0.114 |
 | random — partial correlation (beyond Kozak) | 0.270 | 0.092 |
-| random — partial-corr incremental R² | 0.071 | 0.009 |
+| random — partial-correlation incremental R² | 0.071 | 0.009 |
 | native — overall | 0.201 | 0.164 |
 | native — clean-bucket raw (`t0 ≥ 101`) † | 0.373 | −0.010 |
 | native — partial correlation (clean) | **0.261** | **0.000** |
-| native — partial-corr incremental R² | 0.060 | 0.003 |
+| native — partial-correlation incremental R² | 0.060 | 0.003 |
 
 † The native clean-bucket raw row (`t0 ≥ 101`, n = 6,710) is read off the `cuperus.png` native panel, not `summary.json` — the persisted native buckets split at `t0 = 10`, not 101.
 

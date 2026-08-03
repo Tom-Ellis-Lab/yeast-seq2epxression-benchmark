@@ -4,11 +4,6 @@ Cross-model comparisons, one section per benchmark. Each table shows the
 benchmark's **primary metric(s)** for every model that has run; the leading
 value is **bold** and named in the per-section *Winner* line.
 
-> [!NOTE]
-> Kita, Brooks and Meneu carry fresh Modal runs (2026-07-31); the other
-> benchmarks' numbers are from earlier local runs. Every re-run that completed
-> reproduced its documented numbers, so these are reliable.
-
 Conventions: higher is better unless a metric is marked ↓ (lower is better) or
 the benchmark is a *negative result* (both models at chance / ≈ 0). Full
 per-metric tables for each comparison live next to the runs in

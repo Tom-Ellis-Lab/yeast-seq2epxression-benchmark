@@ -1,0 +1,197 @@
+"""Benchmark-side wrapper around the 8-fold Shorkie ensemble. Owns
+device handling, the ensemble loop, RC averaging, and the batched
+forward path.
+
+Adapters take a `Shorkie` instance and call either:
+  * `forward_tracks_binned(x, track_subset)` — accumulates the
+    per-track output across folds, returning a (B, OUTPUT_BINS,
+    n_tracks) tensor. The adapter does any track-mean / track-mean →
+    bin-sum aggregation downstream.
+  * `forward_track_mean_binned(x, track_subset)` — accumulates the
+    *track-mean* across folds, returning (B, OUTPUT_BINS). Use when
+    the adapter immediately collapses tracks via `mean(dim=2)`; saves
+    memory at the cost of slightly different floating-point ordering
+    vs `forward_tracks_binned(...).mean(dim=2)` (the inter-fold mean
+    and inter-track mean commute mathematically but not bit-exactly).
+
+Two methods are kept rather than one because the existing adapters
+use both orderings; preserving each adapter's exact pattern keeps the
+refactor bit-identical on the way through."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar, Sequence
+
+if TYPE_CHECKING:
+    import torch
+
+    from yeastbench.models.shorkie.nn import ShorkieModule
+
+# Architecture (derived from data/models/shorkie/params.json):
+# 16,384 bp input → 896 output bins × 16 bp/bin, post-crop covering
+# the central 14,336 bp of input.
+SEQ_LEN: int = 16384
+OUTPUT_BINS: int = 896
+BIN_WIDTH: int = 16
+CROP_BP_EACH_SIDE: int = 1024
+
+
+def _unbin_per_base(binned: "torch.Tensor", bin_width: int) -> "torch.Tensor":
+    """Spread each bin total over its ``bin_width`` bases (÷ width, repeat)
+    along the last axis. No inverse transform needed — Shorkie's
+    Poisson/softplus head already outputs raw counts."""
+    return binned.repeat_interleave(bin_width, dim=-1) / float(bin_width)
+
+
+class Shorkie:
+    """8-fold Shorkie ensemble wrapper."""
+
+    # Geometry constants exposed for adapters
+    SEQ_LEN: ClassVar[int] = SEQ_LEN
+    OUTPUT_BINS: ClassVar[int] = OUTPUT_BINS
+    BIN_WIDTH: ClassVar[int] = BIN_WIDTH
+    CROP_BP_EACH_SIDE: ClassVar[int] = CROP_BP_EACH_SIDE
+
+    def __init__(
+        self,
+        folds: list["ShorkieModule"],
+        device: "str | torch.device" = "cuda",
+        use_rc: bool = True,
+        autocast: bool = False,
+        compile: bool = False,
+    ) -> None:
+        import torch as _torch
+
+        if not folds:
+            raise ValueError("Must provide at least one Shorkie fold")
+        self.folds = folds
+        self.device = _torch.device(device)
+        self.use_rc = use_rc
+        # bf16 autocast for the conv/attention trunk. Off by default so the
+        # published fp32 scores are reproduced bit-for-bit unless opted in;
+        # bf16 (not fp16) keeps the fp32 exponent range, which matters for the
+        # softplus count head. Yorzoi runs autocast on by default already.
+        self.autocast = autocast
+        for m in self.folds:
+            m.to(self.device).eval()
+        # Optional inductor compile + TF32. ``dynamic=True`` so the one graph
+        # handles the varying batch sizes the marginalized pipeline feeds
+        # (REF baseline, full chunks, the trailing remainder) without a
+        # recompile per shape. Fuses the conv/attention trunk — biggest win
+        # stacked on bf16 — and also lowers peak activation memory.
+        self.compiled = compile
+        if compile:
+            _torch.backends.cuda.matmul.allow_tf32 = True
+            _torch.backends.cudnn.allow_tf32 = True
+            self.folds = [_torch.compile(m, dynamic=True) for m in self.folds]
+
+    def _autocast_ctx(self):
+        """bf16 autocast on CUDA when enabled; a no-op context otherwise.
+        Built fresh each forward to avoid cross-call reuse issues."""
+        import torch as _torch
+
+        if self.autocast and self.device.type == "cuda":
+            return _torch.autocast(device_type="cuda", dtype=_torch.bfloat16)
+        return _torch.amp.autocast(device_type="cpu", enabled=False)
+
+    @classmethod
+    def from_checkpoints(
+        cls,
+        params_path: str | Path,
+        checkpoint_paths: Sequence[str | Path],
+        device: "str | torch.device" = "cuda",
+        use_rc: bool = True,
+        autocast: bool = False,
+        compile: bool = False,
+    ) -> "Shorkie":
+        from yeastbench.models.shorkie.nn import ShorkieModule
+
+        with open(params_path) as fh:
+            config = json.load(fh)
+        folds = [
+            ShorkieModule.from_tf_checkpoint(config["model"], str(p))
+            for p in checkpoint_paths
+        ]
+        return cls(
+            folds, device=device, use_rc=use_rc, autocast=autocast, compile=compile,
+        )
+
+    def forward_tracks_binned(
+        self,
+        x: "torch.Tensor",
+        track_subset: "torch.Tensor",
+    ) -> "torch.Tensor":
+        """Ensemble + RC averaged, accumulating the per-track output.
+        Returns ``(B, OUTPUT_BINS, len(track_subset))``.
+
+        ``track_subset`` is a long tensor of track indices, on the same
+        device as the model. Adapters that need the cross-track mean
+        of the result should then call ``.mean(dim=2)``."""
+        import torch as _torch
+
+        B = x.shape[0]
+        n_tracks = int(track_subset.numel())
+        acc = _torch.zeros(
+            B, OUTPUT_BINS, n_tracks,
+            device=self.device, dtype=_torch.float32,
+        )
+        x_rc = x.flip(dims=[1, 2]) if self.use_rc else None
+        for m in self.folds:
+            with self._autocast_ctx():
+                out = m(x)
+            out = out.float().index_select(2, track_subset)
+            if self.use_rc:
+                with self._autocast_ctx():
+                    out_rc_raw = m(x_rc)
+                out_rc = out_rc_raw.float().index_select(2, track_subset).flip(dims=[1])
+                out = 0.5 * (out + out_rc)
+            acc.add_(out)
+        acc.div_(len(self.folds))
+        return acc
+
+    def forward_track_mean_binned(
+        self,
+        x: "torch.Tensor",
+        track_subset: "torch.Tensor",
+    ) -> "torch.Tensor":
+        """Ensemble + RC averaged with the per-fold track mean folded
+        in (memory-cheaper variant of ``forward_tracks_binned(...)
+        .mean(dim=2)``). Returns ``(B, OUTPUT_BINS)``.
+
+        Bit-not-identical to ``forward_tracks_binned(...).mean(dim=2)``
+        because the inter-fold and inter-track means happen in
+        different orders. Use whichever ordering matches the adapter's
+        existing code path."""
+        import torch as _torch
+
+        B = x.shape[0]
+        acc = _torch.zeros(
+            B, OUTPUT_BINS, device=self.device, dtype=_torch.float32,
+        )
+        x_rc = x.flip(dims=[1, 2]) if self.use_rc else None
+        for m in self.folds:
+            with self._autocast_ctx():
+                out = m(x)
+            out = out.float().index_select(2, track_subset)
+            if self.use_rc:
+                with self._autocast_ctx():
+                    out_rc_raw = m(x_rc)
+                out_rc = out_rc_raw.float().index_select(2, track_subset).flip(dims=[1])
+                out = 0.5 * (out + out_rc)
+            acc.add_(out.mean(dim=2))
+        acc.div_(len(self.folds))
+        return acc
+
+    def forward_track_mean_perbase(
+        self,
+        x: "torch.Tensor",
+        track_subset: "torch.Tensor",
+    ) -> "torch.Tensor":
+        """Per-base raw predicted counts, track-meaned:
+        ``(B, OUTPUT_BINS * BIN_WIDTH)``. Just
+        ``forward_track_mean_binned`` followed by a 16 bp → per-base unbin
+        — no inverse transform (softplus head is already in raw counts)."""
+        return _unbin_per_base(
+            self.forward_track_mean_binned(x, track_subset), BIN_WIDTH
+        )

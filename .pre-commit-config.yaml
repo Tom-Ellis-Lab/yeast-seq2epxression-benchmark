@@ -1,0 +1,13 @@
+# Enable locally once with: uv run pre-commit install
+# Gate: block commits that introduce unused imports (ruff F401).
+# Auto-clean with: uv run ruff check --fix --select F401 src/ tests/
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff
+        name: ruff (unused imports / F401)
+        args: [--select, F401]
+        # Gate the maintained package + tests. scripts/ are one-off
+        # analysis/data-gen and carry pre-existing debt; broaden later.
+        files: ^(src|tests)/

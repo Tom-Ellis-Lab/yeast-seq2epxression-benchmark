@@ -1,0 +1,132 @@
+# Canonical yeastbench run.
+#
+# This file is the single source of truth for the numbers we report in
+# the paper / README. Change anything here → cut a new config version.
+#
+# Invocation:
+#   uv run ybench run --config configs/default.yaml
+#
+# Filters:
+#   uv run ybench run --config configs/default.yaml --model shorkie
+#   uv run ybench run --config configs/default.yaml --task  caudal_eqtl
+#
+# Dry-run (show what would execute, do nothing):
+#   uv run ybench run --config configs/default.yaml --dry-run
+
+out_dir: results/default
+device: cuda
+
+tasks_config:
+  caudal_eqtl:
+    distribution_dir: data/tasks/caudal_eqtl
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  kita_eqtl:
+    distribution_dir: data/tasks/kita_eqtl
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  rafi_mpra_marginalized:
+    data_dir: data/tasks/rafi_mpra
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  shalem_mpra_marginalized:
+    data_path: data/tasks/shalem_mpra_terminator/segal_2015.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  wu_rfpins:
+    cassette_seq: data/tasks/wu_rfpins/expression_cassette.fasta
+    labels_path: data/tasks/wu_rfpins/table_s2_fluorescence_1044_loci.csv
+    fasta_path: data/tasks/R64-1-1.fa
+    gtf_path: data/tasks/R64-1-1.115.gtf
+  hong_igr:
+    labels_path: data/tasks/hong/hong_igr_v1.tsv
+    cassette_seq: data/tasks/hong/expression_cassette.fasta
+    fasta_path: data/tasks/R64-5-1.fa
+  chen_synonymous:
+    fasta_path: data/tasks/R64-1-1.fa
+    hosts_path: data/tasks/chen_synonymous/marginalized_hosts.json
+    data_dir: data/tasks/chen_synonymous
+    # One task, three libraries; results are stratified per library and an
+    # aggregate (mean over the 5 replicate columns) is reported alongside.
+    libraries:
+      - library: gfp_r1
+        data_path: data/tasks/chen_synonymous/gfp_r1.tsv
+        replicate_ceiling_pearson: 0.83
+        replicate_ceiling_spearman: 0.71
+      - library: gfp_r2
+        data_path: data/tasks/chen_synonymous/gfp_r2.tsv
+        replicate_ceiling_pearson: 0.73
+        replicate_ceiling_spearman: 0.71
+      - library: tdh3
+        data_path: data/tasks/chen_synonymous/tdh3.tsv
+        replicate_ceiling_pearson: 0.72
+        # No Spearman ceiling for TDH3 — Chen ships only one merged
+        # log2(mRNA) column in supp Table S9, so we can't compute one from
+        # the data and the paper doesn't report it.
+  cuperus_utr:
+    random_path: data/tasks/cuperus_mpra_5utr/random_utrs.tsv
+    native_path: data/tasks/cuperus_mpra_5utr/native_utrs.tsv
+    fasta_path: data/tasks/R64-1-1.fa
+
+runs:
+  - model: shorkie
+    tasks:
+      [
+        caudal_eqtl,
+        kita_eqtl,
+        rafi_mpra_marginalized,
+        shalem_mpra_marginalized,
+        wu_rfpins,
+        hong_igr,
+        chen_synonymous,
+        cuperus_utr,
+      ]
+    model_config:
+      params_path: data/models/shorkie/params.json
+      checkpoint_paths:
+        - data/models/shorkie/checkpoints/f0.h5
+        - data/models/shorkie/checkpoints/f1.h5
+        - data/models/shorkie/checkpoints/f2.h5
+        - data/models/shorkie/checkpoints/f3.h5
+        - data/models/shorkie/checkpoints/f4.h5
+        - data/models/shorkie/checkpoints/f5.h5
+        - data/models/shorkie/checkpoints/f6.h5
+        - data/models/shorkie/checkpoints/f7.h5
+      batch_size: 32
+      use_rc: true
+
+  - model: yorzoi
+    tasks:
+      [
+        caudal_eqtl,
+        kita_eqtl,
+        rafi_mpra_marginalized,
+        shalem_mpra_marginalized,
+        wu_rfpins,
+        hong_igr,
+        chen_synonymous,
+        cuperus_utr,
+      ]
+    model_config:
+      hf_repo: tom-ellis-lab/yorzoi
+      batch_size: 64
+      use_rc: true
+
+  - model: cai
+    tasks: [chen_synonymous]
+    model_config: {}
+
+  - model: codon_transformer
+    tasks: [chen_synonymous]
+    model_config: {}
+
+  # Supervised in-distribution reference baseline (reported separately from
+  # the zero-shot foundation models). Single DREAM-RNN net trained on this
+  # very assay; scored on the insert in its own reporter context, not
+  # marginalized at native loci. See docs/benchmarks/rafi_mpra_promoter.md.
+  - model: dream_rnn
+    tasks: [rafi_mpra_marginalized]
+    model_config:
+      weights_path: data/models/dream_rnn/model_best.pth
+      plasmid_path: data/models/dream_rnn/plasmid.json
+      batch_size: 1024

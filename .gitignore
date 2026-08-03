@@ -205,3 +205,21 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+data/*
+public_leaderboard_ids.tar.gz
+conversations/*
+results/*
+archive/*
+notebooks/*
+papers/*
+
+# Vendored reference repos (large, have their own .git; not part of this repo).
+# Anchored to repo root so they don't match the src/yeastbench/models/yorzoi
+# package directory.
+/shorkie-paper/
+/yorzoi/
+
+# Local-only Modal backend design doc + spike script (kept locally, not released).
+docs/modal_backend.md
+scripts/modal/spike.py

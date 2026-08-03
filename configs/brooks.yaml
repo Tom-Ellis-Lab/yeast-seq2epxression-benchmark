@@ -1,0 +1,38 @@
+# Brooks SCRaMBLE benchmark — Yorzoi + Shorkie.
+#
+# One window-agnostic artifact (brooks_index.tsv + brooks_constructs.fasta +
+# brooks_cov.npz). The benchmark re-cuts each construct to the model's receptive
+# field at run time, so both models run the single `brooks_scramble` task.
+#
+#   uv run ybench run --config configs/brooks.yaml
+#   uv run ybench run --config configs/brooks.yaml --model shorkie
+
+out_dir: results/brooks
+device: cuda
+
+runs:
+  - model: yorzoi
+    tasks: [brooks_scramble]
+    model_config:
+      hf_repo: tom-ellis-lab/yorzoi
+      use_rc: true
+      # Per-sample matched-track routing: alt prediction uses the
+      # strain's own Nanopore track(s); native uses JS94's 3 deep-WT
+      # tracks (the same set as the truth-side denominator). Options:
+      # "matched" (default), "nanopore_all", "all".
+      track_mode: matched
+
+  - model: shorkie
+    tasks: [brooks_scramble]
+    model_config:
+      params_path: data/models/shorkie/params.json
+      checkpoint_paths:
+        - data/models/shorkie/checkpoints/f0.h5
+        - data/models/shorkie/checkpoints/f1.h5
+        - data/models/shorkie/checkpoints/f2.h5
+        - data/models/shorkie/checkpoints/f3.h5
+        - data/models/shorkie/checkpoints/f4.h5
+        - data/models/shorkie/checkpoints/f5.h5
+        - data/models/shorkie/checkpoints/f6.h5
+        - data/models/shorkie/checkpoints/f7.h5
+      use_rc: true

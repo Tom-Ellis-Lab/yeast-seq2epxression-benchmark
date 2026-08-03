@@ -250,6 +250,16 @@ ARTIFACTS: tuple[Artifact, ...] = (
         # tiles to the model's receptive field at run time, so no per-window TSV.
         include=("meneu_cov_Mpneumo.npz", "meneu_cov_Mmmyco.npz"),
     ),
+    _task(
+        "mytk_ints_promoter",
+        dest="data/tasks/mytk_ints_promoter",
+        needed_by=("mytk_ints_promoter",),
+        requires=(_REFS,),
+        # Processed benchmark table (built by scripts/mytk/build_expression_table.py)
+        # + the 4-record payload FASTA (3 per-promoter payloads + mScarlet readout
+        # reference). Raw SI inputs are not redistributed.
+        include=("mytk_ints_promoter.tsv", "mytk_payloads.fasta"),
+    ),
 
     # ── Model weights ──────────────────────────────────────────
     # Shorkie: authors' PUBLIC bucket — fetchable today, no re-hosting.
@@ -269,7 +279,7 @@ ARTIFACTS: tuple[Artifact, ...] = (
         mirrors=(
             Mirror(
                 BackendKind.HTTP,
-                base="https://storage.googleapis.com/seqnn-share/shorkie/",
+                base="https://storage.googleapis.com/seqnn-share/shorkie_models/shorkie/",
                 member_remote={
                     "checkpoints/f0.h5": "f0/model_best.h5",
                     "checkpoints/f1.h5": "f1/model_best.h5",

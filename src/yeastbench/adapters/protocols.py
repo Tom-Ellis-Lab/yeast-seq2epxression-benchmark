@@ -62,6 +62,47 @@ class IGRInsertionExpressionPredictor(Protocol):
     def predict_expressions(self, loci: Sequence) -> np.ndarray: ...
 
 
+@dataclass(frozen=True)
+class PromoterIntegrationConstruct:
+    """One (integration site × promoter) construct from the MYTK
+    integration-site benchmark.
+
+    A reporter cassette ``[promoter]-mScarlet-[terminator]`` is integrated
+    at a genomic point with native flanks intact (Hong-style point
+    insertion). Both the integration *site* and the *promoter* vary; the
+    cassette body (mScarlet + terminator) is constant and owned by the
+    adapter, which resolves ``promoter`` (an id like ``"pTDH3"``) to its
+    DNA sequence — so this record, like ``Variant``, carries only
+    identifiers + coordinates, never sequence."""
+
+    locus_id: str           # "ura3" / "Int.1" … "Int.10"
+    chrom: str              # roman, "I".."XVI" (matches the R64 FASTA)
+    integration_coord: int  # 1-based; cassette inserts AT this position
+    promoter: str           # promoter id, e.g. "pTDH3" / "pRPL18B" / "pREV1"
+
+
+@runtime_checkable
+class PromoterIntegrationExpressionPredictor(Protocol):
+    """Predict reporter expression for a constant cassette whose
+    **promoter and integration site both vary** (MYTK benchmark).
+
+    Distinct from ``IGRInsertionExpressionPredictor`` (Hong), where a
+    single fixed-promoter cassette varies only by site: here the promoter
+    is part of the varied construct, so the same model is asked to rank
+    *both* across-site (position effect) and across-promoter (strength)
+    differences. The benchmark's primary metric is per-promoter Spearman
+    across integration sites — the position-effect signal — so adapters
+    need only return values that are monotone-faithful *within* each
+    promoter; absolute scale and cross-promoter calibration don't matter.
+
+    Returns one scalar per construct, aligned to input order. NaN is
+    allowed for any construct the model can't score."""
+
+    def predict_integrated_expressions(
+        self, constructs: Sequence[PromoterIntegrationConstruct]
+    ) -> np.ndarray: ...
+
+
 @runtime_checkable
 class SequenceExpressionScorer(Protocol):
     """Return one scalar per input sequence that should track its measured
@@ -185,7 +226,7 @@ class TerminatorMarginalizedExpressionPredictor(Protocol):
     so the two protocols cleanly disambiguate in the registry."""
 
     def predict_terminator_marginalized(self, seqs: Sequence[str]) -> np.ndarray: ...
-
+    
 
 @runtime_checkable
 class LocalCodingVariantPredictor(Protocol):

@@ -20,6 +20,7 @@ from yeastbench.adapters.protocols import (
     FivePrimeUtrReporterExpressionPredictor,
     IGRInsertionExpressionPredictor,
     LocalCodingVariantPredictor,
+    PromoterIntegrationExpressionPredictor,
     SequenceExpressionScorer,
     TerminatorMarginalizedExpressionPredictor,
     TiledCoverageTrackPredictor,
@@ -188,6 +189,26 @@ def _yorzoi_hong_adapter(device, fasta_path, **cfg):
     )
 
 
+def _shorkie_mytk_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.shorkie_mytk import ShorkieMytkPredictor
+
+    return ShorkieMytkPredictor.from_checkpoints(
+        fasta_path=fasta_path,
+        device=device,
+        **cfg,
+    )
+
+
+def _yorzoi_mytk_adapter(device, fasta_path, **cfg):
+    from yeastbench.adapters.yorzoi_mytk import YorzoiMytkPredictor
+
+    return YorzoiMytkPredictor.from_pretrained(
+        fasta_path=fasta_path,
+        device=device,
+        **cfg,
+    )
+
+
 def _yorzoi_brooks_adapter(device, **cfg):
     from yeastbench.adapters.yorzoi_brooks import YorzoiBrooksPredictor
 
@@ -243,6 +264,7 @@ SHORKIE_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     TerminatorMarginalizedExpressionPredictor: (_shorkie_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_shorkie_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_shorkie_hong_adapter, FASTA_ONLY),
+    PromoterIntegrationExpressionPredictor: (_shorkie_mytk_adapter, FASTA_ONLY),
     FivePrimeUtrReporterExpressionPredictor: (_shorkie_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_shorkie_brooks_adapter, ()),
     TiledCoverageTrackPredictor: (_shorkie_meneu_adapter, ()),
@@ -255,6 +277,7 @@ YORZOI_ADAPTERS: dict[type, tuple[Callable, tuple[str, ...]]] = {
     TerminatorMarginalizedExpressionPredictor: (_yorzoi_shalem_adapter, REFS_FIELDS),
     CassetteExpressionPredictor: (_yorzoi_wu_adapter, REFS_FIELDS),
     IGRInsertionExpressionPredictor: (_yorzoi_hong_adapter, FASTA_ONLY),
+    PromoterIntegrationExpressionPredictor: (_yorzoi_mytk_adapter, FASTA_ONLY),
     FivePrimeUtrReporterExpressionPredictor: (_yorzoi_cuperus_adapter, FASTA_ONLY),
     CoverageTrackPredictor: (_yorzoi_brooks_adapter, ()),
     TiledCoverageTrackPredictor: (_yorzoi_meneu_adapter, ()),
@@ -511,6 +534,27 @@ def _build_chen(
     )
 
 
+def _build_mytk_ints_promoter(
+    data_path: str | Path,
+    fasta_path: str | Path,
+) -> Benchmark:
+    from yeastbench.benchmarks.mytk import MytkBenchmark
+
+    return MytkBenchmark(
+        data_path=Path(data_path),
+        fasta_path=Path(fasta_path),
+        info=BenchmarkInfo(
+            name="mytk_ints_promoter",
+            version="v1",
+            description=(
+                "MYTK toolkit promoter × integration-site position effects "
+                "(mScarlet fold-over-background)"
+            ),
+            distribution_uri="",
+        ),
+    )
+
+
 def _build_cuperus_utr(
     random_path: str | Path,
     native_path: str | Path,
@@ -540,4 +584,5 @@ TASKS: dict[str, TaskFactory] = {
     "meneu_foreign_dna": _build_meneu,
     "chen_synonymous": _build_chen,
     "cuperus_utr": _build_cuperus_utr,
+    "mytk_ints_promoter": _build_mytk_ints_promoter,
 }

@@ -30,6 +30,7 @@
       - [Wu et al. (RFP insertions)](#wu-et-al-rfp-insertions)
       - [Hong et al. (mCherry IGR insertions)](#hong-et-al-mcherry-igr-insertions)
       - [Cuperus et al. (5′ UTR)](#cuperus-et-al-5-utr)
+      - [Lee et al. (YTK promoter panel)](#lee-et-al-ytk-promoter-panel)
     - [Structural rearrangements](#structural-rearrangements)
     - [Foreign-DNA integration](#foreign-dna-integration)
     - [Code-structure refactor](#code-structure-refactor)
@@ -59,12 +60,13 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
 
 ### Infrastructure
 
-- [x] Protocol-based adapter dispatch — 9 protocols
+- [x] Protocol-based adapter dispatch — 10 protocols
   (`VariantEffectScorer`, `MarginalizedSequenceExpressionPredictor`,
   `TerminatorMarginalizedExpressionPredictor`, `CassetteExpressionPredictor`,
   `IGRInsertionExpressionPredictor`, `CoverageTrackPredictor`,
   `TiledCoverageTrackPredictor`, `LocalCodingVariantPredictor`,
-  `FivePrimeUtrReporterExpressionPredictor`)
+  `FivePrimeUtrReporterExpressionPredictor`,
+  `IntegratedPromoterPanelPredictor`)
 - [x] Benchmark ABC (`evaluate` / `plot` / `save_results` / `load_results` /
   `summary_dict` / `headline`)
 - [x] Registry (`SHORKIE_ADAPTERS` / `YORZOI_ADAPTERS` keyed by protocol;
@@ -231,6 +233,19 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
 - [x] Shorkie + Yorzoi adapters (+ registry + `configs/default.yaml`)
 - [x] GPU run (Shorkie / Yorzoi) recorded; scored single-HIS3 (the `backgrounds=`
   machinery was removed after a divergence check, 2026-06-03)
+
+#### Lee et al. (YTK promoter panel)
+
+- [x] Figure 3A digitised for 19 promoters × mRuby2/Venus
+- [x] YTK constructs rebuilt from the official GenBank parts and URA3 assembly
+  rules; exact reporter CDS coordinates frozen
+- [x] Raw, untransformed, unbinned per-base CDS-sum adapters for Shorkie and
+  Yorzoi
+- [x] Consensus max/min dynamic-range recovery and per-reporter metrics
+- [x] GPU run (Shorkie / Yorzoi) on Modal A10, 2026-08-25; Shorkie recovers
+  0.165 of the consensus log-range, Yorzoi 0.109
+- [ ] v2: ask the authors for original per-replicate Figure 3A values and final
+  promoter-test plasmid sequences; replace both digitisation and reconstruction
 
 ### Structural rearrangements
 

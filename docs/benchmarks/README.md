@@ -11,9 +11,10 @@
 | [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on the held-out test loci (n = 52) |
 | [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track log-fold-change (LFC) | direction balanced accuracy, then Spearman / Pearson |
 | [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′ untranslated region (5′-UTR) / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial correlation over Kozak features |
+| [Lee YTK promoters](ytk_promoter.md) | integrated promoter dynamic range across two reporters | regression (reporter RNA range) | two-reporter consensus dynamic-range recovery + Spearman/Pearson |
 | [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / out-of-distribution (OOD) sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + Jensen–Shannon (JS) divergence (+ fold-change error) |
 
-## Probing six model capabilities across 10 benchmark tasks
+## Probing seven model capabilities across 11 benchmark tasks
 
 **eQTL classification — [Caudal](caudal_eqtl.md), [Kita](kita_eqtl.md).** 
 This benchmark asks the model to correctly predict the effect single-nucleotide changes on gene expression. Adapted from [Hao et al.](https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1): We create mixed sets of eQTLs, i.e. (eVariant, eGene)-pairs, and distance-matched (variant, gene)-pairs that are not eQTLs, i.e. the variant does not have a statistical association with the gene's expression in the population. The model is then asked to classify each (variant, gene)-pair as either "eQTL" or "no-eQTL". This is done by making two predictions, with and without the respective variant, to calculate a log-change score between REF and ALT gene expression. Thresholding the magnitude of that score creates the aforementioned labels. Caudal and Kita differ only in where the positives come from: Caudal takes any eQTL within 25 kb of the gene body, Kita takes promoter, UTR, and ORF variants within 8 kb of the transcription start site.
@@ -49,6 +50,12 @@ the growth score is a protein readout, and an RNA-seq model can never predict
 protein abundance — it can only explain the share of that signal's variance that
 comes from mRNA-level differences (a uORF triggering decay, structure changing
 stability), never the purely translational part.
+
+**Integrated promoter range — [Lee YTK](ytk_promoter.md).** Nineteen promoters
+drive mRuby2 or Venus from the same chromosomal locus. The task asks whether
+predicted raw per-base reporter CDS coverage recovers the broad max/min range in
+Figure 3A, with a geometric-mean consensus across both reporters and rank
+correlation alongside it.
 
 **Foreign-DNA coverage — [Meneu](meneu_foreign_dna.md).** Whole bacterial
 chromosomes (*M. pneumoniae* and *M. mycoides*, linearised) are put into yeast and

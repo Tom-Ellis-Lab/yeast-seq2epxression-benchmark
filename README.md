@@ -2,7 +2,7 @@
 
 ![image](img/readme_banner.svg)
 
-`ybench` is a comprehensive set of ten tasks to benchmark yeast-focussed sequence-to-function (S2F) models like Shorkie and Yorzoi. Each task covers a different part of the genome's regulatory complexity from eQTLs, promoter/UTR/terminator [MPRAs](https://www.google.com/search?q=mpra+massively+parallel+reporter+assay), reporter gene insertions in different genomic locations to investigate context effects as well as exogenous but linearised bacterial DNA in yeast and structurally rearranged chromosomes.
+`ybench` is a comprehensive set of eleven tasks to benchmark yeast-focussed sequence-to-function (S2F) models like Shorkie and Yorzoi. Each task covers a different part of the genome's regulatory complexity from eQTLs, promoter/UTR/terminator [MPRAs](https://www.google.com/search?q=mpra+massively+parallel+reporter+assay), reporter gene insertions in different genomic locations to investigate context effects as well as exogenous but linearised bacterial DNA in yeast and structurally rearranged chromosomes.
 
 ## Table of Contents
 
@@ -29,6 +29,7 @@ Please find a more comprehensive overview in [docs/benchmarks/](docs/benchmarks)
 | [Hong IGR insertions](docs/benchmarks/hong_igr.md) | fixed reporter across intergenic loci (position effect) | regression | Spearman ρ on the held-out test loci (n = 52) | 
 | [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | SCRaMBLE rearrangement (altered neighbour / downstream context) | coverage-track log-fold-change (LFC) | direction balanced accuracy, then Spearman / Pearson | 
 | [Cuperus 5′-UTR](docs/benchmarks/cuperus_mpra_5utr.md) | random 50 bp 5′ untranslated regions (5′-UTRs) — Kozak, uORFs, structure | regression (HIS3 reporter) | Spearman/Pearson + partial correlation over Kozak features | 
+| [Lee YTK promoters](docs/benchmarks/ytk_promoter.md) | 19 integrated promoters driving mRuby2 or Venus | regression (reporter RNA range) | two-reporter consensus dynamic-range recovery + Spearman/Pearson |
 | [Meneu foreign DNA](docs/benchmarks/meneu_foreign_dna.md) | whole bacterial chromosomes integrated in yeast — far out-of-distribution (OOD) sequence | zero-shot coverage-track prediction | per-window Pearson + Jensen–Shannon (JS) divergence (+ fold-change error) |
 
 ## Models
@@ -42,8 +43,9 @@ Please find a more comprehensive overview in [docs/benchmarks/](docs/benchmarks)
 ## Results
 
 Winner on each benchmark's primary metric (full per-metric tables in
-[docs/results.md](docs/results.md)). Kita, Brooks and Meneu carry fresh Modal runs
-(2026-07-31); the other benchmarks' numbers are from earlier local runs.
+[docs/results.md](docs/results.md)). Kita, Brooks and Meneu carry Modal runs from
+2026-07-31; Lee YTK carries a Modal run from 2026-08-25. The other benchmarks'
+numbers are from earlier local runs.
 
 | Benchmark | Winner | Headline (winner vs. runner-up) |
 | --- | --- | --- |
@@ -56,6 +58,7 @@ Winner on each benchmark's primary metric (full per-metric tables in
 | [Hong IGR insertions](docs/benchmarks/hong_igr.md) | **Neither** | both ≈ 0 |
 | [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | **Yorzoi** | LFC dir-acc 0.63 vs 0.55 (shape metric deferred to v2) |
 | [Cuperus 5′-UTR](docs/benchmarks/cuperus_mpra_5utr.md) | **Shorkie** | random Spearman ρ 0.25 vs 0.12 |
+| [Lee YTK promoters](docs/benchmarks/ytk_promoter.md) | **Shorkie** | range recovery 0.165 vs 0.109; consensus ρ 0.653 vs 0.570 |
 | [Meneu foreign DNA](docs/benchmarks/meneu_foreign_dna.md) | **Yorzoi** | shape r 0.38 vs 0.26 (_M. mycoides_) |
 
 ## Quickstart
@@ -109,4 +112,3 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 > [!NOTE]
 > In case of any questions, reach out to mail@timonschneider.de — always happy to help!
-

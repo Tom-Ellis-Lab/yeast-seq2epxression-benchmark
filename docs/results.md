@@ -22,6 +22,7 @@ per-metric tables for each comparison live next to the runs in
 | [Hong IGR insertions](#hong-igr-insertions) | Shorkie, Yorzoi | Spearman ρ (held-out test set) | **Neither** (both ≈ 0) |
 | [Brooks SCRaMBLE](#brooks-scramble) | Shorkie, Yorzoi | LFC direction balanced acc. | **Yorzoi** |
 | [Cuperus 5′-UTR](#cuperus-5-utr) | Shorkie, Yorzoi | Spearman ρ (+ partial correlation) | **Shorkie** |
+| [Lee YTK promoters](#lee-ytk-promoters) | Shorkie, Yorzoi | consensus dynamic-range recovery + Spearman ρ | **Shorkie** |
 | [Meneu foreign DNA](#meneu-foreign-dna) | Shorkie, Yorzoi | per-window shape Pearson / JS↓ | **Yorzoi** |
 
 ---
@@ -180,6 +181,26 @@ in the HIS3 reporter. ([spec](benchmarks/cuperus_mpra_5utr.md))
 **Winner: Shorkie** — leads every cut, and retains signal in the partial
 correlation (after regressing out hand-crafted Kozak features) where Yorzoi
 drops to ≈ 0.
+
+## Lee YTK promoters
+
+Nineteen promoters driving mRuby2 or Venus from the same integrated construct
+context. The main question is whether the models recover the measured max/min
+range, not only promoter rank. ([spec](benchmarks/ytk_promoter.md))
+
+Zero-shot, 2026-08-25 Modal A10 run. Both models scored all 38 constructs.
+
+| consensus metric | Shorkie | Yorzoi |
+| --- | ---: | ---: |
+| predicted max/min (observed 162.079×) | **2.315×** | 1.739× |
+| dynamic-range recovery | **0.1650** | 0.1088 |
+| range fidelity | **0.1650** | 0.1088 |
+| Spearman ρ | **0.6526** | 0.5702 |
+| log10 Pearson *r* | **0.6660** | 0.5358 |
+
+**Winner: Shorkie**, though both predictions are severely compressed. Shorkie
+recovers some ordering but only 16.5% of the observed log10 span; Yorzoi recovers
+10.9%.
 
 ## Meneu foreign DNA
 

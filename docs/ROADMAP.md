@@ -61,7 +61,7 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
 ### Infrastructure
 
 - [x] Protocol-based adapter dispatch — 10 protocols
-  (`VariantEffectScorer`, `MarginalizedSequenceExpressionPredictor`,
+  (`VariantEffectScorer`, `SequenceExpressionScorer`,
   `TerminatorMarginalizedExpressionPredictor`, `CassetteExpressionPredictor`,
   `IGRInsertionExpressionPredictor`, `CoverageTrackPredictor`,
   `TiledCoverageTrackPredictor`, `LocalCodingVariantPredictor`,
@@ -75,7 +75,7 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
   `configs/default.yaml`)
 - [x] Run UX (PR #23): hardware banner (`describe_device`), `--gpu` / `--device`
   selection, per-pair ETA (`hardware.py`, `cli.py`, `tests/test_run_progress.py`)
-- [x] 282-test pytest suite
+- [x] 331-test pytest suite
 - [x] Cross-model comparison runner (`compare.py`): per-task
   `compare/per_task/<task>/` plots via each benchmark's `compare_plot` hook,
   plus cross-task `summary.csv` / `summary.md`; auto-runs after every
@@ -417,12 +417,13 @@ Per-task adapters (once integration lands) — each is a thin adapter on an
 `ExoShorkie` wrapper reusing the task's existing scaffold; only the model changes.
 Migrate back under their benchmark sections when ExoShorkie becomes active.
 
-- [ ] Rafi / de Boer marginalized (`MarginalizedSequenceExpressionPredictor`)
+- [ ] Rafi / de Boer marginalized (`SequenceExpressionScorer`)
 - [ ] Shalem terminator (`TerminatorMarginalizedExpressionPredictor`)
 - [ ] Chen synonymous CDS (`LocalCodingVariantPredictor`)
 - [ ] Wu RFP insertions (`CassetteExpressionPredictor`)
 - [ ] Hong IGR insertions (`IGRInsertionExpressionPredictor`)
 - [ ] Cuperus 5′ UTR (`FivePrimeUtrReporterExpressionPredictor`)
+- [ ] Lee YTK promoters (`IntegratedPromoterPanelPredictor`)
 - [ ] Brooks SCRaMBLE (`CoverageTrackPredictor`)
 - [ ] Meneu foreign DNA (`TiledCoverageTrackPredictor`)
 - [ ] Meneu: check ExoShorkie vs the paper (reproduce the paper's exact metric —

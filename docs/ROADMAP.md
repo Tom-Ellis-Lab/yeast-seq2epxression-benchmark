@@ -548,6 +548,9 @@ under small shifts). Relevant to every binned model in the suite.
 - [ ] Quantify input-shift sensitivity per adapter; add a jittered readout if
   material
 
+### Random short promoters in genome
+https://www.nature.com/articles/s41467-023-37610-w
+
 ### Baselines as first-class models
 
 - [ ] Flatten baselines to first-class models — drop `adapters/baselines/`

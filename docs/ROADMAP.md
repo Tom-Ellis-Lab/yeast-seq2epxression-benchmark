@@ -275,9 +275,15 @@ Brooks et al. SCRaMBLE chromosome 9 — spec `docs/benchmarks/brooks_scramble.md
 - [x] Shorkie adapter `ShorkieBrooksPredictor`: 8-fold, T0 tracks, softplus raw
   counts, 16 bp unbin, `varies_by_strain = False`
 - [x] `BrooksScrambleBenchmark`: per-replicate LFC design (0–3 true + 0–3
-  predicted LFCs per sample); LFC headline (scored: r / ρ / dir-acc;
+  predicted LFCs per sample); LFC metrics (scored: r / ρ / dir-acc;
   calibration: within-range + mean |z|); shape metrics (per-base r + JS
   divergence); LOO noise ceiling. JS94 replicate aliases in `_yorzoi_constants.py`
+- [x] LFC metrics reported **per JS94 replicate**, never averaged across the
+  three (2026-09-02). Each replicate scores a different, unequally sized gene
+  set — the read-depth cutoff is applied per gene per run — against its own
+  ceiling, so a mean over replicates weighted unlike cohorts equally. One
+  shared `per_rep_lfc_metrics` now serves `evaluate` / `load_results` /
+  compare, and `n_scored_per_rep` ships with every number
 - [x] Cross-model shared-cohort convention: headline on the intersection of the
   two models' sample sets; `ybench compare` Brooks logic in `benchmarks/brooks.py`
   writes the shared-cohort summary + charts. Reconciles the sample set + LFC

@@ -9,7 +9,7 @@
 | [Chen synonymous MPRA](chen_synonymous.md) | coding-sequence / codon-usage effect on mRNA | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` (R = RNA, D = DNA read counts) |
 | [Wu RFP insertions](wu_rfpins.md) | genomic *position* effect at an open reading frame (ORF) deletion locus | regression | Pearson *r* + Spearman ρ (+ tail AUROC) |
 | [Hong IGR insertions](hong_igr.md) | genomic *position* effect (intergenic) | regression | Spearman ρ on the held-out test loci (n = 52) |
-| [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track log-fold-change (LFC) | direction balanced accuracy, then Spearman / Pearson |
+| [Brooks SCRaMBLE](brooks_scramble.md) | genome-architecture rearrangement | coverage-track log-fold-change (LFC) | direction balanced accuracy, then Spearman / Pearson — reported per JS94 parental run |
 | [Cuperus 5′-UTR](cuperus_mpra_5utr.md) | 5′ untranslated region (5′-UTR) / translational grammar | regression (HIS3 reporter) | Spearman/Pearson + partial correlation over Kozak features |
 | [Lee YTK promoters](ytk_promoter.md) | integrated promoter dynamic range across two reporters | regression (reporter RNA range) | two-reporter consensus dynamic-range recovery + Spearman/Pearson |
 | [Meneu foreign DNA](meneu_foreign_dna.md) | foreign / out-of-distribution (OOD) sequence (whole bacterial chromosomes in yeast) | zero-shot coverage-track prediction | per-window Pearson + Jensen–Shannon (JS) divergence (+ fold-change error) |
@@ -34,7 +34,10 @@ layout of the genome but leaves each gene's coding sequence and promoter intact,
 what changes for a gene is the context downstream of it. The model reads sequence
 and predicts coverage. We score it as the log-fold-change of coverage over the
 coding sequence against an unscrambled parental control, and read that against a
-leave-one-out reproducibility ceiling.
+leave-one-out reproducibility ceiling. The control was sequenced three times, and
+we report the score against each of those runs separately rather than pooling
+them: a gene only counts for a run it was sequenced deeply enough in, so the
+three runs cover different genes and carry different ceilings.
 
 **5′-UTR grammar — [Cuperus](cuperus_mpra_5utr.md).** A gene's 5′-untranslated
 region influences the stability of mRNA and it's coding sequence is translated into protein. Cuperus put ~489k random 50 bp

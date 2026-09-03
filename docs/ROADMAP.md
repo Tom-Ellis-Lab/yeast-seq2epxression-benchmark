@@ -61,7 +61,7 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
 ### Infrastructure
 
 - [x] Protocol-based adapter dispatch — 10 protocols
-  (`VariantEffectScorer`, `MarginalizedSequenceExpressionPredictor`,
+  (`VariantEffectScorer`, `SequenceExpressionScorer`,
   `TerminatorMarginalizedExpressionPredictor`, `CassetteExpressionPredictor`,
   `IGRInsertionExpressionPredictor`, `CoverageTrackPredictor`,
   `TiledCoverageTrackPredictor`, `LocalCodingVariantPredictor`,
@@ -75,7 +75,7 @@ files under `docs/benchmarks/`. This roadmap tracks status only.
   `configs/default.yaml`)
 - [x] Run UX (PR #23): hardware banner (`describe_device`), `--gpu` / `--device`
   selection, per-pair ETA (`hardware.py`, `cli.py`, `tests/test_run_progress.py`)
-- [x] 282-test pytest suite
+- [x] 331-test pytest suite
 - [x] Cross-model comparison runner (`compare.py`): per-task
   `compare/per_task/<task>/` plots via each benchmark's `compare_plot` hook,
   plus cross-task `summary.csv` / `summary.md`; auto-runs after every
@@ -275,9 +275,15 @@ Brooks et al. SCRaMBLE chromosome 9 — spec `docs/benchmarks/brooks_scramble.md
 - [x] Shorkie adapter `ShorkieBrooksPredictor`: 8-fold, T0 tracks, softplus raw
   counts, 16 bp unbin, `varies_by_strain = False`
 - [x] `BrooksScrambleBenchmark`: per-replicate LFC design (0–3 true + 0–3
-  predicted LFCs per sample); LFC headline (scored: r / ρ / dir-acc;
+  predicted LFCs per sample); LFC metrics (scored: r / ρ / dir-acc;
   calibration: within-range + mean |z|); shape metrics (per-base r + JS
   divergence); LOO noise ceiling. JS94 replicate aliases in `_yorzoi_constants.py`
+- [x] LFC metrics reported **per JS94 replicate**, never averaged across the
+  three (2026-09-02). Each replicate scores a different, unequally sized gene
+  set — the read-depth cutoff is applied per gene per run — against its own
+  ceiling, so a mean over replicates weighted unlike cohorts equally. One
+  shared `per_rep_lfc_metrics` now serves `evaluate` / `load_results` /
+  compare, and `n_scored_per_rep` ships with every number
 - [x] Cross-model shared-cohort convention: headline on the intersection of the
   two models' sample sets; `ybench compare` Brooks logic in `benchmarks/brooks.py`
   writes the shared-cohort summary + charts. Reconciles the sample set + LFC
@@ -417,12 +423,13 @@ Per-task adapters (once integration lands) — each is a thin adapter on an
 `ExoShorkie` wrapper reusing the task's existing scaffold; only the model changes.
 Migrate back under their benchmark sections when ExoShorkie becomes active.
 
-- [ ] Rafi / de Boer marginalized (`MarginalizedSequenceExpressionPredictor`)
+- [ ] Rafi / de Boer marginalized (`SequenceExpressionScorer`)
 - [ ] Shalem terminator (`TerminatorMarginalizedExpressionPredictor`)
 - [ ] Chen synonymous CDS (`LocalCodingVariantPredictor`)
 - [ ] Wu RFP insertions (`CassetteExpressionPredictor`)
 - [ ] Hong IGR insertions (`IGRInsertionExpressionPredictor`)
 - [ ] Cuperus 5′ UTR (`FivePrimeUtrReporterExpressionPredictor`)
+- [ ] Lee YTK promoters (`IntegratedPromoterPanelPredictor`)
 - [ ] Brooks SCRaMBLE (`CoverageTrackPredictor`)
 - [ ] Meneu foreign DNA (`TiledCoverageTrackPredictor`)
 - [ ] Meneu: check ExoShorkie vs the paper (reproduce the paper's exact metric —

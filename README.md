@@ -27,7 +27,7 @@ Please find a more comprehensive overview in [docs/benchmarks/](docs/benchmarks)
 | [Chen synonymous MPRA](docs/benchmarks/chen_synonymous.md) | synonymous-codon effect on mRNA abundance | regression, 3 libraries | Pearson *r* + Spearman ρ on `log2(R/D)` (R = RNA, D = DNA read counts) | 
 | [Wu RFP insertions](docs/benchmarks/wu_rfpins.md) | fixed reporter cassette across open reading frame (ORF) deletion loci (position effect) | regression | Pearson *r* + Spearman ρ (+ tail AUROC) | 
 | [Hong IGR insertions](docs/benchmarks/hong_igr.md) | fixed reporter across intergenic loci (position effect) | regression | Spearman ρ on the held-out test loci (n = 52) | 
-| [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | SCRaMBLE rearrangement (altered neighbour / downstream context) | coverage-track log-fold-change (LFC) | direction balanced accuracy, then Spearman / Pearson | 
+| [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | SCRaMBLE rearrangement (altered neighbour / downstream context) | coverage-track log-fold-change (LFC) | direction balanced accuracy, then Spearman / Pearson — reported per JS94 parental run | 
 | [Cuperus 5′-UTR](docs/benchmarks/cuperus_mpra_5utr.md) | random 50 bp 5′ untranslated regions (5′-UTRs) — Kozak, uORFs, structure | regression (HIS3 reporter) | Spearman/Pearson + partial correlation over Kozak features | 
 | [Lee YTK promoters](docs/benchmarks/ytk_promoter.md) | 19 integrated promoters driving mRuby2 or Venus | regression (reporter RNA range) | two-reporter consensus dynamic-range recovery + Spearman/Pearson |
 | [Meneu foreign DNA](docs/benchmarks/meneu_foreign_dna.md) | whole bacterial chromosomes integrated in yeast — far out-of-distribution (OOD) sequence | zero-shot coverage-track prediction | per-window Pearson + Jensen–Shannon (JS) divergence (+ fold-change error) |
@@ -56,7 +56,7 @@ numbers are from earlier local runs.
 | [Chen synonymous MPRA](docs/benchmarks/chen_synonymous.md) | **Mixed** | Shorkie on GFP, CAI on TDH3 |
 | [Wu RFP insertions](docs/benchmarks/wu_rfpins.md) | **Neither** | both ≈ 0 — position effect not captured |
 | [Hong IGR insertions](docs/benchmarks/hong_igr.md) | **Neither** | both ≈ 0 |
-| [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | **Yorzoi** | LFC dir-acc 0.63 vs 0.55 (shape metric deferred to v2) |
+| [Brooks SCRaMBLE](docs/benchmarks/brooks_scramble.md) | **Yorzoi** | LFC dir-acc 0.62–0.65 vs 0.51–0.61, leading in all 3 JS94 runs (shape metric deferred to v2) |
 | [Cuperus 5′-UTR](docs/benchmarks/cuperus_mpra_5utr.md) | **Shorkie** | random Spearman ρ 0.25 vs 0.12 |
 | [Lee YTK promoters](docs/benchmarks/ytk_promoter.md) | **Shorkie** | range recovery 0.165 vs 0.109; consensus ρ 0.653 vs 0.570 |
 | [Meneu foreign DNA](docs/benchmarks/meneu_foreign_dna.md) | **Yorzoi** | shape r 0.38 vs 0.26 (_M. mycoides_) |
